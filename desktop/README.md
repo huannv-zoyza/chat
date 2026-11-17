@@ -86,6 +86,10 @@ Lỗi trả về `{"error": "<câu hiển thị cho người dùng>"}`.
 | POST | `/api/messages/{id}/pin` | `{pinned}` ghim / bỏ ghim |
 | GET | `/api/channels/{id}/pins` | Tin đang ghim |
 | GET | `/api/search?q=&channel_id=&before=` | Tìm toàn văn (không dấu) trong các kênh mình tham gia |
+| POST | `/api/messages/{id}/poll/options` | `{text}` thêm lựa chọn (bình chọn cho phép) |
+| POST | `/api/messages/{id}/remind` | `{at, note}` hẹn nhắc tin này |
+| GET | `/api/reminders` | Nhắc việc của mình |
+| PATCH / DELETE | `/api/reminders/{id}` | `{at}` hoãn / xoá |
 | PATCH | `/api/messages/{id}` | `{content}` sửa tin của mình |
 | DELETE | `/api/messages/{id}` | Xoá tin (người viết, hoặc chủ kênh) |
 | PUT | `/api/me/password` | `{current_password, new_password}`; đăng xuất các thiết bị khác |
@@ -123,6 +127,6 @@ Client gửi:
 
 Server gửi (danh sách đầy đủ ở `controller/events.go`): `ready`, `message.new`, `typing`, `presence`,
 `user.updated`, `channel.joined`, `channel.left`, `channel.updated`, `channel.deleted`,
-`member.joined`, `member.left`, `reaction.updated`, `thread.updated`, `read.updated`, `message.updated`, `key.updated`, `poll.updated`, `error`, `pong`.
+`member.joined`, `member.left`, `reaction.updated`, `thread.updated`, `read.updated`, `message.updated`, `key.updated`, `poll.updated`, `reminder.due`, `error`, `pong`.
 
 Mỗi kết nối nhận tin của **mọi** kênh mình tham gia, nên số chưa đọc cập nhật tức thì.

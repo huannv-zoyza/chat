@@ -67,6 +67,10 @@ export type Poll = {
   multiple: boolean;
   anonymous: boolean;
   closed_at?: string;
+  /** Hạn chót tự kết thúc. */
+  closes_at?: string;
+  /** Cho mọi người thêm lựa chọn. */
+  allow_add?: boolean;
   options: PollOption[];
   voters: number;
   my_votes?: number[];
@@ -83,6 +87,18 @@ export type QuotedMessage = {
   poll?: string;
   parent_id?: number;
   deleted?: boolean;
+};
+
+/** Nhắc việc: "nhắc tôi về tin này lúc …". */
+export type Reminder = {
+  id: number;
+  message_id: number;
+  remind_at: string;
+  note?: string;
+  /** Đã tới giờ (đã nhắc). */
+  fired_at?: string;
+  created_at: string;
+  message?: Message;
 };
 
 export type GifResult = { id: string; title: string; url: string; preview: string; width: number; height: number };
@@ -271,10 +287,25 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
       ),
     createPoll: (
       channelId: number,
-      b: { question: string; options: string[]; multiple: boolean; anonymous: boolean; client_id: string },
+      b: {
+        question: string;
+        options: string[];
+        multiple: boolean;
+        anonymous: boolean;
+        client_id: string;
+        closes_at?: string;
+        allow_add?: boolean;
+      },
     ) => request<Message>("POST", `/api/channels/${channelId}/polls`, b),
     vote: (messageId: number, optionIds: number[]) =>
       request<Poll>("POST", `/api/messages/${messageId}/votes`, { option_ids: optionIds }),
+    addPollOption: (messageId: number, text: string) =>
+      request<Poll>("POST", `/api/messages/${messageId}/poll/options`, { text }),
+    remind: (messageId: number, at: string, note: string) =>
+      request<Reminder>("POST", `/api/messages/${messageId}/remind`, { at, note }),
+    reminders: () => request<Reminder[]>("GET", "/api/reminders"),
+    snoozeReminder: (id: number, at: string) => request<Reminder>("PATCH", `/api/reminders/${id}`, { at }),
+    deleteReminder: (id: number) => request<void>("DELETE", `/api/reminders/${id}`),
     closePoll: (messageId: number, closed: boolean) =>
       request<Poll>("POST", `/api/messages/${messageId}/poll/close`, { closed }),
     editMessage: (id: number, body: { content: string } | { cipher: string }) =>

@@ -1,4 +1,4 @@
-import type { Embed, Poll, Message, Channel, PublicUser, Reaction, ThreadSummary, User } from "./api";
+import type { Embed, Poll, Reminder, Message, Channel, PublicUser, Reaction, ThreadSummary, User } from "./api";
 
 /* ---------- Giao thức (khớp controller/events.go và controller/socket.go) ---------- */
 
@@ -8,6 +8,7 @@ export type ServerEvent =
   | { type: "message.updated"; message: Message }
   | { type: "key.updated"; user_id: number; public_key: string }
   | { type: "poll.updated"; channel_id: number; message_id: number; poll: Poll }
+  | { type: "reminder.due"; reminder: Reminder }
   | { type: "typing"; channel_id: number; user_id: number }
   | { type: "presence"; user_id: number; online: boolean }
   | { type: "user.updated"; user: PublicUser }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"chat/model"
@@ -34,6 +35,10 @@ type createPollRequest struct {
 	Multiple  bool     `json:"multiple"`
 	Anonymous bool     `json:"anonymous"`
 	ClientID  string   `json:"client_id"`
+	// Hạn chót (RFC 3339), không bắt buộc.
+	ClosesAt *time.Time `json:"closes_at"`
+	// Cho mọi người thêm lựa chọn.
+	AllowAdd bool `json:"allow_add"`
 }
 
 func validatePoll(req createPollRequest) (store.NewPoll, string) {
@@ -61,7 +66,13 @@ func validatePoll(req createPollRequest) (store.NewPoll, string) {
 	if len(opts) < minPollOptions || len(opts) > maxPollOptions {
 		return store.NewPoll{}, "Bình chọn cần từ 2 đến 10 lựa chọn."
 	}
-	return store.NewPoll{Question: q, Options: opts, Multiple: req.Multiple, Anonymous: req.Anonymous}, ""
+	if req.ClosesAt != nil {
+		if req.ClosesAt.Before(time.Now().Add(time.Minute)) || req.ClosesAt.After(time.Now().AddDate(0, 3, 0)) {
+			return store.NewPoll{}, "Hạn chót phải sau ít nhất 1 phút và trong vòng 3 tháng."
+		}
+	}
+	return store.NewPoll{Question: q, Options: opts, Multiple: req.Multiple, Anonymous: req.Anonymous,
+		ClosesAt: req.ClosesAt, AllowAdd: req.AllowAdd}, ""
 }
 
 func (a *API) createPoll(w http.ResponseWriter, r *http.Request) {
@@ -131,6 +142,51 @@ func (a *API) vote(w http.ResponseWriter, r *http.Request) {
 		return
 	case errors.Is(err, store.ErrBadPollOption):
 		writeError(w, http.StatusBadRequest, "Lựa chọn không hợp lệ.")
+		return
+	case err != nil:
+		internalError(w, r, err)
+		return
+	}
+	a.respondPoll(w, r, msg.ID)
+}
+
+/* ---------- POST /api/messages/{id}/poll/options {text} ---------- */
+
+type addOptionRequest struct {
+	Text string `json:"text"`
+}
+
+func (a *API) addPollOption(w http.ResponseWriter, r *http.Request) {
+	msg, ok := a.loadMessage(w, r)
+	if !ok {
+		return
+	}
+	if msg.Poll == nil || msg.DeletedAt != nil {
+		writeError(w, http.StatusNotFound, "Không tìm thấy bình chọn.")
+		return
+	}
+	var req addOptionRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	text := strings.Join(strings.Fields(req.Text), " ")
+	if text == "" || utf8.RuneCountInString(text) > maxPollOption {
+		writeError(w, http.StatusBadRequest, "Lựa chọn cần 1–100 ký tự.")
+		return
+	}
+	err := a.store.AddPollOption(r.Context(), msg.ID, currentUser(r).ID, text, maxPollOptions)
+	switch {
+	case errors.Is(err, store.ErrPollClosed):
+		writeError(w, http.StatusConflict, "Bình chọn đã kết thúc.")
+		return
+	case errors.Is(err, store.ErrPollNoAdd):
+		writeError(w, http.StatusForbidden, "Bình chọn này không cho thêm lựa chọn.")
+		return
+	case errors.Is(err, store.ErrPollDuplicate):
+		writeError(w, http.StatusBadRequest, "Đã có lựa chọn này rồi.")
+		return
+	case errors.Is(err, store.ErrPollFull):
+		writeError(w, http.StatusBadRequest, "Đã đủ 10 lựa chọn.")
 		return
 	case err != nil:
 		internalError(w, r, err)

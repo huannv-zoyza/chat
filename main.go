@@ -61,6 +61,8 @@ func main() {
 	if *giphyKey == "" {
 		log.Printf("Tìm GIF đang tắt: đặt GIPHY_API_KEY (hoặc -giphy-key) để bật")
 	}
+	// nhắc việc tới giờ, bình chọn hết hạn
+	go api.RunScheduler(ctx, 15*time.Second)
 
 	srv := &http.Server{
 		Addr:              *addr,

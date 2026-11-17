@@ -24,6 +24,7 @@ import { EmbedView } from "./Embeds";
 import { PollView } from "./Polls";
 import { ForwardDialog, PinsDialog, QuoteBlock, previewText } from "./MessageExtras";
 import { findMessage } from "../state/chat";
+import { RemindDialog } from "./Reminders";
 import { EncryptedAttachments } from "./EncryptedAttachments";
 import { E2EEBanner, SafetyDialog, useDMEncryption } from "./E2EEDialogs";
 import { e2ee, useE2EE } from "../lib/e2ee";
@@ -546,6 +547,7 @@ export function MessageRow(props: RowProps) {
   const onDelete = canDelete ? () => setConfirmDelete(true) : undefined;
   const longPress = useLongPress(() => setSheetOpen(true), live && compact && !editing);
   const [forwardOpen, setForwardOpen] = useState(false);
+  const [remindOpen, setRemindOpen] = useState(false);
   const replyKey = message?.parent_id ? `t${message.parent_id}` : `c${message?.channel_id}`;
   const canForward = live && !message!.poll && (!message!.cipher || !!dec?.ok);
   const acts: MessageActionSet = {
@@ -556,6 +558,7 @@ export function MessageRow(props: RowProps) {
     onPin: live ? () => void pinMessage(message!.id, !message!.pinned_at).catch(() => {}) : undefined,
     pinned: !!message?.pinned_at,
     onForward: canForward ? () => setForwardOpen(true) : undefined,
+    onRemind: live ? () => setRemindOpen(true) : undefined,
   };
   // nhảy tới từ tìm kiếm / tin ghim / bản trích: cuộn tới giữa màn hình và nháy nền
   const rowRef = useRef<HTMLElement>(null);
@@ -704,6 +707,7 @@ export function MessageRow(props: RowProps) {
         />
       )}
       {message && whoOpen && <ReactionsDialog message={message} initial="all" onClose={() => setWhoOpen(false)} />}
+      {message && remindOpen && <RemindDialog message={view!} onClose={() => setRemindOpen(false)} />}
       {message && forwardOpen && <ForwardDialog message={message} onClose={() => setForwardOpen(false)} />}
       {message && confirmDelete && <ConfirmDeleteDialog message={view!} onClose={() => setConfirmDelete(false)} />}
     </article>

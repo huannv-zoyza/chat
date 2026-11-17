@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from "react";
 import { ApiError, type Api, type Embed, type Message, type User, socketUrl } from "../lib/api";
 import { embedSummary } from "../components/Embeds";
+import { previewText } from "../components/MessageExtras";
 import { ChatSocket } from "../lib/socket";
 import { ServerUrlContext } from "../components/ui";
 import { displayName, newClientId } from "../lib/format";
@@ -51,11 +52,23 @@ type ChatContextValue = {
   /** Tạo bình chọn trong kênh. Lỗi thì ném ApiError. */
   createPoll: (
     channelId: number,
-    p: { question: string; options: string[]; multiple: boolean; anonymous: boolean },
+    p: {
+      question: string;
+      options: string[];
+      multiple: boolean;
+      anonymous: boolean;
+      closes_at?: string;
+      allow_add?: boolean;
+    },
   ) => Promise<void>;
   /** Bỏ phiếu (thay toàn bộ lựa chọn của mình; [] = rút phiếu). */
   vote: (messageId: number, optionIds: number[]) => Promise<void>;
   closePoll: (messageId: number, closed: boolean) => Promise<void>;
+  addPollOption: (messageId: number, text: string) => Promise<void>;
+  /** Nhắc việc: đặt / hoãn / xong. at: thời điểm (Date). */
+  remind: (messageId: number, at: Date, note: string) => Promise<void>;
+  snoozeReminder: (id: number, at: Date) => Promise<void>;
+  doneReminder: (id: number) => Promise<void>;
   /** Mở (tạo nếu chưa có) cuộc trò chuyện riêng với userId và chuyển tới đó. */
   openDM: (userId: number) => Promise<void>;
   retryMessage: (clientId: string) => void;
@@ -313,6 +326,10 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
 
       sock.on("ready", (ev) => {
         dispatch({ type: "ready", me: ev.user, online: ev.online_user_ids });
+        api
+          .reminders()
+          .then((reminders) => dispatch({ type: "reminders.loaded", reminders }))
+          .catch(() => {});
         if (everReady) {
           // Kết nối lại: có thể đã lỡ tin trong lúc mất mạng.
           dispatch({ type: "messages.stale" });
@@ -337,6 +354,26 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       sock.on("message.updated", (ev) => dispatch({ type: "message.updated", message: ev.message })),
       sock.on("key.updated", (ev) => e2ee.onKeyUpdated(ev.user_id, ev.public_key)),
       sock.on("poll.updated", (ev) => dispatch({ type: "poll.set", messageId: ev.message_id, poll: ev.poll })),
+      sock.on("reminder.due", (ev) => {
+        const r = ev.reminder;
+        dispatch({ type: "reminder.upsert", reminder: r });
+        const m = r.message;
+        const s = stateRef.current;
+        let body = r.note || "";
+        if (m) {
+          const ch = s.channels[m.channel_id];
+          const text = previewText({ ...m, deleted: !!m.deleted_at, poll: m.poll }, m.channel_id);
+          body = [
+            r.note,
+            `${displayName(s.users[m.user_id] ?? m.user)}${ch ? " · " + channelLabel(ch, s.users, s.me.id) : ""}: ${text || "(tin nhắn)"}`,
+          ]
+            .filter(Boolean)
+            .join("\n");
+        }
+        void showNotification("⏰ Nhắc việc", body.slice(0, 240), () => {
+          if (m) void actionsRef.current?.jumpToMessage(m);
+        });
+      }),
 
       sock.onSendFailed((clientId, reason) => dispatch({ type: "pending.failed", clientId, error: reason })),
 
@@ -505,6 +542,26 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       vote: async (messageId, optionIds) => {
         const poll = await api.vote(messageId, optionIds);
         dispatch({ type: "poll.set", messageId, poll, mine: true });
+      },
+
+      addPollOption: async (messageId, text) => {
+        const poll = await api.addPollOption(messageId, text);
+        dispatch({ type: "poll.set", messageId, poll, mine: true });
+      },
+
+      remind: async (messageId, at, note) => {
+        const reminder = await api.remind(messageId, at.toISOString(), note);
+        dispatch({ type: "reminder.upsert", reminder });
+      },
+
+      snoozeReminder: async (id, at) => {
+        const reminder = await api.snoozeReminder(id, at.toISOString());
+        dispatch({ type: "reminder.upsert", reminder });
+      },
+
+      doneReminder: async (id) => {
+        await api.deleteReminder(id);
+        dispatch({ type: "reminder.remove", id });
       },
 
       closePoll: async (messageId, closed) => {

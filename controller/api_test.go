@@ -27,6 +27,7 @@ func TestMain(m *testing.M) {
 }
 
 type env struct {
+	api *controller.API
 	t   *testing.T
 	srv *httptest.Server
 }
@@ -42,9 +43,10 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	hub := socket.NewHub()
-	srv := httptest.NewServer(controller.NewAPI(store.New(db), hub, []string{"localhost", "localhost:*", "tauri.localhost"}, t.TempDir()).Handler(nil))
+	api := controller.NewAPI(store.New(db), hub, []string{"localhost", "localhost:*", "tauri.localhost"}, t.TempDir())
+	srv := httptest.NewServer(api.Handler(nil))
 	t.Cleanup(func() { hub.Shutdown(); srv.Close() })
-	return &env{t: t, srv: srv}
+	return &env{t: t, srv: srv, api: api}
 }
 
 // do gửi request và decode JSON vào out (nếu khác nil), trả về status code.

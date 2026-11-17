@@ -1,4 +1,15 @@
-import type { Channel, Embed, Message, Poll, PublicUser, ReadState, Reaction, ThreadSummary, User } from "../lib/api";
+import type {
+  Channel,
+  Embed,
+  Message,
+  Poll,
+  Reminder,
+  PublicUser,
+  ReadState,
+  Reaction,
+  ThreadSummary,
+  User,
+} from "../lib/api";
 import type { SocketStatus } from "../lib/socket";
 
 /* ---------- State ---------- */
@@ -63,6 +74,8 @@ export type ChatState = {
   highlight: { id: number; at: number } | null;
   /** Tin đang ghim của từng kênh (đã tải). */
   pins: Record<number, Message[]>;
+  /** Nhắc việc của mình (null: chưa tải). */
+  reminders: Reminder[] | null;
   /** channelId -> userId -> id tin đã xem tới (để hiện "đã xem"). */
   reads: Record<number, Record<number, number>>;
 };
@@ -86,6 +99,7 @@ export function initialState(me: User): ChatState {
     replyTo: {},
     highlight: null,
     pins: {},
+    reminders: null,
     reads: {},
   };
 }
@@ -110,6 +124,9 @@ export type Action =
   | { type: "reply.set"; key: string; messageId: number | null }
   | { type: "highlight"; messageId: number | null }
   | { type: "pins.loaded"; channelId: number; messages: Message[] }
+  | { type: "reminders.loaded"; reminders: Reminder[] }
+  | { type: "reminder.upsert"; reminder: Reminder }
+  | { type: "reminder.remove"; id: number }
   | { type: "pending.add"; pending: PendingMessage }
   | { type: "pending.failed"; clientId: string; error: string }
   | { type: "pending.retry"; clientId: string }
@@ -367,6 +384,19 @@ export function reducer(s: ChatState, a: Action): ChatState {
 
     case "highlight":
       return { ...s, highlight: a.messageId ? { id: a.messageId, at: Date.now() } : null };
+
+    case "reminders.loaded":
+      return { ...s, reminders: a.reminders };
+
+    case "reminder.upsert": {
+      const list = (s.reminders ?? []).filter((r) => r.id !== a.reminder.id);
+      list.push(a.reminder);
+      list.sort((x, y) => x.remind_at.localeCompare(y.remind_at));
+      return { ...s, reminders: list };
+    }
+
+    case "reminder.remove":
+      return { ...s, reminders: (s.reminders ?? []).filter((r) => r.id !== a.id) };
 
     case "pins.loaded":
       return {

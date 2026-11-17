@@ -15,11 +15,13 @@ import { clearPendingInvite, peekPendingInvite } from "../lib/platform";
 import { UserSettingsDialog } from "./UserSettingsDialog";
 import { NewDMDialog } from "./NewDMDialog";
 import { SearchDialog } from "./MessageExtras";
+import { RemindersDialog } from "./Reminders";
 import { isDM } from "../lib/channel";
 import { load, save } from "../lib/storage";
 import { COMPACT_QUERY, useMediaQuery } from "../lib/useMedia";
 
-type DialogName = "create" | "browse" | "channel" | "user" | "invite" | "joinLink" | "dm" | "search" | null;
+type DialogName =
+  "create" | "browse" | "channel" | "user" | "invite" | "joinLink" | "dm" | "search" | "reminders" | null;
 
 export function Workspace() {
   const { state, openThread } = useChat();
@@ -137,6 +139,7 @@ export function Workspace() {
         onOpenSettings={() => setDialog("user")}
         onNewDM={() => setDialog("dm")}
         onSearch={() => setDialog("search")}
+        onReminders={() => setDialog("reminders")}
       />
 
       {channel ? (
@@ -188,6 +191,7 @@ export function Workspace() {
       {dialog === "channel" && channel && <ChannelSettingsDialog channel={channel} onClose={() => setDialog(null)} />}
       {dialog === "user" && <UserSettingsDialog onClose={() => setDialog(null)} />}
       {dialog === "invite" && channel && <InviteDialog channel={channel} onClose={() => setDialog(null)} />}
+      {dialog === "reminders" && <RemindersDialog onClose={() => setDialog(null)} onJumped={openRoom} />}
       {dialog === "search" && <SearchDialog onClose={() => setDialog(null)} onJumped={openRoom} />}
       {dialog === "dm" && <NewDMDialog onClose={() => setDialog(null)} onOpened={openRoom} />}
       {dialog === "joinLink" && (

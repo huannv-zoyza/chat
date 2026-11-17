@@ -25,6 +25,7 @@ type Props = {
   onOpenSettings: () => void;
   onNewDM: () => void;
   onSearch: () => void;
+  onReminders: () => void;
 };
 
 export function Sidebar({
@@ -35,6 +36,7 @@ export function Sidebar({
   onOpenSettings,
   onNewDM,
   onSearch,
+  onReminders,
 }: Props) {
   const { state, selectChannel } = useChat();
   const channels = useMemo(
@@ -54,6 +56,8 @@ export function Sidebar({
   );
   const me = state.users[state.me.id] ?? state.me;
   const connected = state.status === "open";
+  const dueCount = state.reminders?.filter((r) => r.fired_at).length ?? 0;
+  const upcomingCount = state.reminders?.filter((r) => !r.fired_at).length ?? 0;
 
   return (
     <nav className="sidebar" aria-label="Kênh">
@@ -128,6 +132,17 @@ export function Sidebar({
         <button className="sidebar-action" onClick={onJoinByLink}>
           <Icon name="link" size={16} />
           Tham gia bằng link mời
+        </button>
+        <button className="sidebar-action" onClick={onReminders}>
+          <Icon name="clock" size={16} />
+          Nhắc việc
+          {dueCount > 0 ? (
+            <span className="badge badge-mention" aria-label={`${dueCount} nhắc việc đến giờ`}>
+              {dueCount}
+            </span>
+          ) : (
+            upcomingCount > 0 && <span className="sidebar-action-count">{upcomingCount}</span>
+          )}
         </button>
 
         <div className="sidebar-heading sidebar-heading-dm">

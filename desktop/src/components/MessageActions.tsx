@@ -204,6 +204,7 @@ export type MessageActionSet = {
   onPin?: () => void;
   pinned?: boolean;
   onForward?: () => void;
+  onRemind?: () => void; // nhắc tôi về tin này
 };
 
 type ToolbarProps = MessageActionSet & {
@@ -221,6 +222,7 @@ export function MessageToolbar({
   onPin,
   pinned,
   onForward,
+  onRemind,
 }: ToolbarProps) {
   const { toggleReaction } = useChat();
   const [menu, setMenu] = useState(false);
@@ -310,6 +312,7 @@ export function MessageToolbar({
         <div className="more-menu" role="menu">
           {item(pinned ? "Bỏ ghim" : "Ghim tin nhắn", "pin", onPin)}
           {item("Chuyển tiếp", "forward", onForward)}
+          {item("Nhắc tôi về tin này", "clock", onRemind)}
           {message.content && item("Sao chép nội dung", "copy", () => void copyText(message.content))}
           {item("Sửa tin nhắn", "pencil", onEdit)}
           {item("Xoá tin nhắn", "trash", onDelete, true)}
@@ -414,6 +417,7 @@ export function MessageActionSheet({
   onPin,
   pinned,
   onForward,
+  onRemind,
   onShowReactions,
 }: MessageActionSet & {
   message: Message;
@@ -522,6 +526,19 @@ export function MessageActionSheet({
                 >
                   <Icon name="forward" />
                   Chuyển tiếp
+                </button>
+              )}
+              {onRemind && (
+                <button
+                  type="button"
+                  className="sheet-action"
+                  onClick={() => {
+                    onClose();
+                    onRemind();
+                  }}
+                >
+                  <Icon name="clock" />
+                  Nhắc tôi về tin này
                 </button>
               )}
               {onPin && (

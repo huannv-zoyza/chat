@@ -14,6 +14,7 @@ import (
 //	message.updated  {message}                               tin được sửa hoặc bị xoá (deleted_at)
 //	key.updated      {user_id, public_key}                   ai đó tạo/đổi khoá mã hoá đầu cuối
 //	poll.updated     {channel_id, message_id, poll}          số phiếu / trạng thái bình chọn thay đổi
+//	reminder.due     {reminder}                              tới giờ nhắc việc (chỉ gửi cho người đặt)
 //	typing           {channel_id, user_id}                   ai đó đang gõ
 //	presence         {user_id, online}                       ai đó vừa online/offline
 //	user.updated     {user}                                  ai đó đổi hồ sơ

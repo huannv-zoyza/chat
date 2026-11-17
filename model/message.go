@@ -84,11 +84,15 @@ type ThreadSummary struct {
 
 // Poll: bình chọn gắn với một tin nhắn.
 type Poll struct {
-	Question  string       `json:"question"`
-	Multiple  bool         `json:"multiple"`
-	Anonymous bool         `json:"anonymous"`
-	ClosedAt  *time.Time   `json:"closed_at,omitempty"`
-	Options   []PollOption `json:"options"`
+	Question  string     `json:"question"`
+	Multiple  bool       `json:"multiple"`
+	Anonymous bool       `json:"anonymous"`
+	ClosedAt  *time.Time `json:"closed_at,omitempty"`
+	// Hạn chót: tới giờ thì tự kết thúc.
+	ClosesAt *time.Time `json:"closes_at,omitempty"`
+	// Cho mọi người thêm lựa chọn.
+	AllowAdd bool         `json:"allow_add,omitempty"`
+	Options  []PollOption `json:"options"`
 	// Số người đã bình chọn (một người chọn nhiều đáp án vẫn tính 1).
 	Voters int `json:"voters"`
 	// Các lựa chọn của chính người đang xem. Chỉ có trong phản hồi riêng cho người đó
@@ -102,4 +106,15 @@ type PollOption struct {
 	Votes int    `json:"votes"`
 	// Ai đã chọn (bỏ trống nếu bình chọn ẩn danh).
 	VoterIDs []int64 `json:"voter_ids,omitempty"`
+}
+
+// Reminder: "nhắc tôi về tin này" của một người.
+type Reminder struct {
+	ID        int64      `json:"id"`
+	MessageID int64      `json:"message_id"`
+	RemindAt  time.Time  `json:"remind_at"`
+	Note      string     `json:"note,omitempty"`
+	FiredAt   *time.Time `json:"fired_at,omitempty"` // đã đến giờ
+	CreatedAt time.Time  `json:"created_at"`
+	Message   *Message   `json:"message,omitempty"`
 }

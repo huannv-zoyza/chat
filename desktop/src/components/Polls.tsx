@@ -3,6 +3,7 @@ import { ApiError, type Message, type Poll } from "../lib/api";
 import { displayName } from "../lib/format";
 import { useChat } from "../state/ChatProvider";
 import { Avatar, Dialog, FormError, Icon } from "./ui";
+import { formatLeft, formatWhen, toLocalInput } from "./Reminders";
 
 const MAX_OPTIONS = 10;
 
@@ -15,13 +16,15 @@ function myVotes(poll: Poll, meId: number): number[] {
 /* ---------- Bình chọn trong tin nhắn ---------- */
 
 export function PollView({ message }: { message: Message }) {
-  const { state, vote, closePoll } = useChat();
+  const { state, vote, closePoll, addPollOption } = useChat();
+  const [adding, setAdding] = useState("");
   const poll = message.poll!;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [voters, setVoters] = useState(false);
   const mine = myVotes(poll, state.me.id);
-  const closed = !!poll.closed_at;
+  // tới hạn chót thì coi như đã kết thúc ngay (máy chủ chốt trong vòng ~15 giây)
+  const closed = !!poll.closed_at || (!!poll.closes_at && new Date(poll.closes_at).getTime() <= Date.now());
   const isOwner = message.user_id === state.me.id;
   const top = Math.max(0, ...poll.options.map((o) => o.votes));
 
@@ -48,8 +51,18 @@ export function PollView({ message }: { message: Message }) {
   const meta = [
     poll.multiple ? "Chọn nhiều đáp án" : "Chọn một đáp án",
     poll.anonymous && "Ẩn danh",
-    closed && "Đã kết thúc",
+    closed ? "Đã kết thúc" : poll.closes_at && `Kết thúc ${formatWhen(poll.closes_at)} (${formatLeft(poll.closes_at)})`,
   ].filter(Boolean);
+  const canAdd = !!poll.allow_add && !closed && poll.options.length < MAX_OPTIONS;
+  const submitAdd = (e: FormEvent) => {
+    e.preventDefault();
+    const t = adding.trim();
+    if (!t) return;
+    void run(async () => {
+      await addPollOption(message.id, t);
+      setAdding("");
+    });
+  };
 
   return (
     <div className={`poll${closed ? " is-closed" : ""}`}>
@@ -99,6 +112,24 @@ export function PollView({ message }: { message: Message }) {
           );
         })}
       </ul>
+
+      {canAdd && (
+        <form className="poll-add" onSubmit={submitAdd}>
+          <input
+            value={adding}
+            onChange={(e) => setAdding(e.target.value)}
+            placeholder="+ Thêm lựa chọn"
+            maxLength={100}
+            aria-label="Thêm lựa chọn"
+            disabled={busy}
+          />
+          {adding.trim() && (
+            <button className="btn btn-sm btn-primary" disabled={busy}>
+              Thêm
+            </button>
+          )}
+        </form>
+      )}
 
       <div className="poll-foot">
         {!poll.anonymous && poll.voters > 0 ? (
@@ -166,6 +197,9 @@ export function CreatePollDialog({ channelId, onClose }: { channelId: number; on
   const [options, setOptions] = useState(["", ""]);
   const [multiple, setMultiple] = useState(false);
   const [anonymous, setAnonymous] = useState(false);
+  const [allowAdd, setAllowAdd] = useState(false);
+  const [deadline, setDeadline] = useState<string>("none");
+  const [customDeadline, setCustomDeadline] = useState(() => toLocalInput(new Date(Date.now() + 86400000)));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const optionRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -192,7 +226,23 @@ export function CreatePollDialog({ channelId, onClose }: { channelId: number; on
     if (new Set(lower).size !== lower.length) return setError("Có hai lựa chọn giống nhau.");
     setBusy(true);
     try {
-      await createPoll(channelId, { question: question.trim(), options: filled, multiple, anonymous });
+      const hours: Record<string, number> = { "1h": 1, "3h": 3, "1d": 24, "3d": 72, "7d": 168 };
+      let closesAt: Date | undefined;
+      if (deadline === "custom") closesAt = new Date(customDeadline);
+      else if (hours[deadline]) closesAt = new Date(Date.now() + hours[deadline] * 3600000);
+      if (closesAt && (isNaN(closesAt.getTime()) || closesAt.getTime() < Date.now() + 60000)) {
+        setError("Hạn chót phải ở tương lai.");
+        setBusy(false);
+        return;
+      }
+      await createPoll(channelId, {
+        question: question.trim(),
+        options: filled,
+        multiple,
+        anonymous,
+        allow_add: allowAdd,
+        ...(closesAt ? { closes_at: closesAt.toISOString() } : {}),
+      });
       onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Không tạo được bình chọn.");
@@ -260,6 +310,35 @@ export function CreatePollDialog({ channelId, onClose }: { channelId: number; on
             Bình chọn ẩn danh
             <small>Mọi người chỉ thấy số phiếu, không thấy ai chọn gì. Không đổi được sau khi tạo.</small>
           </span>
+        </label>
+        <label className="check-field">
+          <input type="checkbox" checked={allowAdd} onChange={(e) => setAllowAdd(e.target.checked)} />
+          <span>
+            Cho mọi người thêm lựa chọn
+            <small>Thành viên kênh tự thêm đáp án khác (tối đa 10).</small>
+          </span>
+        </label>
+        <label className="field">
+          <span>Hạn chót</span>
+          <select value={deadline} onChange={(e) => setDeadline(e.target.value)}>
+            <option value="none">Không có (kết thúc thủ công)</option>
+            <option value="1h">Sau 1 giờ</option>
+            <option value="3h">Sau 3 giờ</option>
+            <option value="1d">Sau 1 ngày</option>
+            <option value="3d">Sau 3 ngày</option>
+            <option value="7d">Sau 1 tuần</option>
+            <option value="custom">Chọn ngày giờ…</option>
+          </select>
+          {deadline === "custom" && (
+            <input
+              type="datetime-local"
+              value={customDeadline}
+              min={toLocalInput(new Date())}
+              onChange={(e) => setCustomDeadline(e.target.value)}
+              aria-label="Hạn chót"
+            />
+          )}
+          <small>Tới hạn chót bình chọn tự kết thúc.</small>
         </label>
         <FormError>{error}</FormError>
         <div className="dialog-actions">

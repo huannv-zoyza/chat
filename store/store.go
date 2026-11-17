@@ -961,6 +961,8 @@ type NewPoll struct {
 	Options   []string
 	Multiple  bool
 	Anonymous bool
+	ClosesAt  *time.Time
+	AllowAdd  bool
 }
 
 // CreatePoll tạo tin nhắn chứa bình chọn (tin không có nội dung chữ).
@@ -977,8 +979,8 @@ func (s *Store) CreatePoll(ctx context.Context, channelID, userID int64, p NewPo
 		return model.Message{}, err
 	}
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO polls (message_id, question, multiple, anonymous) VALUES (?, ?, ?, ?)`,
-		id, p.Question, p.Multiple, p.Anonymous); err != nil {
+		`INSERT INTO polls (message_id, question, multiple, anonymous, closes_at, allow_add) VALUES (?, ?, ?, ?, ?, ?)`,
+		id, p.Question, p.Multiple, p.Anonymous, nullTime(p.ClosesAt), p.AllowAdd); err != nil {
 		return model.Message{}, err
 	}
 	for i, text := range p.Options {
@@ -1006,13 +1008,13 @@ func (s *Store) Vote(ctx context.Context, messageID, userID int64, optionIDs []i
 		return err
 	}
 	defer tx.Rollback()
-	var multiple bool
-	var closed sql.NullTime
-	if err := tx.QueryRowContext(ctx,
-		`SELECT multiple, closed_at FROM polls WHERE message_id = ?`, messageID).Scan(&multiple, &closed); err != nil {
+	var multiple, closed bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT multiple, closed_at IS NOT NULL OR (closes_at IS NOT NULL AND closes_at <= ?)
+		FROM polls WHERE message_id = ?`, DBTime(time.Now()), messageID).Scan(&multiple, &closed); err != nil {
 		return notFound(err)
 	}
-	if closed.Valid {
+	if closed {
 		return ErrPollClosed
 	}
 	if !multiple && len(optionIDs) > 1 {
@@ -1055,7 +1057,8 @@ func (s *Store) Vote(ctx context.Context, messageID, userID int64, optionIDs []i
 func (s *Store) SetPollClosed(ctx context.Context, messageID int64, closed bool) error {
 	q := `UPDATE polls SET closed_at = CURRENT_TIMESTAMP WHERE message_id = ? AND closed_at IS NULL`
 	if !closed {
-		q = `UPDATE polls SET closed_at = NULL WHERE message_id = ?`
+		// mở lại: bỏ luôn hạn chót (nếu không sẽ tự đóng ngay)
+		q = `UPDATE polls SET closed_at = NULL, closes_at = NULL WHERE message_id = ?`
 	}
 	_, err := s.db.ExecContext(ctx, q, messageID)
 	return err
@@ -1092,7 +1095,7 @@ func (s *Store) MyPollVotes(ctx context.Context, userID int64, messageIDs []int6
 // loadPolls gắn bình chọn (lựa chọn, số phiếu, ai chọn nếu không ẩn danh) vào các tin.
 func (s *Store) loadPolls(ctx context.Context, msgs []model.Message, idx map[int64]int, in string, args []any) error {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT message_id, question, multiple, anonymous, closed_at FROM polls WHERE message_id IN `+in, args...)
+		SELECT message_id, question, multiple, anonymous, closed_at, closes_at, allow_add FROM polls WHERE message_id IN `+in, args...)
 	if err != nil {
 		return err
 	}
@@ -1100,7 +1103,7 @@ func (s *Store) loadPolls(ctx context.Context, msgs []model.Message, idx map[int
 	for rows.Next() {
 		var mid int64
 		p := &model.Poll{Options: []model.PollOption{}}
-		if err := rows.Scan(&mid, &p.Question, &p.Multiple, &p.Anonymous, &p.ClosedAt); err != nil {
+		if err := rows.Scan(&mid, &p.Question, &p.Multiple, &p.Anonymous, &p.ClosedAt, &p.ClosesAt, &p.AllowAdd); err != nil {
 			rows.Close()
 			return err
 		}

@@ -1767,6 +1767,100 @@ button {
   font-weight: 600;
   font-size: var(--step-1);
 }
+.profile-preview-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.profile-preview-text .saved-note {
+  margin: 0.2rem 0 0;
+}
+
+/* Ảnh đại diện bấm được để chọn ảnh từ máy */
+.avatar-pick {
+  position: relative;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 28%;
+  background: none;
+  cursor: pointer;
+  line-height: 0;
+}
+.avatar-pick:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 3px;
+}
+.avatar-pick-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 28%;
+  background: rgb(15 22 30 / 0.5);
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.avatar-pick:hover .avatar-pick-overlay,
+.avatar-pick:focus-visible .avatar-pick-overlay,
+.avatar-pick:disabled .avatar-pick-overlay {
+  opacity: 1;
+}
+.avatar-pick:disabled {
+  cursor: progress;
+}
+@media (hover: none) {
+  /* màn hình cảm ứng: luôn hiện biểu tượng máy ảnh ở góc */
+  .avatar-pick-overlay {
+    opacity: 1;
+    inset: auto -4px -4px auto;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--btn);
+    color: var(--btn-text);
+    box-shadow: 0 0 0 2px var(--canvas);
+  }
+  .avatar-pick-overlay .icon {
+    width: 14px;
+    height: 14px;
+  }
+}
+.avatar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+}
+.btn-sm {
+  min-height: 2rem;
+  padding: 0.3rem 0.7rem;
+  font-size: var(--step--1);
+}
+.btn-quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+.btn-quiet:hover:not(:disabled) {
+  color: var(--warn);
+  border-color: transparent;
+}
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 .segmented {
   display: inline-flex;

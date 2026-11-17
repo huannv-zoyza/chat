@@ -73,6 +73,8 @@ Lỗi trả về `{"error": "<câu hiển thị cho người dùng>"}`.
 | POST | `/api/auth/logout` | Huỷ phiên hiện tại, đóng websocket của phiên |
 | GET | `/api/me` | Thông tin tài khoản |
 | PATCH | `/api/me` | `{display_name?, status_text?, avatar?}` |
+| POST | `/api/me/avatar` | multipart `file` (PNG/JPEG/GIF/WebP ≤ 5 MB) → đặt làm ảnh đại diện |
+| GET | `/api/avatars/{key}` | ảnh đại diện đã tải lên (công khai) |
 | PUT | `/api/me/password` | `{current_password, new_password}`; đăng xuất các thiết bị khác |
 | GET | `/api/channels` | Kênh đã tham gia, kèm `unread_count`, `member_count` |
 | GET | `/api/channels/discover` | Kênh chưa tham gia |

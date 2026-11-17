@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { ApiError } from "../lib/api";
 import { applyTheme, getTheme, type ThemePref } from "../lib/theme";
 import { servedByServer } from "../lib/platform";
@@ -10,7 +10,8 @@ import {
   showNotification,
 } from "../lib/notify";
 import { useChat } from "../state/ChatProvider";
-import { Avatar, Dialog, FormError } from "./ui";
+import { AVATAR_ACCEPT, prepareAvatar } from "../lib/image";
+import { Avatar, Dialog, FormError, Icon } from "./ui";
 
 type Tab = "profile" | "account" | "app";
 
@@ -64,8 +65,48 @@ function ProfileTab() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState<"upload" | "remove" | null>(null);
+  const [photoNote, setPhotoNote] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const preview = { ...me, display_name: displayName || me.username, avatar: avatar.trim() || null };
+  // Ảnh đã tải lên server ("/api/avatars/…") thì không hiện trong ô link.
+  const uploaded = avatar.startsWith("/");
+
+  const pickPhoto = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // chọn lại cùng file vẫn kích hoạt
+    if (!file) return;
+    setPhotoBusy("upload");
+    setError(null);
+    setPhotoNote(null);
+    try {
+      const user = await api.uploadAvatar(await prepareAvatar(file));
+      dispatch({ type: "me.updated", me: user });
+      setAvatar(user.avatar ?? "");
+      setPhotoNote("Đã cập nhật ảnh đại diện.");
+    } catch (err) {
+      setError(err instanceof Error && !(err instanceof ApiError) ? err.message : errMsg(err));
+    } finally {
+      setPhotoBusy(null);
+    }
+  };
+
+  const removePhoto = async () => {
+    setPhotoBusy("remove");
+    setError(null);
+    setPhotoNote(null);
+    try {
+      const user = await api.updateMe({ avatar: "" });
+      dispatch({ type: "me.updated", me: user });
+      setAvatar("");
+      setPhotoNote("Đã xoá ảnh đại diện.");
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setPhotoBusy(null);
+    }
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -86,11 +127,41 @@ function ProfileTab() {
   return (
     <form className="dialog-form" onSubmit={submit}>
       <div className="profile-preview">
-        <Avatar user={preview} size={56} />
-        <div>
+        <button
+          type="button"
+          className="avatar-pick"
+          onClick={() => fileRef.current?.click()}
+          disabled={!!photoBusy}
+          aria-label="Chọn ảnh đại diện từ máy"
+          title="Chọn ảnh từ máy"
+        >
+          <Avatar user={preview} size={64} />
+          <span className="avatar-pick-overlay" aria-hidden>
+            {photoBusy === "upload" ? <span className="spinner" /> : <Icon name="camera" size={20} />}
+          </span>
+        </button>
+        <div className="profile-preview-text">
           <div className="profile-preview-name">{preview.display_name}</div>
           <div className="muted">{statusText || "@" + me.username}</div>
+          <div className="avatar-actions">
+            <button type="button" className="btn btn-sm" onClick={() => fileRef.current?.click()} disabled={!!photoBusy}>
+              <Icon name="upload" size={15} />
+              {photoBusy === "upload" ? "Đang tải lên…" : "Chọn ảnh từ máy"}
+            </button>
+            {me.avatar && (
+              <button type="button" className="btn btn-sm btn-quiet" onClick={removePhoto} disabled={!!photoBusy}>
+                <Icon name="trash" size={15} />
+                {photoBusy === "remove" ? "Đang xoá…" : "Xoá ảnh"}
+              </button>
+            )}
+          </div>
+          {photoNote && (
+            <span className="saved-note" role="status">
+              {photoNote}
+            </span>
+          )}
         </div>
+        <input ref={fileRef} type="file" accept={AVATAR_ACCEPT} hidden onChange={pickPhoto} />
       </div>
 
       <label className="field">
@@ -107,14 +178,15 @@ function ProfileTab() {
         />
       </label>
       <label className="field">
-        <span>Ảnh đại diện (đường dẫn ảnh)</span>
+        <span>Hoặc dùng link ảnh</span>
         <input
-          value={avatar}
+          value={uploaded ? "" : avatar}
           onChange={(e) => setAvatar(e.target.value)}
-          placeholder="https://…"
+          placeholder={uploaded ? "Đang dùng ảnh tải lên từ máy" : "https://…"}
           spellCheck={false}
+          inputMode="url"
         />
-        <small>Để trống để dùng chữ cái đầu của tên.</small>
+        <small>Ảnh từ máy sẽ được cắt vuông và thu nhỏ còn 256×256. Không có ảnh thì dùng chữ cái đầu của tên.</small>
       </label>
 
       <FormError>{error}</FormError>

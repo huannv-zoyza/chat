@@ -94,6 +94,7 @@ Chi tiết API, giao thức websocket và cấu trúc frontend: [desktop/README.
   File video/âm thanh tải lên cũng phát được trong tin.
 - Thả cảm xúc: rê chuột vào tin (điện thoại: nhấn giữ) để thả 👍 ❤️ 😂…; bấm lại để bỏ.
 - Trả lời theo luồng: "Trả lời trong luồng" mở panel bên phải; dòng chính chỉ hiện "N trả lời".
+- Ảnh đại diện: chọn ảnh từ máy (tự cắt vuông, thu nhỏ 256×256) hoặc dán link.
 - Đã xem: avatar nhỏ góc phải dưới tin mới nhất mà mỗi người đã xem (như Messenger); bấm vào để xem tên.
   Ai trả lời tin của bạn thì có thông báo.
 - Nhắc tên: gõ `@` để chọn người, `@all` để gọi cả kênh. Người được nhắc thấy tin tô sáng,

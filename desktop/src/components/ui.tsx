@@ -1,13 +1,21 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { PublicUser } from "../lib/api";
 import { displayName, initials, userHue } from "../lib/format";
 
 /* ---------- Avatar ---------- */
 
+/** Địa chỉ server, để ghép với ảnh tải lên server (đường dẫn tương đối "/api/avatars/…"). */
+export const ServerUrlContext = createContext("");
+
+export function assetUrl(src: string, serverUrl: string) {
+  return src.startsWith("/") ? serverUrl + src : src;
+}
+
 export function Avatar({ user, size = 36, online }: { user: PublicUser | undefined; size?: number; online?: boolean }) {
   const [broken, setBroken] = useState(false);
+  const serverUrl = useContext(ServerUrlContext);
   const name = displayName(user);
-  const src = user?.avatar && !broken ? user.avatar : null;
+  const src = user?.avatar && !broken ? assetUrl(user.avatar, serverUrl) : null;
 
   useEffect(() => setBroken(false), [user?.avatar]);
 
@@ -140,6 +148,13 @@ const paths: Record<string, ReactNode> = {
     </>
   ),
   link: <path d="M10 14a4.5 4.5 0 0 0 6.4 0l3.2-3.2a4.5 4.5 0 0 0-6.4-6.4l-1 1M14 10a4.5 4.5 0 0 0-6.4 0l-3.2 3.2a4.5 4.5 0 0 0 6.4 6.4l1-1" />,
+  camera: (
+    <>
+      <path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.5-2h6l1.5 2h2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5v-9Z" />
+      <circle cx="12" cy="12.5" r="3.5" />
+    </>
+  ),
+  trash: <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />,
   copy: (
     <>
       <rect x="9" y="9" width="12" height="12" rx="2" />

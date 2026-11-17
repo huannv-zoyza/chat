@@ -166,7 +166,7 @@ func (a *API) getMe(w http.ResponseWriter, r *http.Request) {
 // Trường nào không gửi lên (nil) thì giữ nguyên.
 type updateMeRequest struct {
 	DisplayName *string `json:"display_name"`
-	Avatar      *string `json:"avatar"` // "" để xoá ảnh
+	Avatar      *string `json:"avatar"` // "" để xoá ảnh; link http(s) hoặc "/api/avatars/<key>" đã tải lên
 	StatusText  *string `json:"status_text"`
 }
 
@@ -196,6 +196,13 @@ func (a *API) updateMe(w http.ResponseWriter, r *http.Request) {
 		v := strings.TrimSpace(*req.Avatar)
 		if v == "" {
 			avatar = nil
+		} else if avatarPathRe.MatchString(v) {
+			// ảnh đã tải lên: chỉ cho giữ ảnh của chính mình (không trỏ sang ảnh người khác)
+			if v != derefOr(me.Avatar, "") {
+				writeError(w, http.StatusBadRequest, "Hãy tải ảnh lên bằng nút chọn ảnh.")
+				return
+			}
+			avatar = &v
 		} else {
 			u, err := url.Parse(v)
 			if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || len(v) > 500 {
@@ -211,8 +218,9 @@ func (a *API) updateMe(w http.ResponseWriter, r *http.Request) {
 		internalError(w, r, err)
 		return
 	}
+	a.removeOldAvatar(me.Avatar, avatar)
 	// Báo cho mọi người đang online để cập nhật tên/ảnh trong danh sách tin nhắn.
-	a.hub.ToAll(mustJSON(userEvent{Type: "user.updated", User: user.Public()}))
+	a.broadcastUser(user)
 	writeJSON(w, http.StatusOK, user)
 }
 

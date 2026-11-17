@@ -147,13 +147,14 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
   async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
     let res: Response;
     try {
+      const form = body instanceof FormData;
       res = await fetch(serverUrl + path, {
         method,
         headers: {
-          ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+          ...(body !== undefined && !form ? { "Content-Type": "application/json" } : {}),
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: body !== undefined ? JSON.stringify(body) : undefined,
+        body: body === undefined ? undefined : form ? body : JSON.stringify(body),
       });
     } catch {
       throw new ApiError(0, `Không kết nối được tới ${serverUrl}. Kiểm tra server đã chạy chưa.`);
@@ -185,6 +186,12 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     me: () => request<User>("GET", "/api/me"),
     updateMe: (b: { display_name?: string; avatar?: string; status_text?: string }) =>
       request<User>("PATCH", "/api/me", b),
+    /** Tải ảnh đại diện lên (server lưu và đặt luôn làm ảnh đại diện). */
+    uploadAvatar: (file: File) => {
+      const fd = new FormData();
+      fd.append("file", file, file.name);
+      return request<User>("POST", "/api/me/avatar", fd);
+    },
     changePassword: (b: { current_password: string; new_password: string }) =>
       request<void>("PUT", "/api/me/password", b),
 

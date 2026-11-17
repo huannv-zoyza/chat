@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from "react";
 import { ApiError, type Api, type Message, type User, socketUrl } from "../lib/api";
 import { ChatSocket } from "../lib/socket";
+import { ServerUrlContext } from "../components/ui";
 import { displayName, newClientId } from "../lib/format";
 import { showNotification } from "../lib/notify";
 import { load, save } from "../lib/storage";
@@ -349,5 +350,9 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
 
   const value = useMemo<ChatContextValue>(() => ({ state, ...actions }), [state, actions]);
 
-  return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
+  return (
+    <ChatContext.Provider value={value}>
+      <ServerUrlContext.Provider value={serverUrl}>{children}</ServerUrlContext.Provider>
+    </ChatContext.Provider>
+  );
 }

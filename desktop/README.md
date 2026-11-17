@@ -78,6 +78,8 @@ Lỗi trả về `{"error": "<câu hiển thị cho người dùng>"}`.
 | GET | `/api/users?q=` | Tìm người dùng (để nhắn riêng) |
 | POST | `/api/dms` | `{user_id}` → mở/tạo cuộc trò chuyện riêng (kênh `kind: "dm"`) |
 | GET | `/api/gifs?q=&offset=` | Tìm GIF qua GIPHY (`q` rỗng: thịnh hành); `enabled: false` nếu server chưa có key |
+| GET/PUT | `/api/keys/me` | Khoá mã hoá đầu cuối của mình: `{public_key, backup}` (backup đã khoá bằng PIN); `replace: true` để thay khoá |
+| GET | `/api/users/{id}/key` | Khoá công khai của người khác |
 | PATCH | `/api/messages/{id}` | `{content}` sửa tin của mình |
 | DELETE | `/api/messages/{id}` | Xoá tin (người viết, hoặc chủ kênh) |
 | PUT | `/api/me/password` | `{current_password, new_password}`; đăng xuất các thiết bị khác |
@@ -115,6 +117,6 @@ Client gửi:
 
 Server gửi (danh sách đầy đủ ở `controller/events.go`): `ready`, `message.new`, `typing`, `presence`,
 `user.updated`, `channel.joined`, `channel.left`, `channel.updated`, `channel.deleted`,
-`member.joined`, `member.left`, `reaction.updated`, `thread.updated`, `read.updated`, `message.updated`, `error`, `pong`.
+`member.joined`, `member.left`, `reaction.updated`, `thread.updated`, `read.updated`, `message.updated`, `key.updated`, `error`, `pong`.
 
 Mỗi kết nối nhận tin của **mọi** kênh mình tham gia, nên số chưa đọc cập nhật tức thì.

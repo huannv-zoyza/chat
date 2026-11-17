@@ -12,6 +12,7 @@ import {
 import { useChat } from "../state/ChatProvider";
 import { AVATAR_ACCEPT, prepareAvatar } from "../lib/image";
 import { Avatar, Dialog, FormError, Icon } from "./ui";
+import { E2EESettings } from "./E2EEDialogs";
 
 type Tab = "profile" | "account" | "app";
 
@@ -144,7 +145,12 @@ function ProfileTab() {
           <div className="profile-preview-name">{preview.display_name}</div>
           <div className="muted">{statusText || "@" + me.username}</div>
           <div className="avatar-actions">
-            <button type="button" className="btn btn-sm" onClick={() => fileRef.current?.click()} disabled={!!photoBusy}>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => fileRef.current?.click()}
+              disabled={!!photoBusy}
+            >
               <Icon name="upload" size={15} />
               {photoBusy === "upload" ? "Đang tải lên…" : "Chọn ảnh từ máy"}
             </button>
@@ -247,7 +253,12 @@ function AccountTab() {
         <h3 className="section-title">Đổi mật khẩu</h3>
         <label className="field">
           <span>Mật khẩu hiện tại</span>
-          <input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+          <input
+            type="password"
+            autoComplete="current-password"
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+          />
         </label>
         <label className="field">
           <span>Mật khẩu mới</span>
@@ -256,7 +267,12 @@ function AccountTab() {
         </label>
         <label className="field">
           <span>Nhập lại mật khẩu mới</span>
-          <input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+          <input
+            type="password"
+            autoComplete="new-password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+          />
         </label>
         <FormError>{error}</FormError>
         <div className="dialog-actions">
@@ -270,6 +286,8 @@ function AccountTab() {
           </button>
         </div>
       </form>
+
+      <E2EESettings />
 
       <section className="danger-zone">
         <h3>Đăng xuất</h3>
@@ -351,8 +369,8 @@ function AppTab() {
           </>
         ) : (
           <small>
-            Trình duyệt chỉ cho hiện thông báo khi mở Go Chat qua HTTPS hoặc localhost. Bạn vẫn thấy tin nhắc tên được tô
-            sáng và đếm riêng ở danh sách kênh; muốn có thông báo hệ thống, hãy dùng app desktop.
+            Trình duyệt chỉ cho hiện thông báo khi mở Go Chat qua HTTPS hoặc localhost. Bạn vẫn thấy tin nhắc tên được
+            tô sáng và đếm riêng ở danh sách kênh; muốn có thông báo hệ thống, hãy dùng app desktop.
           </small>
         )}
       </fieldset>

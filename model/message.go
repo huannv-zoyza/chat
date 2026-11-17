@@ -30,6 +30,8 @@ type Message struct {
 	Thread *ThreadSummary `db:"-" json:"thread,omitempty"`
 	// Sticker hoặc GIF (cột embed, JSON). Tin có embed thì không có nội dung chữ.
 	Embed *Embed `db:"embed" json:"embed,omitempty"`
+	// Tin mã hoá đầu cuối (chỉ trong tin nhắn riêng): JSON {v, s, r, n, c}, server không đọc được.
+	Cipher string `db:"cipher" json:"cipher,omitempty"`
 }
 
 // Embed: sticker (bộ sticker có sẵn trong app) hoặc GIF (từ GIPHY).

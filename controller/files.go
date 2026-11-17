@@ -72,13 +72,32 @@ func (a *API) createMessageWithFiles(w http.ResponseWriter, r *http.Request) {
 
 	content := strings.TrimSpace(r.FormValue("content"))
 	clientID := r.FormValue("client_id")
+	// Tin mã hoá đầu cuối kèm file: file đã được mã hoá trên máy người gửi, tên/loại/khoá
+	// của file nằm trong cipher. Server lưu như file nhị phân, không đọc được.
+	cipher := r.FormValue("cipher")
+	if cipher != "" {
+		if msg := validateCipher(cipher); msg != "" {
+			writeError(w, http.StatusBadRequest, msg)
+			return
+		}
+		msg, err := a.cipherAllowed(r.Context(), ch.ID)
+		if err != nil {
+			internalError(w, r, err)
+			return
+		}
+		if msg != "" {
+			writeError(w, http.StatusBadRequest, msg)
+			return
+		}
+		content = ""
+	}
 	if len(clientID) > 64 {
 		clientID = clientID[:64]
 	}
 	files := r.MultipartForm.File["files"]
 
 	switch {
-	case content == "" && len(files) == 0:
+	case content == "" && cipher == "" && len(files) == 0:
 		writeError(w, http.StatusBadRequest, "Tin nhắn đang trống.")
 		return
 	case len(files) > maxFilesPerMsg:
@@ -89,7 +108,11 @@ func (a *API) createMessageWithFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, fh := range files {
-		if fh.Size > maxFileSize {
+		limit := int64(maxFileSize)
+		if cipher != "" {
+			limit += 1024 // file đã mã hoá dài hơn bản gốc 16 byte (tag)
+		}
+		if fh.Size > limit {
 			writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("File “%s” lớn hơn 20 MB.", cleanFileName(fh.Filename)))
 			return
 		}
@@ -133,7 +156,7 @@ func (a *API) createMessageWithFiles(w http.ResponseWriter, r *http.Request) {
 		parentID = &id
 	}
 
-	msg, err := a.createAndBroadcast(r.Context(), me, ch.ID, content, saved, clientID, parentID, nil)
+	msg, err := a.createAndBroadcast(r.Context(), me, ch.ID, content, saved, clientID, parentID, nil, cipher)
 	if err != nil {
 		internalError(w, r, err)
 		return
@@ -144,7 +167,7 @@ func (a *API) createMessageWithFiles(w http.ResponseWriter, r *http.Request) {
 
 // createAndBroadcast lưu tin (kèm mention) rồi phát message.new cho cả kênh.
 // Dùng chung cho tin gửi qua websocket và tin kèm file gửi qua HTTP.
-func (a *API) createAndBroadcast(ctx context.Context, me model.User, channelID int64, content string, atts []model.Attachment, clientID string, parentID *int64, embed *model.Embed) (model.Message, error) {
+func (a *API) createAndBroadcast(ctx context.Context, me model.User, channelID int64, content string, atts []model.Attachment, clientID string, parentID *int64, embed *model.Embed, cipher string) (model.Message, error) {
 	usernames, all := parseMentions(content)
 	mentionIDs, err := a.store.ResolveMentions(ctx, channelID, me.ID, usernames, all)
 	if err != nil {
@@ -158,6 +181,7 @@ func (a *API) createAndBroadcast(ctx context.Context, me model.User, channelID i
 		MentionIDs:  mentionIDs,
 		ParentID:    parentID,
 		Embed:       embed,
+		Cipher:      cipher,
 	})
 	if err != nil {
 		return model.Message{}, err

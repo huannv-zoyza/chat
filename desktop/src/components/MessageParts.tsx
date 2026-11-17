@@ -113,7 +113,8 @@ function fitSize(w: number, h: number) {
 }
 
 export function download(url: string, fileName: string) {
-  if (isTauri) {
+  // File đã giải mã (blob:) chỉ tồn tại trong app: lưu thẳng, không mở trình duyệt ngoài.
+  if (isTauri && !url.startsWith("blob:")) {
     // Webview của app không tự lưu file: nhờ trình duyệt mặc định tải về.
     void openExternal(url);
     return;
@@ -323,15 +324,17 @@ export function ImageViewer({ attachment, onClose }: { attachment: Attachment; o
           <Icon name="download" size={16} />
           <span className="btn-label">Tải xuống</span>
         </button>
-        <button
-          type="button"
-          className="viewer-btn"
-          onClick={() => void openExternal(api.fileUrl(attachment))}
-          aria-label={isTauri ? "Mở bằng trình duyệt" : "Mở tab mới"}
-        >
-          <Icon name="external" size={16} />
-          <span className="btn-label">{isTauri ? "Mở bằng trình duyệt" : "Mở tab mới"}</span>
-        </button>
+        {!attachment.url.startsWith("blob:") && (
+          <button
+            type="button"
+            className="viewer-btn"
+            onClick={() => void openExternal(api.fileUrl(attachment))}
+            aria-label={isTauri ? "Mở bằng trình duyệt" : "Mở tab mới"}
+          >
+            <Icon name="external" size={16} />
+            <span className="btn-label">{isTauri ? "Mở bằng trình duyệt" : "Mở tab mới"}</span>
+          </button>
+        )}
         <button type="button" className="viewer-btn viewer-close" onClick={onClose} aria-label="Đóng">
           <Icon name="x" />
         </button>

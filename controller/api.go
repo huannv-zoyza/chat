@@ -83,6 +83,10 @@ func (a *API) Handler(ui http.Handler) http.Handler {
 
 	mux.HandleFunc("GET /api/users", a.requireAuth(a.searchUsers))
 	mux.HandleFunc("GET /api/gifs", a.requireAuth(a.searchGifs))
+
+	mux.HandleFunc("GET /api/keys/me", a.requireAuth(a.getMyKey))
+	mux.HandleFunc("PUT /api/keys/me", a.requireAuth(a.putMyKey))
+	mux.HandleFunc("GET /api/users/{id}/key", a.requireAuth(a.getUserKey))
 	mux.HandleFunc("POST /api/dms", a.requireAuth(a.openDM))
 
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {

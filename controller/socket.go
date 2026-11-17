@@ -40,6 +40,7 @@ type clientRequest struct {
 	ClientID  string       `json:"client_id"`
 	ParentID  int64        `json:"parent_id"` // khác 0: trả lời trong luồng của tin này
 	Embed     *model.Embed `json:"embed"`
+	Cipher    string       `json:"cipher"` // tin mã hoá đầu cuối (chỉ trong tin nhắn riêng)
 }
 
 // serveSocket: GET /ws?token=<token>
@@ -54,7 +55,7 @@ func (a *API) serveSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Tin nhắn tối đa 4000 ký tự ~ 16KB UTF-8, cộng phần JSON.
-	conn.SetReadLimit(32 << 10)
+	conn.SetReadLimit(maxCipherBytes + 8<<10) // tin mã hoá + phần JSON
 
 	ctx := r.Context()
 
@@ -132,7 +133,14 @@ func (a *API) handleRequest(ctx context.Context, client *socket.Client, user mod
 	case "message.send":
 		content := strings.TrimSpace(req.Content)
 		var embed *model.Embed
-		if req.Embed != nil {
+		cipher := ""
+		if req.Cipher != "" {
+			if msg := validateCipher(req.Cipher); msg != "" {
+				reply(msg)
+				return
+			}
+			cipher, content = req.Cipher, "" // nội dung thật nằm trong cipher
+		} else if req.Embed != nil {
 			var msg string
 			if embed, msg = validateEmbed(req.Embed); msg != "" {
 				reply(msg)
@@ -161,6 +169,18 @@ func (a *API) handleRequest(ctx context.Context, client *socket.Client, user mod
 			reply("Bạn chưa tham gia kênh này.")
 			return
 		}
+		if cipher != "" {
+			msg, err := a.cipherAllowed(ctx, req.ChannelID)
+			if err != nil {
+				log.Printf("ws cipher channel: %v", err)
+				reply("Server gặp lỗi, thử gửi lại.")
+				return
+			}
+			if msg != "" {
+				reply(msg)
+				return
+			}
+		}
 		var parentID *int64
 		if req.ParentID > 0 {
 			msg, err := a.validateParent(ctx, req.ChannelID, req.ParentID)
@@ -175,7 +195,7 @@ func (a *API) handleRequest(ctx context.Context, client *socket.Client, user mod
 			}
 			parentID = &req.ParentID
 		}
-		if _, err := a.createAndBroadcast(ctx, user, req.ChannelID, content, nil, req.ClientID, parentID, embed); err != nil {
+		if _, err := a.createAndBroadcast(ctx, user, req.ChannelID, content, nil, req.ClientID, parentID, embed, cipher); err != nil {
 			log.Printf("ws create message: %v", err)
 			reply("Server gặp lỗi, thử gửi lại.")
 			return

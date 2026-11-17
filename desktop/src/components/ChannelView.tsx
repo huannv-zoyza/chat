@@ -19,6 +19,9 @@ import { COMPACT_QUERY, useMediaQuery } from "../lib/useMedia";
 import { ChannelSigil } from "./ChannelDialogs";
 import { ConfirmDeleteDialog, MessageEditor } from "./MessageEditor";
 import { EmbedView } from "./Embeds";
+import { EncryptedAttachments } from "./EncryptedAttachments";
+import { E2EEBanner, SafetyDialog, useDMEncryption } from "./E2EEDialogs";
+import { e2ee, useE2EE } from "../lib/e2ee";
 import { channelLabel, channelTitle, dmPeerId, isDM } from "../lib/channel";
 
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
@@ -41,6 +44,8 @@ export function ChannelView({ channel, membersOpen, onToggleMembers, onOpenSetti
   const peerId = dmPeerId(channel, state.me.id);
   const peer = peerId !== null ? state.users[peerId] : undefined;
   const peerOnline = peerId !== null && peerId !== state.me.id && state.status === "open" && !!state.online[peerId];
+  const enc = useDMEncryption(channel);
+  const [safetyOpen, setSafetyOpen] = useState(false);
   const composer = useRef<ComposerHandle>(null);
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
@@ -85,7 +90,14 @@ export function ChannelView({ channel, membersOpen, onToggleMembers, onOpenSetti
           <div className="room-heading room-heading-dm">
             <Avatar user={peer} size={38} online={peerId !== state.me.id ? peerOnline : undefined} />
             <div>
-              <h2 className="room-title">{label}</h2>
+              <h2 className="room-title">
+                {label}
+                {enc.encrypted && (
+                  <span className="room-lock" title="Được mã hoá đầu cuối" aria-label="Được mã hoá đầu cuối">
+                    <Icon name="lock" size={15} />
+                  </span>
+                )}
+              </h2>
               <p className="room-desc">
                 {peerId === state.me.id
                   ? "Ghi chú riêng, chỉ mình bạn thấy"
@@ -104,6 +116,18 @@ export function ChannelView({ channel, membersOpen, onToggleMembers, onOpenSetti
               {channel.name}
             </h2>
             {channel.description && <p className="room-desc">{channel.description}</p>}
+          </div>
+        )}
+        {direct && (
+          <div className="room-actions">
+            <button
+              className={`icon-btn${enc.encrypted ? " is-secure" : ""}`}
+              onClick={() => setSafetyOpen(true)}
+              title="Mã hoá đầu cuối"
+              aria-label="Mã hoá đầu cuối và mã an toàn"
+            >
+              <Icon name="lock" />
+            </button>
           </div>
         )}
         {!direct && (
@@ -146,7 +170,9 @@ export function ChannelView({ channel, membersOpen, onToggleMembers, onOpenSetti
 
       <MessageList channel={channel} />
       <TypingIndicator channelId={channel.id} />
+      {direct && <E2EEBanner channel={channel} />}
       <Composer ref={composer} channel={channel} />
+      {safetyOpen && <SafetyDialog channel={channel} onClose={() => setSafetyOpen(false)} />}
 
       {dragging && (
         <div className="drop-overlay" aria-hidden>
@@ -474,13 +500,22 @@ export function MessageRow(props: RowProps) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const deleted = !!message?.deleted_at;
+  // Tin mã hoá đầu cuối: giải mã ngay trên máy (có bộ nhớ đệm); render lại khi mở khoá bằng PIN.
+  useE2EE();
+  const dec = message?.cipher && !deleted ? e2ee.decrypt(message) : null;
+  const view: Message | undefined =
+    message && dec?.ok ? { ...message, content: dec.payload.text ?? "", embed: dec.payload.embed } : message;
+  const text = message?.cipher ? (view?.content ?? "") : content;
+  const encFiles = dec?.ok ? dec.payload.files : undefined;
   const editing = !!message && state.editingId === message.id;
   const live = !!message && !deleted; // tin đã gửi, chưa xoá: có thao tác
   const room = message ? state.channels[message.channel_id] : undefined;
   const ownMsg = !!message && message.user_id === state.me.id;
-  const embed = message?.embed ?? pending?.embed;
+  const embed = view?.embed ?? pending?.embed;
   const onEdit =
-    live && ownMsg && !message!.embed ? () => dispatch({ type: "edit.start", messageId: message!.id }) : undefined;
+    live && ownMsg && !view!.embed && (!message!.cipher || dec?.ok)
+      ? () => dispatch({ type: "edit.start", messageId: message!.id })
+      : undefined;
   const canDelete = live && (ownMsg || (!!room && !isDM(room) && room.owner_id === state.me.id));
   const onDelete = canDelete ? () => setConfirmDelete(true) : undefined;
   const longPress = useLongPress(() => setSheetOpen(true), live && compact && !editing);
@@ -527,16 +562,29 @@ export function MessageRow(props: RowProps) {
             <Icon name="trash" size={14} />
             Tin nhắn đã bị xoá
           </p>
+        ) : dec && !dec.ok ? (
+          <p className="msg-deleted msg-locked">
+            <Icon name="lock" size={14} />
+            {dec.reason === "locked"
+              ? "Tin nhắn được mã hoá đầu cuối. Nhập mã PIN để xem."
+              : "Không giải mã được tin này (có thể được mã hoá bằng khoá cũ)."}
+          </p>
         ) : editing ? (
-          <MessageEditor message={message!} />
+          <MessageEditor message={view!} />
         ) : embed ? (
           <EmbedView embed={embed} />
         ) : (
-          content && <MessageText content={content} meId={state.me.id} edited={message?.edited_at} />
+          text && <MessageText content={text} meId={state.me.id} edited={message?.edited_at} />
         )}
-        {content && message && !deleted && !editing && <LinkPreviews content={content} />}
-        {attachments && attachments.length > 0 && props.onOpenImage && (
-          <Attachments attachments={attachments} onOpenImage={props.onOpenImage} />
+        {/* Tin mã hoá không xem trước link: server sẽ phải tải link nên biết link đó */}
+        {text && message && !message.cipher && !deleted && !editing && <LinkPreviews content={text} />}
+        {encFiles && encFiles.length > 0 && props.onOpenImage ? (
+          <EncryptedAttachments files={encFiles} attachments={attachments ?? []} onOpenImage={props.onOpenImage} />
+        ) : (
+          !message?.cipher &&
+          attachments &&
+          attachments.length > 0 &&
+          props.onOpenImage && <Attachments attachments={attachments} onOpenImage={props.onOpenImage} />
         )}
         {pending?.files && pending.files.length > 0 && <LocalFiles files={pending.files} />}
         {message && <ReactionBar message={message} onAdd={setPickerAnchor} />}
@@ -575,7 +623,7 @@ export function MessageRow(props: RowProps) {
 
       {live && !compact && !editing && (
         <MessageToolbar
-          message={message!}
+          message={view!}
           onPick={setPickerAnchor}
           onReply={props.onOpenThread}
           onEdit={onEdit}
@@ -587,14 +635,14 @@ export function MessageRow(props: RowProps) {
       )}
       {message && sheetOpen && (
         <MessageActionSheet
-          message={message}
+          message={view!}
           onClose={() => setSheetOpen(false)}
           onReply={props.onOpenThread}
           onEdit={onEdit}
           onDelete={onDelete}
         />
       )}
-      {message && confirmDelete && <ConfirmDeleteDialog message={message} onClose={() => setConfirmDelete(false)} />}
+      {message && confirmDelete && <ConfirmDeleteDialog message={view!} onClose={() => setConfirmDelete(false)} />}
     </article>
   );
 }
@@ -603,6 +651,7 @@ export function MessageRow(props: RowProps) {
 
 function DMIntro({ channel }: { channel: Channel }) {
   const { state } = useChat();
+  const { encrypted } = useDMEncryption(channel);
   const peerId = dmPeerId(channel, state.me.id)!;
   const peer = state.users[peerId];
   const self = peerId === state.me.id;
@@ -615,6 +664,12 @@ function DMIntro({ channel }: { channel: Channel }) {
           ? "Chỗ ghi chú riêng của bạn: lưu link, nháp, việc cần làm. Không ai khác thấy."
           : `Đây là khởi đầu cuộc trò chuyện riêng giữa bạn và ${displayName(peer)}. Chỉ hai người thấy các tin nhắn ở đây.`}
       </p>
+      {encrypted && (
+        <p className="dm-e2ee-note">
+          <Icon name="lock" size={14} />
+          Tin nhắn mới được bảo mật bằng mã hoá đầu cuối: chỉ người trong cuộc trò chuyện đọc được.
+        </p>
+      )}
     </div>
   );
 }

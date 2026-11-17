@@ -72,6 +72,8 @@ export type Message = {
   /** Tin đã bị xoá: không còn nội dung, file, cảm xúc. */
   deleted_at?: string;
   embed?: Embed;
+  /** Tin mã hoá đầu cuối (tin nhắn riêng): nội dung thật nằm trong đây, content để trống. */
+  cipher?: string;
   user?: PublicUser;
   attachments?: Attachment[];
   /** Id những người được nhắc tên trong tin. */
@@ -228,7 +230,13 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
         "GET",
         `/api/gifs?q=${encodeURIComponent(q)}&offset=${offset}`,
       ),
-    editMessage: (id: number, content: string) => request<Message>("PATCH", `/api/messages/${id}`, { content }),
+    editMessage: (id: number, body: { content: string } | { cipher: string }) =>
+      request<Message>("PATCH", `/api/messages/${id}`, body),
+    /* Mã hoá đầu cuối */
+    myKey: () => request<{ public_key: string; backup?: string }>("GET", "/api/keys/me"),
+    putMyKey: (b: { public_key: string; backup: string; replace?: boolean }) =>
+      request<{ public_key: string; backup?: string }>("PUT", "/api/keys/me", b),
+    userKey: (id: number) => request<{ public_key: string }>("GET", `/api/users/${id}/key`),
     deleteMessage: (id: number) => request<Message>("DELETE", `/api/messages/${id}`),
     discover: () => request<Channel[]>("GET", "/api/channels/discover"),
     createChannel: (b: { name: string; description: string; is_private: boolean }) =>
@@ -250,7 +258,7 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
      */
     sendWithFiles: (
       channelId: number,
-      b: { content: string; clientId: string; files: File[]; parentId?: number },
+      b: { content: string; clientId: string; files: (File | Blob)[]; parentId?: number; cipher?: string },
       onProgress?: (fraction: number) => void,
     ) =>
       new Promise<Message>((resolve, reject) => {
@@ -258,7 +266,9 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
         form.append("content", b.content);
         form.append("client_id", b.clientId);
         if (b.parentId) form.append("parent_id", String(b.parentId));
-        for (const f of b.files) form.append("files", f, f.name);
+        if (b.cipher) form.append("cipher", b.cipher);
+        // file đã mã hoá không gửi tên thật lên server
+        b.files.forEach((f, i) => form.append("files", f, f instanceof File ? f.name : `encrypted-${i + 1}.bin`));
 
         const xhr = new XMLHttpRequest();
         xhr.open("POST", `${serverUrl}/api/channels/${channelId}/messages`);
@@ -283,7 +293,8 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
       }),
 
     /** URL tuyệt đối để hiển thị/tải file. download=true: buộc tải về thay vì mở. */
-    fileUrl: (a: Pick<Attachment, "url">, download = false) => serverUrl + a.url + (download ? "?download=1" : ""),
+    fileUrl: (a: Pick<Attachment, "url">, download = false) =>
+      a.url.startsWith("blob:") ? a.url : serverUrl + a.url + (download ? "?download=1" : ""),
 
     /** Thả/bỏ cảm xúc (bấm lại cùng emoji để bỏ). */
     toggleReaction: (messageId: number, emoji: string) =>

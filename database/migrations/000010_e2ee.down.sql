@@ -1,0 +1,2 @@
+ALTER TABLE messages DROP COLUMN cipher;
+DROP TABLE IF EXISTS user_keys;

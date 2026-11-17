@@ -5,6 +5,7 @@ import { isTouchDevice } from "../lib/useMedia";
 import { useChat } from "../state/ChatProvider";
 import { Dialog } from "./ui";
 import { embedSummary } from "./Embeds";
+import { e2ee } from "../lib/e2ee";
 
 const MAX_RUNES = 4000;
 
@@ -150,7 +151,12 @@ export function ConfirmDeleteDialog({ message, onClose }: { message: Message; on
 export function lastOwnMessage(items: Message[], meId: number): Message | undefined {
   for (let i = items.length - 1; i >= 0; i--) {
     const m = items[i];
-    if (m.user_id === meId && !m.deleted_at && !m.embed) return m;
+    if (m.user_id !== meId || m.deleted_at || m.embed) continue;
+    if (m.cipher) {
+      const dec = e2ee.decrypt(m);
+      if (!dec.ok || dec.payload.embed) continue;
+    }
+    return m;
   }
   return undefined;
 }

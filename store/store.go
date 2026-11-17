@@ -498,7 +498,7 @@ func (s *Store) ReadStates(ctx context.Context, channelID int64) ([]model.ReadSt
 
 /* ---------- Messages ---------- */
 
-const messageColumns = `msg.id, msg.channel_id, msg.user_id, msg.content, msg.created_at, msg.edited_at, msg.deleted_at, msg.embed,
+const messageColumns = `msg.id, msg.channel_id, msg.user_id, msg.content, msg.created_at, msg.edited_at, msg.deleted_at, msg.embed, msg.cipher,
 	msg.parent_id, COALESCE(p.user_id, 0),
 	u.id, u.username, u.display_name, u.avatar, u.status_text`
 
@@ -510,11 +510,12 @@ const messageFrom = ` FROM messages msg
 func scanMessage(row scanner) (model.Message, error) {
 	var m model.Message
 	var u model.PublicUser
-	var embed sql.NullString
-	err := row.Scan(&m.ID, &m.ChannelID, &m.UserID, &m.Content, &m.CreatedAt, &m.EditedAt, &m.DeletedAt, &embed,
+	var embed, cipher sql.NullString
+	err := row.Scan(&m.ID, &m.ChannelID, &m.UserID, &m.Content, &m.CreatedAt, &m.EditedAt, &m.DeletedAt, &embed, &cipher,
 		&m.ParentID, &m.ParentUserID,
 		&u.ID, &u.Username, &u.DisplayName, &u.Avatar, &u.StatusText)
 	m.User = &u
+	m.Cipher = cipher.String
 	if embed.Valid && embed.String != "" {
 		var e model.Embed
 		if json.Unmarshal([]byte(embed.String), &e) == nil {
@@ -554,6 +555,7 @@ type NewMessage struct {
 	MentionIDs  []int64
 	ParentID    *int64 // khác nil: trả lời trong luồng của tin này
 	Embed       *model.Embed
+	Cipher      string // tin mã hoá đầu cuối
 }
 
 // CreateMessage lưu tin nhắn, file đính kèm và người được nhắc trong cùng một transaction.
@@ -574,8 +576,8 @@ func (s *Store) CreateMessage(ctx context.Context, in NewMessage) (model.Message
 	}
 	var id int64
 	if err := tx.QueryRowContext(ctx,
-		`INSERT INTO messages (channel_id, user_id, content, parent_id, embed) VALUES (?, ?, ?, ?, ?) RETURNING id`,
-		in.ChannelID, in.UserID, in.Content, in.ParentID, embed).Scan(&id); err != nil {
+		`INSERT INTO messages (channel_id, user_id, content, parent_id, embed, cipher) VALUES (?, ?, ?, ?, ?, NULLIF(?, '')) RETURNING id`,
+		in.ChannelID, in.UserID, in.Content, in.ParentID, embed, in.Cipher).Scan(&id); err != nil {
 		return model.Message{}, err
 	}
 	for _, a := range in.Attachments {
@@ -628,6 +630,44 @@ func (s *Store) EditMessage(ctx context.Context, id int64, content string, menti
 	return s.GetMessage(ctx, id)
 }
 
+// EditCipher thay nội dung đã mã hoá của tin (sửa tin mã hoá đầu cuối).
+func (s *Store) EditCipher(ctx context.Context, id int64, cipher string) (model.Message, error) {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE messages SET cipher = ?, edited_at = CURRENT_TIMESTAMP WHERE id = ? AND deleted_at IS NULL AND cipher IS NOT NULL`,
+		cipher, id)
+	if err != nil {
+		return model.Message{}, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return model.Message{}, ErrNotFound
+	}
+	return s.GetMessage(ctx, id)
+}
+
+/* ---------- Khoá mã hoá đầu cuối ---------- */
+
+// UserKey: khoá công khai và bản sao lưu (đã khoá bằng PIN) của một người.
+type UserKey struct {
+	PublicKey string `json:"public_key"`
+	Backup    string `json:"backup,omitempty"`
+}
+
+func (s *Store) GetUserKey(ctx context.Context, userID int64) (UserKey, error) {
+	var k UserKey
+	err := s.db.QueryRowContext(ctx, `SELECT public_key, backup FROM user_keys WHERE user_id = ?`, userID).
+		Scan(&k.PublicKey, &k.Backup)
+	return k, notFound(err)
+}
+
+// PutUserKey tạo hoặc thay khoá của userID.
+func (s *Store) PutUserKey(ctx context.Context, userID int64, publicKey, backup string) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO user_keys (user_id, public_key, backup) VALUES (?, ?, ?)
+		ON CONFLICT (user_id) DO UPDATE SET public_key = excluded.public_key, backup = excluded.backup,
+			updated_at = CURRENT_TIMESTAMP`, userID, publicKey, backup)
+	return err
+}
+
 // DeleteMessage xoá mềm: giữ một dòng "tin đã bị xoá" (luồng trả lời vẫn còn gốc), xoá sạch nội dung,
 // file, cảm xúc, nhắc tên. Trả về storage key các file để xoá khỏi đĩa.
 func (s *Store) DeleteMessage(ctx context.Context, id int64) (model.Message, []string, error) {
@@ -654,7 +694,7 @@ func (s *Store) DeleteMessage(ctx context.Context, id int64) (model.Message, []s
 		`DELETE FROM attachments WHERE message_id = ?`,
 		`DELETE FROM message_mentions WHERE message_id = ?`,
 		`DELETE FROM message_reactions WHERE message_id = ?`,
-		`UPDATE messages SET content = '', embed = NULL, deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND deleted_at IS NULL`,
+		`UPDATE messages SET content = '', embed = NULL, cipher = NULL, deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND deleted_at IS NULL`,
 	} {
 		if _, err := tx.ExecContext(ctx, q, id); err != nil {
 			return model.Message{}, nil, err

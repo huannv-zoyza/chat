@@ -13,6 +13,7 @@ import (
 
 type editMessageRequest struct {
 	Content string `json:"content"`
+	Cipher  string `json:"cipher"` // tin mã hoá đầu cuối: nội dung mới đã mã hoá
 }
 
 func (a *API) editMessage(w http.ResponseWriter, r *http.Request) {
@@ -35,6 +36,29 @@ func (a *API) editMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	var req editMessageRequest
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+	// Tin mã hoá chỉ sửa bằng bản mã mới; tin thường chỉ sửa bằng chữ.
+	if msg.Cipher != "" || req.Cipher != "" {
+		if msg.Cipher == "" || req.Cipher == "" {
+			writeError(w, http.StatusBadRequest, "Không đổi được kiểu mã hoá của tin đã gửi.")
+			return
+		}
+		if m := validateCipher(req.Cipher); m != "" {
+			writeError(w, http.StatusBadRequest, m)
+			return
+		}
+		updated, err := a.store.EditCipher(r.Context(), msg.ID, req.Cipher)
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusBadRequest, "Tin nhắn đã bị xoá.")
+			return
+		}
+		if err != nil {
+			internalError(w, r, err)
+			return
+		}
+		a.hub.ToChannel(msg.ChannelID, mustJSON(messageUpdatedEvent{Type: "message.updated", Message: updated}), nil)
+		writeJSON(w, http.StatusOK, updated)
 		return
 	}
 	content := strings.TrimSpace(req.Content)

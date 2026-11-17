@@ -6,6 +6,7 @@ export type ServerEvent =
   | { type: "ready"; user: User; online_user_ids: number[] }
   | { type: "message.new"; message: Message; client_id?: string }
   | { type: "message.updated"; message: Message }
+  | { type: "key.updated"; user_id: number; public_key: string }
   | { type: "typing"; channel_id: number; user_id: number }
   | { type: "presence"; user_id: number; online: boolean }
   | { type: "user.updated"; user: PublicUser }
@@ -22,7 +23,15 @@ export type ServerEvent =
   | { type: "pong" };
 
 export type ClientRequest =
-  | { type: "message.send"; channel_id: number; content: string; client_id: string; parent_id?: number; embed?: Embed }
+  | {
+      type: "message.send";
+      channel_id: number;
+      content: string;
+      client_id: string;
+      parent_id?: number;
+      embed?: Embed;
+      cipher?: string;
+    }
   | { type: "typing"; channel_id: number }
   | { type: "read"; channel_id: number; message_id: number }
   | { type: "ping" };
@@ -143,7 +152,7 @@ export class ChatSocket {
    * Gửi tin nhắn. Đang mất kết nối thì xếp hàng, kết nối lại sẽ tự gửi.
    * Kết quả trả về qua sự kiện "message.new" (cùng client_id) hoặc onSendFailed.
    */
-  sendMessage(channelId: number, content: string, clientId: string, parentId?: number, embed?: Embed) {
+  sendMessage(channelId: number, content: string, clientId: string, parentId?: number, embed?: Embed, cipher?: string) {
     const req = {
       type: "message.send",
       channel_id: channelId,
@@ -151,6 +160,7 @@ export class ChatSocket {
       client_id: clientId,
       ...(parentId ? { parent_id: parentId } : {}),
       ...(embed ? { embed } : {}),
+      ...(cipher ? { cipher } : {}),
     } as const;
     if (this.status === "open" && this.rawSend(req)) {
       this.trackAck(clientId);

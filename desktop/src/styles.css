@@ -3398,3 +3398,115 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ---------- Mã hoá đầu cuối ---------- */
+
+.e2ee-hero {
+  display: grid;
+  place-items: center;
+  width: 3.25rem;
+  height: 3.25rem;
+  margin: 0 auto 0.25rem;
+  border-radius: 50%;
+  background: var(--signal-soft);
+  color: var(--text);
+}
+.e2ee-warn {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  margin: 0;
+  padding: 0.65rem 0.8rem;
+  border-radius: 8px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: var(--step--1);
+}
+.e2ee-warn .icon {
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+}
+.e2ee-forgot {
+  margin-right: auto;
+}
+.safety-number {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  justify-content: center;
+  gap: 0.45rem 1.1rem;
+  padding: 0.9rem;
+  border-radius: 10px;
+  background: var(--canvas);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 1.05rem;
+  letter-spacing: 0.06em;
+}
+.e2ee-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  margin: 0 1.75rem 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: var(--canvas);
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+.e2ee-banner .icon {
+  flex-shrink: 0;
+}
+.room-lock {
+  display: inline-grid;
+  place-items: center;
+  margin-left: 0.4rem;
+  color: var(--ok);
+  vertical-align: 0.1em;
+}
+.icon-btn.is-secure {
+  color: var(--ok);
+}
+.dm-e2ee-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.35rem !important;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: var(--canvas);
+  font-size: var(--step--1);
+}
+.msg-locked {
+  font-style: normal;
+}
+.enc-file {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.35rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  max-width: 22rem;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+.enc-file.is-error {
+  color: var(--warn);
+}
+.e2ee-fp code {
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  background: var(--canvas);
+}
+.e2ee-actions {
+  justify-content: flex-start;
+}
+@media (max-width: 720px) {
+  .e2ee-banner {
+    margin: 0 0.75rem 0.5rem;
+  }
+  .safety-number {
+    grid-template-columns: repeat(3, auto);
+  }
+}

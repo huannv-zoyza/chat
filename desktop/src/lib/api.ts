@@ -29,6 +29,10 @@ export type Channel = {
   unread_count: number;
   /** Số tin chưa đọc có nhắc tên mình. */
   mention_count: number;
+  /** "channel" = kênh thường, "dm" = tin nhắn riêng giữa hai người. */
+  kind: "channel" | "dm";
+  /** Tin nhắn riêng: hai người trong cuộc (một người nếu tự nhắn cho mình). */
+  dm_members?: PublicUser[];
 };
 
 export type Attachment = {
@@ -50,6 +54,10 @@ export type Message = {
   user_id: number;
   content: string;
   created_at: string;
+  /** Lần sửa gần nhất. */
+  edited_at?: string;
+  /** Tin đã bị xoá: không còn nội dung, file, cảm xúc. */
+  deleted_at?: string;
   user?: PublicUser;
   attachments?: Attachment[];
   /** Id những người được nhắc tên trong tin. */
@@ -196,6 +204,12 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
       request<void>("PUT", "/api/me/password", b),
 
     channels: () => request<Channel[]>("GET", "/api/channels"),
+    /** Tìm người dùng (để nhắn riêng). */
+    searchUsers: (q: string) => request<PublicUser[]>("GET", `/api/users?q=${encodeURIComponent(q)}`),
+    /** Mở (hoặc tạo) cuộc trò chuyện riêng với userId. */
+    openDM: (userId: number) => request<Channel>("POST", "/api/dms", { user_id: userId }),
+    editMessage: (id: number, content: string) => request<Message>("PATCH", `/api/messages/${id}`, { content }),
+    deleteMessage: (id: number) => request<Message>("DELETE", `/api/messages/${id}`),
     discover: () => request<Channel[]>("GET", "/api/channels/discover"),
     createChannel: (b: { name: string; description: string; is_private: boolean }) =>
       request<Channel>("POST", "/api/channels", b),

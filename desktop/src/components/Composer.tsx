@@ -12,6 +12,9 @@ import {
 import { type Channel, MAX_FILE_SIZE, MAX_FILES, type PublicUser } from "../lib/api";
 import { displayName } from "../lib/format";
 import { useChat } from "../state/ChatProvider";
+import { channelMessages } from "../state/chat";
+import { channelLabel, channelTitle, isDM } from "../lib/channel";
+import { lastOwnMessage } from "./MessageEditor";
 import { isTouchDevice } from "../lib/useMedia";
 import { EmojiPicker } from "./EmojiPicker";
 import { FileCard, formatSize, useObjectUrls } from "./MessageParts";
@@ -28,12 +31,7 @@ const MENTION_QUERY_RE = /(?:^|[^\p{L}\p{N}_.@])@([\p{L}\p{N}_.]{0,32})$/u;
 
 // So khớp không dấu: "quyen" khớp "Quyên".
 const fold = (s: string) =>
-  s
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .replace(/đ/g, "d")
-    .replace(/Đ/g, "D")
-    .toLowerCase();
+  s.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
 
 type Suggestion = { kind: "all" } | { kind: "user"; user: PublicUser };
 
@@ -47,7 +45,7 @@ type ComposerProps = {
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer({ channel, parentId }, handle) {
   const draftKey = parentId ? `t${parentId}` : `c${channel.id}`;
-  const { state, sendMessage, notifyTyping, loadMembers } = useChat();
+  const { state, dispatch, sendMessage, notifyTyping, loadMembers } = useChat();
   const [text, setText] = useState(() => drafts.get(draftKey)?.text ?? "");
   const [files, setFiles] = useState<File[]>(() => drafts.get(draftKey)?.files ?? []);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -156,7 +154,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const insertAtCaret = (insert: string, replaceFrom?: number) => {
     const el = ref.current;
     const caret = el?.selectionStart ?? text.length;
-    const from = replaceFrom ?? (el?.selectionStart ?? text.length);
+    const from = replaceFrom ?? el?.selectionStart ?? text.length;
     const to = replaceFrom !== undefined ? caret : (el?.selectionEnd ?? text.length);
     const next = text.slice(0, from) + insert + text.slice(to);
     pendingCaret.current = from + insert.length;
@@ -205,6 +203,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       if (e.key === "Escape") {
         e.preventDefault();
         setMention(null);
+        return;
+      }
+    }
+    // ↑ khi ô soạn đang trống: sửa tin gần nhất của mình.
+    if (e.key === "ArrowUp" && !e.shiftKey && !text && files.length === 0) {
+      const items = parentId ? (state.threads[parentId]?.replies ?? []) : channelMessages(state, channel.id).items;
+      const last = lastOwnMessage(items, state.me.id);
+      if (last) {
+        e.preventDefault();
+        dispatch({ type: "edit.start", messageId: last.id });
         return;
       }
     }
@@ -259,12 +267,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         </ul>
       )}
 
-      {emojiOpen && (
-        <EmojiPicker
-          onPick={(e) => insertAtCaret(e)}
-          onClose={() => setEmojiOpen(false)}
-        />
-      )}
+      {emojiOpen && <EmojiPicker onPick={(e) => insertAtCaret(e)} onClose={() => setEmojiOpen(false)} />}
 
       <div className={`composer-box${tooLong ? " is-invalid" : ""}`}>
         {files.length > 0 && (
@@ -332,8 +335,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 );
               }
             }}
-            placeholder={parentId ? "Trả lời trong luồng…" : `Nhắn vào ${channel.is_private ? "" : "#"}${channel.name}`}
-            aria-label={parentId ? "Trả lời trong luồng" : `Nhắn vào kênh ${channel.name}`}
+            placeholder={
+              parentId
+                ? "Trả lời trong luồng…"
+                : isDM(channel)
+                  ? `Nhắn cho ${channelTitle(channel, state.users, state.me.id)}`
+                  : `Nhắn vào ${channelLabel(channel, state.users, state.me.id)}`
+            }
+            aria-label={
+              parentId ? "Trả lời trong luồng" : `Nhắn vào ${channelLabel(channel, state.users, state.me.id)}`
+            }
             aria-autocomplete="list"
           />
 

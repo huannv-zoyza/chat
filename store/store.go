@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -125,12 +126,12 @@ func (s *Store) DeleteOtherSessions(ctx context.Context, userID int64, keepToken
 
 /* ---------- Channels ---------- */
 
-const channelColumns = `c.id, c.name, c.description, c.owner_id, c.is_private, COALESCE(c.invite_code, ''), c.created_at, c.updated_at,
+const channelColumns = `c.id, c.name, c.description, c.owner_id, c.is_private, c.kind, COALESCE(c.invite_code, ''), c.created_at, c.updated_at,
 	(SELECT COUNT(*) FROM channel_members m WHERE m.channel_id = c.id)`
 
 func scanChannel(row scanner, extra ...any) (model.Channel, error) {
 	var c model.Channel
-	dest := append([]any{&c.ID, &c.Name, &c.Description, &c.OwnerID, &c.IsPrivate, &c.InviteCode,
+	dest := append([]any{&c.ID, &c.Name, &c.Description, &c.OwnerID, &c.IsPrivate, &c.Kind, &c.InviteCode,
 		&c.CreatedAt, &c.UpdatedAt, &c.MemberCount}, extra...)
 	err := row.Scan(dest...)
 	return c, err
@@ -142,7 +143,7 @@ func (s *Store) ListMyChannels(ctx context.Context, userID int64) ([]model.Chann
 		SELECT `+channelColumns+`,
 			(SELECT COUNT(*) FROM messages msg
 			 WHERE msg.channel_id = c.id AND msg.id > cm.last_read_message_id AND msg.user_id <> cm.user_id
-			   AND msg.parent_id IS NULL),
+			   AND msg.parent_id IS NULL AND msg.deleted_at IS NULL),
 			(SELECT COUNT(*) FROM message_mentions mm JOIN messages msg ON msg.id = mm.message_id
 			 WHERE mm.user_id = cm.user_id AND msg.channel_id = c.id AND msg.id > cm.last_read_message_id)
 		FROM channels c
@@ -163,6 +164,110 @@ func (s *Store) ListMyChannels(ctx context.Context, userID int64) ([]model.Chann
 		c.UnreadCount = unread
 		c.MentionCount = mentions
 		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	if err := s.attachDMMembers(ctx, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// attachDMMembers điền hai người trong cuộc của các cuộc trò chuyện riêng.
+func (s *Store) attachDMMembers(ctx context.Context, chans []model.Channel) error {
+	for i := range chans {
+		if !chans[i].IsDM() {
+			continue
+		}
+		members, err := s.ListMembers(ctx, chans[i].ID)
+		if err != nil {
+			return err
+		}
+		chans[i].DMMembers = members
+	}
+	return nil
+}
+
+// DMName: tên nội bộ của cuộc trò chuyện riêng giữa a và b (không phụ thuộc thứ tự).
+func DMName(a, b int64) string {
+	if a > b {
+		a, b = b, a
+	}
+	return fmt.Sprintf("dm:%d:%d", a, b)
+}
+
+// OpenDM trả về cuộc trò chuyện riêng giữa a và b, tạo mới nếu chưa có (created = true).
+func (s *Store) OpenDM(ctx context.Context, a, b int64) (model.Channel, bool, error) {
+	name := DMName(a, b)
+	find := func() (model.Channel, error) {
+		c, err := scanChannel(s.db.QueryRowContext(ctx,
+			`SELECT `+channelColumns+` FROM channels c WHERE c.name = ? AND c.kind = 'dm'`, name))
+		if err != nil {
+			return c, notFound(err)
+		}
+		chans := []model.Channel{c}
+		if err := s.attachDMMembers(ctx, chans); err != nil {
+			return c, err
+		}
+		return chans[0], nil
+	}
+	if c, err := find(); err == nil {
+		return c, false, nil
+	} else if !errors.Is(err, ErrNotFound) {
+		return c, false, err
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.Channel{}, false, err
+	}
+	defer tx.Rollback()
+	var id int64
+	err = tx.QueryRowContext(ctx,
+		`INSERT INTO channels (name, description, owner_id, is_private, kind) VALUES (?, '', ?, 1, 'dm') RETURNING id`,
+		name, a).Scan(&id)
+	if isUniqueViolation(err) {
+		// người kia vừa mở cùng lúc
+		c, err := find()
+		return c, false, err
+	}
+	if err != nil {
+		return model.Channel{}, false, err
+	}
+	for _, uid := range []int64{a, b} {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT OR IGNORE INTO channel_members (channel_id, user_id) VALUES (?, ?)`, id, uid); err != nil {
+			return model.Channel{}, false, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return model.Channel{}, false, err
+	}
+	c, err := find()
+	return c, true, err
+}
+
+// SearchUsers tìm người dùng theo username/tên hiển thị (q rỗng: lấy theo thứ tự tên).
+func (s *Store) SearchUsers(ctx context.Context, q string, limit int) ([]model.PublicUser, error) {
+	like := "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(strings.ToLower(q)) + "%"
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT `+userColumns+` FROM users
+		WHERE lower(username) LIKE ? ESCAPE '\' OR lower(display_name) LIKE ? ESCAPE '\'
+		ORDER BY CASE WHEN display_name = '' THEN username ELSE display_name END
+		LIMIT ?`, like, like, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []model.PublicUser{}
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, u.Public())
 	}
 	return out, rows.Err()
 }
@@ -194,7 +299,14 @@ func (s *Store) ListOtherChannels(ctx context.Context, userID int64) ([]model.Ch
 
 func (s *Store) GetChannel(ctx context.Context, id int64) (model.Channel, error) {
 	c, err := scanChannel(s.db.QueryRowContext(ctx, `SELECT `+channelColumns+` FROM channels c WHERE c.id = ?`, id))
-	return c, notFound(err)
+	if err != nil {
+		return c, notFound(err)
+	}
+	chans := []model.Channel{c}
+	if err := s.attachDMMembers(ctx, chans); err != nil {
+		return c, err
+	}
+	return chans[0], nil
 }
 
 // CreateChannel tạo kênh và thêm người tạo làm thành viên trong cùng transaction.
@@ -248,7 +360,7 @@ func (s *Store) UpdateChannel(ctx context.Context, id int64, name, description s
 // ChannelByInvite tìm kênh theo mã trong link mời.
 func (s *Store) ChannelByInvite(ctx context.Context, code string) (model.Channel, error) {
 	c, err := scanChannel(s.db.QueryRowContext(ctx,
-		`SELECT `+channelColumns+` FROM channels c WHERE c.invite_code = ?`, code))
+		`SELECT `+channelColumns+` FROM channels c WHERE c.invite_code = ? AND c.kind = 'channel'`, code))
 	return c, notFound(err)
 }
 
@@ -385,7 +497,7 @@ func (s *Store) ReadStates(ctx context.Context, channelID int64) ([]model.ReadSt
 
 /* ---------- Messages ---------- */
 
-const messageColumns = `msg.id, msg.channel_id, msg.user_id, msg.content, msg.created_at,
+const messageColumns = `msg.id, msg.channel_id, msg.user_id, msg.content, msg.created_at, msg.edited_at, msg.deleted_at,
 	msg.parent_id, COALESCE(p.user_id, 0),
 	u.id, u.username, u.display_name, u.avatar, u.status_text`
 
@@ -397,7 +509,7 @@ const messageFrom = ` FROM messages msg
 func scanMessage(row scanner) (model.Message, error) {
 	var m model.Message
 	var u model.PublicUser
-	err := row.Scan(&m.ID, &m.ChannelID, &m.UserID, &m.Content, &m.CreatedAt,
+	err := row.Scan(&m.ID, &m.ChannelID, &m.UserID, &m.Content, &m.CreatedAt, &m.EditedAt, &m.DeletedAt,
 		&m.ParentID, &m.ParentUserID,
 		&u.ID, &u.Username, &u.DisplayName, &u.Avatar, &u.StatusText)
 	m.User = &u
@@ -467,6 +579,75 @@ func (s *Store) CreateMessage(ctx context.Context, in NewMessage) (model.Message
 		return model.Message{}, err
 	}
 	return s.GetMessage(ctx, id)
+}
+
+// EditMessage đổi nội dung tin (và danh sách người được nhắc), ghi lại thời điểm sửa.
+func (s *Store) EditMessage(ctx context.Context, id int64, content string, mentionIDs []int64) (model.Message, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.Message{}, err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx,
+		`UPDATE messages SET content = ?, edited_at = CURRENT_TIMESTAMP WHERE id = ? AND deleted_at IS NULL`, content, id)
+	if err != nil {
+		return model.Message{}, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return model.Message{}, ErrNotFound
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM message_mentions WHERE message_id = ?`, id); err != nil {
+		return model.Message{}, err
+	}
+	for _, uid := range mentionIDs {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT OR IGNORE INTO message_mentions (message_id, user_id) VALUES (?, ?)`, id, uid); err != nil {
+			return model.Message{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return model.Message{}, err
+	}
+	return s.GetMessage(ctx, id)
+}
+
+// DeleteMessage xoá mềm: giữ một dòng "tin đã bị xoá" (luồng trả lời vẫn còn gốc), xoá sạch nội dung,
+// file, cảm xúc, nhắc tên. Trả về storage key các file để xoá khỏi đĩa.
+func (s *Store) DeleteMessage(ctx context.Context, id int64) (model.Message, []string, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.Message{}, nil, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, `SELECT storage_key FROM attachments WHERE message_id = ?`, id)
+	if err != nil {
+		return model.Message{}, nil, err
+	}
+	var keys []string
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			rows.Close()
+			return model.Message{}, nil, err
+		}
+		keys = append(keys, k)
+	}
+	rows.Close()
+	for _, q := range []string{
+		`DELETE FROM attachments WHERE message_id = ?`,
+		`DELETE FROM message_mentions WHERE message_id = ?`,
+		`DELETE FROM message_reactions WHERE message_id = ?`,
+		`UPDATE messages SET content = '', deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND deleted_at IS NULL`,
+	} {
+		if _, err := tx.ExecContext(ctx, q, id); err != nil {
+			return model.Message{}, nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return model.Message{}, nil, err
+	}
+	m, err := s.GetMessage(ctx, id)
+	return m, keys, err
 }
 
 // ListMessages trả về tối đa limit tin ở DÒNG CHÍNH của kênh (không gồm trả lời trong luồng)

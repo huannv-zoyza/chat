@@ -13,10 +13,12 @@ import {
 } from "./ChannelDialogs";
 import { clearPendingInvite, peekPendingInvite } from "../lib/platform";
 import { UserSettingsDialog } from "./UserSettingsDialog";
+import { NewDMDialog } from "./NewDMDialog";
+import { isDM } from "../lib/channel";
 import { load, save } from "../lib/storage";
 import { COMPACT_QUERY, useMediaQuery } from "../lib/useMedia";
 
-type DialogName = "create" | "browse" | "channel" | "user" | "invite" | "joinLink" | null;
+type DialogName = "create" | "browse" | "channel" | "user" | "invite" | "joinLink" | "dm" | null;
 
 export function Workspace() {
   const { state, openThread } = useChat();
@@ -48,7 +50,8 @@ export function Workspace() {
   }, [state.activeId, state.activeAuto, openRoom]);
 
   const closeRoom = () => {
-    if (window.history.state?.goChatRoom) window.history.back(); // popstate sẽ đóng màn chat
+    if (window.history.state?.goChatRoom)
+      window.history.back(); // popstate sẽ đóng màn chat
     else setRoomOpen(false);
   };
 
@@ -93,7 +96,8 @@ export function Workspace() {
   }, [compact, roomOpen, channel]);
 
   // Trên điện thoại panel thành viên là màn phủ, mặc định đóng (không dùng lựa chọn của bản desktop).
-  const showMembers = compact ? mobileMembers : membersOpen;
+  // Tin nhắn riêng không có panel thành viên.
+  const showMembers = !isDM(channel) && (compact ? mobileMembers : membersOpen);
   const toggleMembers = () => {
     if (compact) return setMobileMembers((v) => !v);
     setMembersOpen((v) => {
@@ -118,6 +122,7 @@ export function Workspace() {
         onBrowseChannels={() => setDialog("browse")}
         onJoinByLink={() => setDialog("joinLink")}
         onOpenSettings={() => setDialog("user")}
+        onNewDM={() => setDialog("dm")}
       />
 
       {channel ? (
@@ -169,7 +174,10 @@ export function Workspace() {
       {dialog === "channel" && channel && <ChannelSettingsDialog channel={channel} onClose={() => setDialog(null)} />}
       {dialog === "user" && <UserSettingsDialog onClose={() => setDialog(null)} />}
       {dialog === "invite" && channel && <InviteDialog channel={channel} onClose={() => setDialog(null)} />}
-      {dialog === "joinLink" && <JoinByLinkDialog initialCode={inviteCode ?? undefined} onClose={() => setDialog(null)} />}
+      {dialog === "dm" && <NewDMDialog onClose={() => setDialog(null)} onOpened={openRoom} />}
+      {dialog === "joinLink" && (
+        <JoinByLinkDialog initialCode={inviteCode ?? undefined} onClose={() => setDialog(null)} />
+      )}
     </div>
   );
 }

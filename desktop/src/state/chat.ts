@@ -50,6 +50,8 @@ export type ChatState = {
   threads: Record<number, ThreadState>;
   /** Luồng đang mở trong panel bên phải (id tin gốc). */
   openThreadId: number | null;
+  /** Tin đang được sửa tại chỗ (mỗi lúc chỉ một tin). */
+  editingId: number | null;
   /** channelId -> userId -> id tin đã xem tới (để hiện "đã xem"). */
   reads: Record<number, Record<number, number>>;
 };
@@ -69,6 +71,7 @@ export function initialState(me: User): ChatState {
     members: {},
     threads: {},
     openThreadId: null,
+    editingId: null,
     reads: {},
   };
 }
@@ -88,6 +91,8 @@ export type Action =
   | { type: "messages.loadingOlder"; channelId: number; loading: boolean }
   | { type: "messages.stale" }
   | { type: "message.new"; message: Message; clientId?: string; countUnread: boolean }
+  | { type: "message.updated"; message: Message }
+  | { type: "edit.start"; messageId: number | null }
   | { type: "pending.add"; pending: PendingMessage }
   | { type: "pending.failed"; clientId: string; error: string }
   | { type: "pending.retry"; clientId: string }
@@ -199,7 +204,15 @@ export function reducer(s: ChatState, a: Action): ChatState {
       const channels: Record<number, Channel> = {};
       for (const c of a.channels) channels[c.id] = c;
       const activeId = s.activeId !== null && channels[s.activeId] ? s.activeId : null;
-      return { ...s, channels, activeId };
+      return {
+        ...s,
+        channels,
+        activeId,
+        users: withUsers(
+          s.users,
+          a.channels.flatMap((c) => c.dm_members ?? []),
+        ),
+      };
     }
 
     case "channel.upsert": {
@@ -208,7 +221,11 @@ export function reducer(s: ChatState, a: Action): ChatState {
         a.keepUnread && prev
           ? { ...a.channel, unread_count: prev.unread_count, mention_count: prev.mention_count }
           : { ...a.channel, mention_count: a.channel.mention_count ?? 0 };
-      return { ...s, channels: { ...s.channels, [channel.id]: channel } };
+      return {
+        ...s,
+        channels: { ...s.channels, [channel.id]: channel },
+        users: withUsers(s.users, channel.dm_members ?? []),
+      };
     }
 
     case "channel.removed": {
@@ -237,7 +254,10 @@ export function reducer(s: ChatState, a: Action): ChatState {
       const items = mergeMessages(a.older ? cur.items : cur.loaded ? cur.items : [], a.messages);
       return {
         ...s,
-        users: withUsers(s.users, a.messages.map((m) => m.user)),
+        users: withUsers(
+          s.users,
+          a.messages.map((m) => m.user),
+        ),
         messages: {
           ...s.messages,
           [a.channelId]: {
@@ -305,6 +325,15 @@ export function reducer(s: ChatState, a: Action): ChatState {
       return { ...s, messages, threads, pending, channels, typing, reads, users: withUsers(s.users, [m.user]) };
     }
 
+    case "message.updated": {
+      // giữ tóm tắt luồng hiện có (sự kiện sửa/xoá không đổi luồng)
+      const m = a.message;
+      return updateMessage(s, m.id, (old) => ({ ...m, thread: m.thread ?? old.thread }));
+    }
+
+    case "edit.start":
+      return s.editingId === a.messageId ? s : { ...s, editingId: a.messageId };
+
     case "thread.open":
       return { ...s, openThreadId: a.parentId };
 
@@ -350,9 +379,7 @@ export function reducer(s: ChatState, a: Action): ChatState {
     case "pending.retry":
       return {
         ...s,
-        pending: s.pending.map((p) =>
-          p.clientId === a.clientId ? { ...p, status: "sending", error: undefined } : p,
-        ),
+        pending: s.pending.map((p) => (p.clientId === a.clientId ? { ...p, status: "sending", error: undefined } : p)),
       };
 
     case "pending.progress":
@@ -410,8 +437,7 @@ export function reducer(s: ChatState, a: Action): ChatState {
         ...s,
         users: withUsers(s.users, [a.user]),
         channels: c ? { ...s.channels, [c.id]: { ...c, member_count: c.member_count + 1 } } : s.channels,
-        members:
-          list && !list.includes(a.user.id) ? { ...s.members, [a.channelId]: [...list, a.user.id] } : s.members,
+        members: list && !list.includes(a.user.id) ? { ...s.members, [a.channelId]: [...list, a.user.id] } : s.members,
       };
     }
 
@@ -420,7 +446,10 @@ export function reducer(s: ChatState, a: Action): ChatState {
       for (const r of a.reads) map[r.user_id] = r.message_id;
       return {
         ...s,
-        users: withUsers(s.users, a.reads.map((r) => r.user)),
+        users: withUsers(
+          s.users,
+          a.reads.map((r) => r.user),
+        ),
         reads: { ...s.reads, [a.channelId]: map },
       };
     }

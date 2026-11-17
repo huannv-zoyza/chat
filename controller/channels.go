@@ -91,7 +91,12 @@ func (a *API) requireMember(w http.ResponseWriter, r *http.Request, channelID in
 	return true
 }
 
+// requireOwner: chỉ người tạo kênh (đổi tên, xoá kênh, đổi link mời). Không áp dụng cho tin nhắn riêng.
 func (a *API) requireOwner(w http.ResponseWriter, r *http.Request, ch model.Channel) bool {
+	if ch.IsDM() {
+		writeError(w, http.StatusBadRequest, "Không áp dụng cho tin nhắn riêng.")
+		return false
+	}
 	if ch.OwnerID != currentUser(r).ID {
 		writeError(w, http.StatusForbidden, "Chỉ người tạo kênh mới làm được việc này.")
 		return false
@@ -326,6 +331,10 @@ func (a *API) leaveChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	me := currentUser(r)
+	if ch.IsDM() {
+		writeError(w, http.StatusBadRequest, "Không thể rời cuộc trò chuyện riêng.")
+		return
+	}
 	if ch.OwnerID == me.ID {
 		writeError(w, http.StatusBadRequest, "Bạn là người tạo kênh nên không thể rời. Hãy xoá kênh nếu không dùng nữa.")
 		return

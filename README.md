@@ -94,6 +94,8 @@ Chi tiết API, giao thức websocket và cấu trúc frontend: [desktop/README.
   File video/âm thanh tải lên cũng phát được trong tin.
 - Thả cảm xúc: rê chuột vào tin (điện thoại: nhấn giữ) để thả 👍 ❤️ 😂…; bấm lại để bỏ.
 - Trả lời theo luồng: "Trả lời trong luồng" mở panel bên phải; dòng chính chỉ hiện "N trả lời".
+- Sửa / xoá tin nhắn của mình (rê chuột hoặc nhấn giữ; bấm ↑ ở ô soạn trống để sửa tin gần nhất). Chủ kênh xoá được tin của người khác. Tin bị xoá còn lại dòng "Tin nhắn đã bị xoá", file đính kèm bị xoá khỏi server.
+- Tin nhắn riêng 1-1: mục "Tin nhắn riêng" ở thanh bên (nút +), hoặc nút nhắn ở danh sách thành viên. Tự nhắn cho mình để ghi chú.
 - Ảnh đại diện: chọn ảnh từ máy (tự cắt vuông, thu nhỏ 256×256) hoặc dán link.
 - Đã xem: avatar nhỏ góc phải dưới tin mới nhất mà mỗi người đã xem (như Messenger); bấm vào để xem tên.
   Ai trả lời tin của bạn thì có thông báo.

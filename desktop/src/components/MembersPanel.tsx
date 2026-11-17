@@ -5,7 +5,7 @@ import { displayName } from "../lib/format";
 import { Avatar, Icon } from "./ui";
 
 export function MembersPanel({ channel, onClose }: { channel: Channel; onClose: () => void }) {
-  const { state, loadMembers } = useChat();
+  const { state, loadMembers, openDM } = useChat();
   const [error, setError] = useState<string | null>(null);
   const ids = state.members[channel.id];
 
@@ -64,6 +64,17 @@ export function MembersPanel({ channel, onClose }: { channel: Channel; onClose: 
                     </span>
                     <span className="member-status">{m.status_text || "@" + m.username}</span>
                   </span>
+                  {m.id !== state.me.id && (
+                    <button
+                      type="button"
+                      className="icon-btn member-dm"
+                      title={`Nhắn riêng cho ${displayName(m)}`}
+                      aria-label={`Nhắn riêng cho ${displayName(m)}`}
+                      onClick={() => void openDM(m.id).catch(() => setError("Không mở được cuộc trò chuyện."))}
+                    >
+                      <Icon name="send" size={16} />
+                    </button>
+                  )}
                 </li>
               );
             })}

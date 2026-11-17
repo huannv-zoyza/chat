@@ -4,6 +4,7 @@ import type { SocketStatus } from "../lib/socket";
 import { displayName } from "../lib/format";
 import { Avatar, Icon } from "./ui";
 import { ChannelSigil } from "./ChannelDialogs";
+import { channelTitle, dmPeerId, isDM } from "../lib/channel";
 
 const STATUS_LABEL: Record<SocketStatus, string> = {
   idle: "Đang kết nối",
@@ -22,15 +23,35 @@ type Props = {
   onBrowseChannels: () => void;
   onJoinByLink: () => void;
   onOpenSettings: () => void;
+  onNewDM: () => void;
 };
 
-export function Sidebar({ onOpenChannel, onCreateChannel, onBrowseChannels, onJoinByLink, onOpenSettings }: Props) {
+export function Sidebar({
+  onOpenChannel,
+  onCreateChannel,
+  onBrowseChannels,
+  onJoinByLink,
+  onOpenSettings,
+  onNewDM,
+}: Props) {
   const { state, selectChannel } = useChat();
   const channels = useMemo(
-    () => Object.values(state.channels).sort((a, b) => a.name.localeCompare(b.name, "vi")),
+    () =>
+      Object.values(state.channels)
+        .filter((c) => !isDM(c))
+        .sort((a, b) => a.name.localeCompare(b.name, "vi")),
     [state.channels],
   );
+  const dms = useMemo(
+    () =>
+      Object.values(state.channels)
+        .filter(isDM)
+        .map((c) => ({ c, title: channelTitle(c, state.users, state.me.id), peer: dmPeerId(c, state.me.id)! }))
+        .sort((a, b) => a.title.localeCompare(b.title, "vi")),
+    [state.channels, state.users, state.me.id],
+  );
   const me = state.users[state.me.id] ?? state.me;
+  const connected = state.status === "open";
 
   return (
     <nav className="sidebar" aria-label="Kênh">
@@ -98,6 +119,52 @@ export function Sidebar({ onOpenChannel, onCreateChannel, onBrowseChannels, onJo
           <Icon name="link" size={16} />
           Tham gia bằng link mời
         </button>
+
+        <div className="sidebar-heading sidebar-heading-dm">
+          <h3>Tin nhắn riêng</h3>
+          <button className="icon-btn icon-btn-ink" onClick={onNewDM} title="Tin nhắn mới" aria-label="Tin nhắn mới">
+            <Icon name="plus" size={16} />
+          </button>
+        </div>
+        {dms.length === 0 ? (
+          <button className="sidebar-action" onClick={onNewDM}>
+            <Icon name="send" size={16} />
+            Nhắn riêng cho ai đó
+          </button>
+        ) : (
+          <ul className="channel-list">
+            {dms.map(({ c, title, peer }) => {
+              const active = c.id === state.activeId;
+              const unread = !active && c.unread_count > 0;
+              return (
+                <li key={c.id}>
+                  <button
+                    className={`channel channel-dm${unread ? " has-unread" : ""}`}
+                    aria-current={active ? "page" : undefined}
+                    onClick={() => {
+                      selectChannel(c.id);
+                      onOpenChannel();
+                    }}
+                  >
+                    <span className="channel-hash">
+                      <Avatar
+                        user={state.users[peer]}
+                        size={20}
+                        online={peer !== state.me.id ? connected && !!state.online[peer] : undefined}
+                      />
+                    </span>
+                    <span className="channel-name">{title}</span>
+                    {unread && (
+                      <span className="badge" aria-label={`${c.unread_count} tin chưa đọc`}>
+                        {c.unread_count > 99 ? "99+" : c.unread_count}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
 
       <button className="me-card" onClick={onOpenSettings} title="Cài đặt tài khoản">

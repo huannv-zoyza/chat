@@ -75,6 +75,10 @@ Lỗi trả về `{"error": "<câu hiển thị cho người dùng>"}`.
 | PATCH | `/api/me` | `{display_name?, status_text?, avatar?}` |
 | POST | `/api/me/avatar` | multipart `file` (PNG/JPEG/GIF/WebP ≤ 5 MB) → đặt làm ảnh đại diện |
 | GET | `/api/avatars/{key}` | ảnh đại diện đã tải lên (công khai) |
+| GET | `/api/users?q=` | Tìm người dùng (để nhắn riêng) |
+| POST | `/api/dms` | `{user_id}` → mở/tạo cuộc trò chuyện riêng (kênh `kind: "dm"`) |
+| PATCH | `/api/messages/{id}` | `{content}` sửa tin của mình |
+| DELETE | `/api/messages/{id}` | Xoá tin (người viết, hoặc chủ kênh) |
 | PUT | `/api/me/password` | `{current_password, new_password}`; đăng xuất các thiết bị khác |
 | GET | `/api/channels` | Kênh đã tham gia, kèm `unread_count`, `member_count` |
 | GET | `/api/channels/discover` | Kênh chưa tham gia |
@@ -109,6 +113,6 @@ Client gửi:
 
 Server gửi (danh sách đầy đủ ở `controller/events.go`): `ready`, `message.new`, `typing`, `presence`,
 `user.updated`, `channel.joined`, `channel.left`, `channel.updated`, `channel.deleted`,
-`member.joined`, `member.left`, `reaction.updated`, `thread.updated`, `read.updated`, `error`, `pong`.
+`member.joined`, `member.left`, `reaction.updated`, `thread.updated`, `read.updated`, `message.updated`, `error`, `pong`.
 
 Mỗi kết nối nhận tin của **mọi** kênh mình tham gia, nên số chưa đọc cập nhật tức thì.

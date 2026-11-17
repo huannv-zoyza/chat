@@ -74,6 +74,11 @@ func (a *API) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("GET /api/messages/{id}/thread", a.requireAuth(a.getThread))
 	mux.HandleFunc("GET /api/unfurl", a.requireAuth(a.unfurl))
 	mux.HandleFunc("POST /api/messages/{id}/reactions", a.requireAuth(a.toggleReaction))
+	mux.HandleFunc("PATCH /api/messages/{id}", a.requireAuth(a.editMessage))
+	mux.HandleFunc("DELETE /api/messages/{id}", a.requireAuth(a.deleteMessage))
+
+	mux.HandleFunc("GET /api/users", a.requireAuth(a.searchUsers))
+	mux.HandleFunc("POST /api/dms", a.requireAuth(a.openDM))
 
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})

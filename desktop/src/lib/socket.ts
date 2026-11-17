@@ -5,6 +5,7 @@ import type { Message, Channel, PublicUser, Reaction, ThreadSummary, User } from
 export type ServerEvent =
   | { type: "ready"; user: User; online_user_ids: number[] }
   | { type: "message.new"; message: Message; client_id?: string }
+  | { type: "message.updated"; message: Message }
   | { type: "typing"; channel_id: number; user_id: number }
   | { type: "presence"; user_id: number; online: boolean }
   | { type: "user.updated"; user: PublicUser }

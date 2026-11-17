@@ -2969,3 +2969,188 @@ button {
     height: 4.5rem;
   }
 }
+
+/* ---------- Sửa / xoá tin nhắn ---------- */
+
+.msg-edited {
+  margin-left: 0.35rem;
+  font-size: 0.75em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.msg-deleted {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.1rem 0 0;
+  padding: 0.25rem 0.6rem;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: var(--step--1);
+  font-style: italic;
+}
+.msg-is-deleted .msg-user {
+  opacity: 0.7;
+}
+.msg-editing,
+.msg-editing:hover {
+  background: var(--signal-soft);
+}
+.msg-editor {
+  margin-top: 0.25rem;
+}
+.msg-editor textarea {
+  display: block;
+  width: 100%;
+  min-height: 2.5rem;
+  max-height: 40vh;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--focus);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--focus);
+  line-height: 1.45;
+  resize: none;
+  outline: none;
+  overflow-y: auto;
+}
+.msg-editor .form-error {
+  margin: 0.35rem 0 0;
+}
+.msg-editor-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+.msg-editor-hint {
+  margin-right: auto;
+  font-size: var(--step--1);
+  color: var(--muted);
+}
+.toolbar-danger:hover {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.sheet-danger,
+.sheet-danger .icon {
+  color: var(--warn);
+}
+.delete-preview {
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+  border-left: 3px solid var(--line);
+  border-radius: 4px;
+  background: var(--canvas);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 10rem;
+  overflow-y: auto;
+}
+
+/* ---------- Tin nhắn riêng ---------- */
+
+.sidebar-heading-dm {
+  margin-top: 1.1rem;
+}
+.channel-dm .channel-hash {
+  width: 1.25rem;
+  opacity: 1;
+}
+.channel-dm .presence-dot {
+  box-shadow: 0 0 0 2px var(--ink);
+}
+.room-heading-dm {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.room-heading-dm > div {
+  min-width: 0;
+}
+.room-heading-dm .room-title {
+  font-size: var(--step-2);
+}
+.dm-intro {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+.dm-intro h3 {
+  margin: 0.5rem 0 0;
+}
+.dm-intro p {
+  margin: 0;
+  color: var(--muted);
+}
+.member-dm {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.member:hover .member-dm,
+.member-dm:focus-visible {
+  opacity: 1;
+}
+@media (hover: none) {
+  .member-dm {
+    opacity: 1;
+  }
+}
+
+.people-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  max-height: 55vh;
+  overflow-y: auto;
+}
+.person {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.55rem 0.5rem;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  text-align: left;
+}
+.person:hover:not(:disabled),
+.person:focus-visible {
+  background: var(--raised);
+}
+.person:disabled {
+  cursor: progress;
+}
+.person-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.person-name {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+}
+.person-sub {
+  font-size: var(--step--1);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.person-action {
+  flex-shrink: 0;
+  font-size: var(--step--1);
+  font-weight: 500;
+  color: var(--muted);
+}
+.person:hover .person-action {
+  color: var(--text);
+}

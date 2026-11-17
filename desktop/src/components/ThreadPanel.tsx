@@ -6,6 +6,7 @@ import { buildRows, MessageRow } from "./ChannelView";
 import { Composer } from "./Composer";
 import { ImageViewer } from "./MessageParts";
 import { Icon } from "./ui";
+import { channelLabel } from "../lib/channel";
 
 type Props = {
   channel: Channel;
@@ -41,7 +42,7 @@ export function ThreadPanel({ channel, parentId, onClose }: Props) {
   const parent = thread?.parent;
   const parentUser = parent ? (state.users[parent.user_id] ?? parent.user) : undefined;
   const replyCount = thread?.replies.length ?? 0;
-  const where = `${channel.is_private ? "" : "#"}${channel.name}`;
+  const where = channelLabel(channel, state.users, state.me.id);
 
   return (
     <aside className="thread-panel" aria-label="Luồng trả lời">

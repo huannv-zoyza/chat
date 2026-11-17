@@ -77,9 +77,11 @@ type ToolbarProps = {
   message: Message;
   onPick: (anchor: HTMLElement) => void;
   onReply?: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
 };
 
-export function MessageToolbar({ message, onPick, onReply }: ToolbarProps) {
+export function MessageToolbar({ message, onPick, onReply, onEdit, onDelete }: ToolbarProps) {
   const { toggleReaction } = useChat();
   return (
     <div className="msg-toolbar" role="toolbar" aria-label="Thao tác với tin nhắn">
@@ -105,8 +107,30 @@ export function MessageToolbar({ message, onPick, onReply }: ToolbarProps) {
         <Icon name="smilePlus" size={17} />
       </button>
       {onReply && (
-        <button type="button" className="toolbar-btn" title="Trả lời trong luồng" aria-label="Trả lời trong luồng" onClick={onReply}>
+        <button
+          type="button"
+          className="toolbar-btn"
+          title="Trả lời trong luồng"
+          aria-label="Trả lời trong luồng"
+          onClick={onReply}
+        >
           <Icon name="thread" size={17} />
+        </button>
+      )}
+      {onEdit && (
+        <button type="button" className="toolbar-btn" title="Sửa tin nhắn" aria-label="Sửa tin nhắn" onClick={onEdit}>
+          <Icon name="pencil" size={17} />
+        </button>
+      )}
+      {onDelete && (
+        <button
+          type="button"
+          className="toolbar-btn toolbar-danger"
+          title="Xoá tin nhắn"
+          aria-label="Xoá tin nhắn"
+          onClick={onDelete}
+        >
+          <Icon name="trash" size={17} />
         </button>
       )}
     </div>
@@ -202,10 +226,14 @@ export function MessageActionSheet({
   message,
   onClose,
   onReply,
+  onEdit,
+  onDelete,
 }: {
   message: Message;
   onClose: () => void;
   onReply?: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
 }) {
   const { toggleReaction, state } = useChat();
   const [picking, setPicking] = useState(false);
@@ -280,6 +308,32 @@ export function MessageActionSheet({
                 >
                   <Icon name="copy" />
                   Sao chép nội dung
+                </button>
+              )}
+              {onEdit && (
+                <button
+                  type="button"
+                  className="sheet-action"
+                  onClick={() => {
+                    onClose();
+                    onEdit();
+                  }}
+                >
+                  <Icon name="pencil" />
+                  Sửa tin nhắn
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  type="button"
+                  className="sheet-action sheet-danger"
+                  onClick={() => {
+                    onClose();
+                    onDelete();
+                  }}
+                >
+                  <Icon name="trash" />
+                  Xoá tin nhắn
                 </button>
               )}
               <button type="button" className="sheet-action" onClick={onClose}>

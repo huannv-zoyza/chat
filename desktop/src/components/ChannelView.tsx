@@ -7,9 +7,18 @@ import { Composer, type ComposerHandle } from "./Composer";
 import { Attachments, ImageViewer, LocalFiles, MessageText } from "./MessageParts";
 import { Avatar, Icon } from "./ui";
 import { LinkPreviews } from "./LinkPreview";
-import { MessageActionSheet, MessageToolbar, ReactionBar, ReactionPicker, ThreadSummaryLink, useLongPress } from "./MessageActions";
+import {
+  MessageActionSheet,
+  MessageToolbar,
+  ReactionBar,
+  ReactionPicker,
+  ThreadSummaryLink,
+  useLongPress,
+} from "./MessageActions";
 import { COMPACT_QUERY, useMediaQuery } from "../lib/useMedia";
 import { ChannelSigil } from "./ChannelDialogs";
+import { ConfirmDeleteDialog, MessageEditor } from "./MessageEditor";
+import { channelLabel, channelTitle, dmPeerId, isDM } from "../lib/channel";
 
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
 
@@ -26,6 +35,11 @@ type Props = {
 export function ChannelView({ channel, membersOpen, onToggleMembers, onOpenSettings, onInvite, onBack }: Props) {
   const { state, reconnectNow } = useChat();
   const disconnected = state.status === "reconnecting" || state.status === "offline";
+  const direct = isDM(channel);
+  const label = channelLabel(channel, state.users, state.me.id);
+  const peerId = dmPeerId(channel, state.me.id);
+  const peer = peerId !== null ? state.users[peerId] : undefined;
+  const peerOnline = peerId !== null && peerId !== state.me.id && state.status === "open" && !!state.online[peerId];
   const composer = useRef<ComposerHandle>(null);
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
@@ -54,7 +68,7 @@ export function ChannelView({ channel, membersOpen, onToggleMembers, onOpenSetti
   return (
     <section
       className="room"
-      aria-label={`Kênh ${channel.name}`}
+      aria-label={direct ? `Trò chuyện với ${label}` : `Kênh ${channel.name}`}
       onDragEnter={onDragEnter}
       onDragOver={(e) => hasFiles(e) && e.preventDefault()}
       onDragLeave={onDragLeave}
@@ -66,34 +80,52 @@ export function ChannelView({ channel, membersOpen, onToggleMembers, onOpenSetti
             <Icon name="arrowLeft" size={22} />
           </button>
         )}
-        <div className="room-heading">
-          <h2 className="room-title">
-            <span className="room-sigil">
-              <ChannelSigil channel={channel} size={24} />
-            </span>
-            {channel.name}
-          </h2>
-          {channel.description && <p className="room-desc">{channel.description}</p>}
-        </div>
-        <div className="room-actions">
-          <button
-            className={`chip${membersOpen ? " is-on" : ""}`}
-            onClick={onToggleMembers}
-            aria-pressed={membersOpen}
-            aria-label={`Thành viên (${channel.member_count})`}
-            title="Thành viên"
-          >
-            <Icon name="users" size={16} />
-            {channel.member_count}
-          </button>
-          <button className="chip" onClick={onInvite} title="Mời người vào kênh" aria-label="Mời người vào kênh">
-            <Icon name="userPlus" size={16} />
-            <span className="btn-label">Mời</span>
-          </button>
-          <button className="icon-btn" onClick={onOpenSettings} title="Cài đặt kênh" aria-label="Cài đặt kênh">
-            <Icon name="settings" />
-          </button>
-        </div>
+        {direct ? (
+          <div className="room-heading room-heading-dm">
+            <Avatar user={peer} size={38} online={peerId !== state.me.id ? peerOnline : undefined} />
+            <div>
+              <h2 className="room-title">{label}</h2>
+              <p className="room-desc">
+                {peerId === state.me.id
+                  ? "Ghi chú riêng, chỉ mình bạn thấy"
+                  : [peerOnline ? "Đang trực tuyến" : "@" + (peer?.username ?? ""), peer?.status_text]
+                      .filter(Boolean)
+                      .join(" · ")}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="room-heading">
+            <h2 className="room-title">
+              <span className="room-sigil">
+                <ChannelSigil channel={channel} size={24} />
+              </span>
+              {channel.name}
+            </h2>
+            {channel.description && <p className="room-desc">{channel.description}</p>}
+          </div>
+        )}
+        {!direct && (
+          <div className="room-actions">
+            <button
+              className={`chip${membersOpen ? " is-on" : ""}`}
+              onClick={onToggleMembers}
+              aria-pressed={membersOpen}
+              aria-label={`Thành viên (${channel.member_count})`}
+              title="Thành viên"
+            >
+              <Icon name="users" size={16} />
+              {channel.member_count}
+            </button>
+            <button className="chip" onClick={onInvite} title="Mời người vào kênh" aria-label="Mời người vào kênh">
+              <Icon name="userPlus" size={16} />
+              <span className="btn-label">Mời</span>
+            </button>
+            <button className="icon-btn" onClick={onOpenSettings} title="Cài đặt kênh" aria-label="Cài đặt kênh">
+              <Icon name="settings" />
+            </button>
+          </div>
+        )}
       </header>
 
       {disconnected && (
@@ -119,7 +151,9 @@ export function ChannelView({ channel, membersOpen, onToggleMembers, onOpenSetti
         <div className="drop-overlay" aria-hidden>
           <div className="drop-card">
             <Icon name="upload" size={28} />
-            <strong>Thả file để gửi vào #{channel.name}</strong>
+            <strong>
+              Thả file để gửi {direct ? "cho" : "vào"} {label}
+            </strong>
             <span>Tối đa 10 file, mỗi file 20 MB</span>
           </div>
         </div>
@@ -155,7 +189,8 @@ export function buildRows(items: Message[], pending: PendingMessage[], meId: num
     prevTime = t;
   };
 
-  for (const m of items) push(m.user_id, m.created_at, (grouped) => ({ kind: "msg", key: "m" + m.id, msg: m, grouped }));
+  for (const m of items)
+    push(m.user_id, m.created_at, (grouped) => ({ kind: "msg", key: "m" + m.id, msg: m, grouped }));
   for (const p of pending)
     push(meId, p.createdAt, (grouped) => ({ kind: "pending", key: "p" + p.clientId, p, grouped }));
   return rows;
@@ -270,6 +305,8 @@ function MessageList({ channel }: { channel: Channel }) {
           <>
             {cm.hasMore ? (
               <p className="messages-loading">{cm.loadingOlder ? "Đang tải tin cũ hơn…" : ""}</p>
+            ) : isDM(channel) ? (
+              <DMIntro channel={channel} />
             ) : (
               <div className="channel-intro">
                 <span className="channel-intro-mark">
@@ -430,11 +467,20 @@ type RowProps = {
 
 export function MessageRow(props: RowProps) {
   const { mine, mentioned, grouped, name, avatarUser, time, content, attachments, pending, message } = props;
-  const { state } = useChat();
+  const { state, dispatch } = useChat();
   const compact = useMediaQuery(COMPACT_QUERY);
   const [pickerAnchor, setPickerAnchor] = useState<HTMLElement | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const longPress = useLongPress(() => setSheetOpen(true), !!message && compact);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const deleted = !!message?.deleted_at;
+  const editing = !!message && state.editingId === message.id;
+  const live = !!message && !deleted; // tin đã gửi, chưa xoá: có thao tác
+  const room = message ? state.channels[message.channel_id] : undefined;
+  const ownMsg = !!message && message.user_id === state.me.id;
+  const onEdit = live && ownMsg ? () => dispatch({ type: "edit.start", messageId: message!.id }) : undefined;
+  const canDelete = live && (ownMsg || (!!room && !isDM(room) && room.owner_id === state.me.id));
+  const onDelete = canDelete ? () => setConfirmDelete(true) : undefined;
+  const longPress = useLongPress(() => setSheetOpen(true), live && compact && !editing);
   const failed = pending?.status === "failed";
   const uploading = pending && pending.status === "sending" && pending.files?.length;
   const cls = [
@@ -443,6 +489,8 @@ export function MessageRow(props: RowProps) {
     mine && "msg-mine",
     mentioned && "msg-mentioned",
     pending && "msg-pending",
+    deleted && "msg-is-deleted",
+    editing && "msg-editing",
     failed && "msg-failed",
     pickerAnchor && "has-popover",
   ]
@@ -471,8 +519,17 @@ export function MessageRow(props: RowProps) {
             </time>
           </header>
         )}
-        {content && <MessageText content={content} meId={state.me.id} />}
-        {content && message && <LinkPreviews content={content} />}
+        {deleted ? (
+          <p className="msg-deleted">
+            <Icon name="trash" size={14} />
+            Tin nhắn đã bị xoá
+          </p>
+        ) : editing ? (
+          <MessageEditor message={message!} />
+        ) : (
+          content && <MessageText content={content} meId={state.me.id} edited={message?.edited_at} />
+        )}
+        {content && message && !deleted && !editing && <LinkPreviews content={content} />}
         {attachments && attachments.length > 0 && props.onOpenImage && (
           <Attachments attachments={attachments} onOpenImage={props.onOpenImage} />
         )}
@@ -492,12 +549,18 @@ export function MessageRow(props: RowProps) {
               </button>
             </p>
           ) : uploading ? (
-            <div className="upload-progress" role="progressbar" aria-valuenow={Math.round((pending.progress ?? 0) * 100)}>
+            <div
+              className="upload-progress"
+              role="progressbar"
+              aria-valuenow={Math.round((pending.progress ?? 0) * 100)}
+            >
               <span className="upload-bar">
                 <span style={{ width: `${Math.round((pending.progress ?? 0) * 100)}%` }} />
               </span>
               <span className="msg-state">
-                {(pending.progress ?? 0) >= 1 ? "Đang xử lý…" : `Đang tải lên ${Math.round((pending.progress ?? 0) * 100)}%`}
+                {(pending.progress ?? 0) >= 1
+                  ? "Đang xử lý…"
+                  : `Đang tải lên ${Math.round((pending.progress ?? 0) * 100)}%`}
               </span>
             </div>
           ) : (
@@ -505,14 +568,49 @@ export function MessageRow(props: RowProps) {
           ))}
       </div>
 
-      {message && !compact && <MessageToolbar message={message} onPick={setPickerAnchor} onReply={props.onOpenThread} />}
+      {live && !compact && !editing && (
+        <MessageToolbar
+          message={message!}
+          onPick={setPickerAnchor}
+          onReply={props.onOpenThread}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
+      )}
       {message && pickerAnchor && (
         <ReactionPicker messageId={message.id} anchor={pickerAnchor} onClose={() => setPickerAnchor(null)} />
       )}
       {message && sheetOpen && (
-        <MessageActionSheet message={message} onClose={() => setSheetOpen(false)} onReply={props.onOpenThread} />
+        <MessageActionSheet
+          message={message}
+          onClose={() => setSheetOpen(false)}
+          onReply={props.onOpenThread}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
       )}
+      {message && confirmDelete && <ConfirmDeleteDialog message={message} onClose={() => setConfirmDelete(false)} />}
     </article>
+  );
+}
+
+/* ---------- Đầu cuộc trò chuyện riêng ---------- */
+
+function DMIntro({ channel }: { channel: Channel }) {
+  const { state } = useChat();
+  const peerId = dmPeerId(channel, state.me.id)!;
+  const peer = state.users[peerId];
+  const self = peerId === state.me.id;
+  return (
+    <div className="channel-intro dm-intro">
+      <Avatar user={peer} size={64} />
+      <h3>{channelTitle(channel, state.users, state.me.id)}</h3>
+      <p>
+        {self
+          ? "Chỗ ghi chú riêng của bạn: lưu link, nháp, việc cần làm. Không ai khác thấy."
+          : `Đây là khởi đầu cuộc trò chuyện riêng giữa bạn và ${displayName(peer)}. Chỉ hai người thấy các tin nhắn ở đây.`}
+      </p>
+    </div>
   );
 }
 

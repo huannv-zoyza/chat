@@ -9,6 +9,8 @@ type Channel struct {
 	Description string `db:"description" json:"description"`
 	OwnerID     int64  `db:"owner_id"    json:"owner_id"`
 	IsPrivate   bool   `db:"is_private"  json:"is_private"`
+	// "channel" (kênh thường) hoặc "dm" (tin nhắn riêng giữa hai người).
+	Kind string `db:"kind" json:"kind"`
 	// Mã trong link mời. Chỉ trả cho thành viên kênh (handler xoá trước khi gửi cho người ngoài).
 	InviteCode string    `db:"invite_code" json:"invite_code,omitempty"`
 	CreatedAt  time.Time `db:"created_at"  json:"created_at"`
@@ -19,7 +21,16 @@ type Channel struct {
 	UnreadCount int `db:"-" json:"unread_count"`
 	// Số tin chưa đọc có nhắc tên mình.
 	MentionCount int `db:"-" json:"mention_count"`
+	// Với tin nhắn riêng: hai người trong cuộc trò chuyện (một người nếu tự nhắn cho mình).
+	DMMembers []PublicUser `db:"-" json:"dm_members,omitempty"`
 }
+
+const (
+	KindChannel = "channel"
+	KindDM      = "dm"
+)
+
+func (c Channel) IsDM() bool { return c.Kind == KindDM }
 
 // ChannelMember ánh xạ bảng channel_members (khoá chính: channel_id + user_id).
 type ChannelMember struct {

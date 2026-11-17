@@ -4,6 +4,7 @@ import { ChatSocket } from "../lib/socket";
 import { ServerUrlContext } from "../components/ui";
 import { displayName, newClientId } from "../lib/format";
 import { showNotification } from "../lib/notify";
+import { channelLabel, isDM } from "../lib/channel";
 import { load, save } from "../lib/storage";
 import { type Action, type ChatState, channelMessages, initialState, reducer } from "./chat";
 
@@ -22,6 +23,12 @@ type ChatContextValue = {
   toggleReaction: (messageId: number, emoji: string) => void;
   /** Mở luồng của tin gốc (null để đóng). */
   openThread: (parentId: number | null) => void;
+  /** Sửa nội dung tin của mình. Lỗi thì ném ApiError. */
+  editMessage: (messageId: number, content: string) => Promise<void>;
+  /** Xoá tin (của mình, hoặc bất kỳ tin nào nếu là chủ kênh). */
+  deleteMessage: (messageId: number) => Promise<void>;
+  /** Mở (tạo nếu chưa có) cuộc trò chuyện riêng với userId và chuyển tới đó. */
+  openDM: (userId: number) => Promise<void>;
   retryMessage: (clientId: string) => void;
   discardMessage: (clientId: string) => void;
   notifyTyping: (channelId: number) => void;
@@ -107,15 +114,20 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
   const notifyIfMentioned = useCallback((m: Message, viewing: boolean) => {
     const s = stateRef.current;
     if (m.user_id === s.me.id) return;
+    const channel = s.channels[m.channel_id];
+    const direct = isDM(channel);
     const mentioned = !!m.mentions?.includes(s.me.id);
     const repliedToMe = !!m.parent_id && m.parent_user_id === s.me.id;
     const seeingIt = viewing && (!m.parent_id || s.openThreadId === m.parent_id);
-    if (seeingIt || (!mentioned && !repliedToMe)) return;
-    const channel = s.channels[m.channel_id];
-    const where = `${channel?.is_private ? "" : "#"}${channel?.name ?? "kênh"}`;
+    if (seeingIt || (!direct && !mentioned && !repliedToMe)) return;
+    const where = channel ? channelLabel(channel, s.users, s.me.id) : "kênh";
     const who = displayName(s.users[m.user_id] ?? m.user);
     const body = m.content || (m.attachments?.length ? `Đã gửi ${m.attachments.length} file` : "");
-    const title = mentioned ? `${who} nhắc bạn trong ${where}` : `${who} trả lời bạn trong ${where}`;
+    const title = direct
+      ? `${who} nhắn cho bạn`
+      : mentioned
+        ? `${who} nhắc bạn trong ${where}`
+        : `${who} trả lời bạn trong ${where}`;
     void showNotification(title, body.slice(0, 200), () => {
       dispatch({ type: "channel.select", channelId: m.channel_id });
       if (m.parent_id) dispatch({ type: "thread.open", parentId: m.parent_id });
@@ -190,6 +202,8 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
         notifyIfMentioned(ev.message, viewing);
       }),
 
+      sock.on("message.updated", (ev) => dispatch({ type: "message.updated", message: ev.message })),
+
       sock.onSendFailed((clientId, reason) => dispatch({ type: "pending.failed", clientId, error: reason })),
 
       sock.on("typing", (ev) =>
@@ -209,7 +223,9 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       sock.on("reaction.updated", (ev) =>
         dispatch({ type: "reactions.set", messageId: ev.message_id, reactions: ev.reactions }),
       ),
-      sock.on("thread.updated", (ev) => dispatch({ type: "thread.updated", messageId: ev.message_id, thread: ev.thread })),
+      sock.on("thread.updated", (ev) =>
+        dispatch({ type: "thread.updated", messageId: ev.message_id, thread: ev.thread }),
+      ),
       sock.on("read.updated", (ev) =>
         dispatch({ type: "read.updated", channelId: ev.channel_id, userId: ev.user_id, messageId: ev.message_id }),
       ),
@@ -306,6 +322,22 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
             console.error("thả cảm xúc:", err);
             dispatch({ type: "reaction.toggleLocal", messageId, emoji }); // hoàn tác
           });
+      },
+
+      editMessage: async (messageId, content) => {
+        const msg = await api.editMessage(messageId, content);
+        dispatch({ type: "message.updated", message: msg });
+      },
+
+      deleteMessage: async (messageId) => {
+        const msg = await api.deleteMessage(messageId);
+        dispatch({ type: "message.updated", message: msg });
+      },
+
+      openDM: async (userId) => {
+        const ch = await api.openDM(userId);
+        dispatch({ type: "channel.upsert", channel: ch, keepUnread: true });
+        dispatch({ type: "channel.select", channelId: ch.id });
       },
 
       openThread: (parentId) => {

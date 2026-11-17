@@ -17,7 +17,7 @@ const MENTION_RE = /(^|[^\p{L}\p{N}_.@])@([a-z0-9_.]{3,32})/giu;
  * Hiển thị nội dung tin: link bấm được, "@username" của thành viên có thật đổi thành nhãn
  * tên hiển thị (nhắc tới mình hoặc @all được tô nổi hơn).
  */
-export function MessageText({ content, meId }: { content: string; meId: number }) {
+export function MessageText({ content, meId, edited }: { content: string; meId: number; edited?: string }) {
   const { state } = useChat();
   const byUsername = useMemo(() => {
     const m = new Map<string, PublicUser>();
@@ -72,7 +72,18 @@ export function MessageText({ content, meId }: { content: string; meId: number }
     }
   }
 
-  return <p className="msg-body">{out.map((p, i) => <Fragment key={i}>{p}</Fragment>)}</p>;
+  return (
+    <p className="msg-body">
+      {out.map((p, i) => (
+        <Fragment key={i}>{p}</Fragment>
+      ))}
+      {edited && (
+        <span className="msg-edited" title={`Đã sửa lúc ${new Date(edited).toLocaleString("vi-VN")}`}>
+          (đã sửa)
+        </span>
+      )}
+    </p>
+  );
 }
 
 /* ---------- File đính kèm ---------- */
@@ -86,7 +97,12 @@ export function formatSize(bytes: number) {
 
 const ext = (name: string) => {
   const i = name.lastIndexOf(".");
-  return i > 0 ? name.slice(i + 1).toUpperCase().slice(0, 5) : "FILE";
+  return i > 0
+    ? name
+        .slice(i + 1)
+        .toUpperCase()
+        .slice(0, 5)
+    : "FILE";
 };
 
 /** Kích thước hiển thị của ảnh đơn: tối đa 360×300, giữ tỉ lệ (tránh nhảy cuộn khi ảnh tải xong). */
@@ -138,7 +154,13 @@ export function Attachments({ attachments, onOpenImage }: AttachmentsProps) {
               title={`${a.file_name}, bấm để xem lớn`}
               style={single}
             >
-              <img src={api.fileUrl(a)} alt={a.file_name} loading="lazy" width={single?.width} height={single?.height} />
+              <img
+                src={api.fileUrl(a)}
+                alt={a.file_name}
+                loading="lazy"
+                width={single?.width}
+                height={single?.height}
+              />
             </button>
           ))}
         </div>
@@ -147,11 +169,19 @@ export function Attachments({ attachments, onOpenImage }: AttachmentsProps) {
         isVideo(a) ? (
           <div key={a.id} className="media-attachment">
             <video className="media-player media-video" src={api.fileUrl(a)} controls preload="metadata" playsInline />
-            <MediaCaption name={a.file_name} size={a.size} onDownload={() => download(api.fileUrl(a, true), a.file_name)} />
+            <MediaCaption
+              name={a.file_name}
+              size={a.size}
+              onDownload={() => download(api.fileUrl(a, true), a.file_name)}
+            />
           </div>
         ) : (
           <div key={a.id} className="media-attachment">
-            <MediaCaption name={a.file_name} size={a.size} onDownload={() => download(api.fileUrl(a, true), a.file_name)} />
+            <MediaCaption
+              name={a.file_name}
+              size={a.size}
+              onDownload={() => download(api.fileUrl(a, true), a.file_name)}
+            />
             <audio className="media-player media-audio" src={api.fileUrl(a)} controls preload="metadata" />
           </div>
         ),

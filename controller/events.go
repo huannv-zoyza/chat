@@ -11,6 +11,7 @@ import (
 //
 //	ready            {user, online_user_ids}                 ngay sau khi kết nối thành công
 //	message.new      {message, client_id?}                   tin mới trong một kênh mình tham gia
+//	message.updated  {message}                               tin được sửa hoặc bị xoá (deleted_at)
 //	typing           {channel_id, user_id}                   ai đó đang gõ
 //	presence         {user_id, online}                       ai đó vừa online/offline
 //	user.updated     {user}                                  ai đó đổi hồ sơ
@@ -36,6 +37,11 @@ type messageNewEvent struct {
 	Type     string        `json:"type"`
 	Message  model.Message `json:"message"`
 	ClientID string        `json:"client_id,omitempty"`
+}
+
+type messageUpdatedEvent struct {
+	Type    string        `json:"type"`
+	Message model.Message `json:"message"`
 }
 
 type typingEvent struct {

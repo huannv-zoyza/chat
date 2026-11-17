@@ -9,6 +9,10 @@ type Message struct {
 	UserID    int64     `db:"user_id"    json:"user_id"`
 	Content   string    `db:"content"    json:"content"`
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
+	// Lần sửa gần nhất (nil nếu chưa sửa).
+	EditedAt *time.Time `db:"edited_at" json:"edited_at,omitempty"`
+	// Thời điểm xoá (nil nếu chưa xoá). Tin đã xoá không còn nội dung, file, cảm xúc.
+	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at,omitempty"`
 
 	// Người gửi, được JOIN sẵn để client không phải tra thêm.
 	User *PublicUser `db:"-" json:"user,omitempty"`

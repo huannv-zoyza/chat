@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import type { Embed } from "../lib/api";
 import { findSticker, stickerLabel, type Sticker } from "../lib/stickers";
+import { CallLog } from "./CallOverlay";
 
 /** Một sticker. size: "msg" (trong tin nhắn) hoặc "pick" (ô trong bảng chọn). */
 export function StickerView({ sticker, size = "msg" }: { sticker: Sticker; size?: "msg" | "pick" }) {
@@ -37,7 +38,18 @@ const GIF_MAX_W = 320;
 const GIF_MAX_H = 240;
 
 /** Sticker hoặc GIF trong tin nhắn. */
-export function EmbedView({ embed }: { embed: Embed }) {
+export function EmbedView({ embed, channelId, userId }: { embed: Embed; channelId?: number; userId?: number }) {
+  if (embed.type === "call") {
+    return (
+      <CallLog
+        outcome={embed.id}
+        video={embed.video}
+        duration={embed.duration}
+        channelId={channelId ?? 0}
+        callerId={userId ?? 0}
+      />
+    );
+  }
   if (embed.type === "sticker") {
     const s = findSticker(embed.id);
     if (!s) return <p className="msg-deleted">Sticker không còn trong bộ của app.</p>;
@@ -65,6 +77,7 @@ export function EmbedView({ embed }: { embed: Embed }) {
 
 /** Mô tả ngắn cho thông báo / xem trước: "đã gửi một sticker", ... */
 export function embedSummary(embed: Embed): string {
+  if (embed.type === "call") return embed.id === "completed" ? "📞 Cuộc gọi" : "📞 Cuộc gọi nhỡ";
   if (embed.type === "gif") return "Đã gửi một GIF";
   const s = findSticker(embed.id);
   return s ? `Đã gửi sticker “${stickerLabel(s)}”` : "Đã gửi một sticker";

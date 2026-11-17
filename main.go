@@ -7,6 +7,7 @@ import (
 	"chat/store"
 	"chat/web"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"log"
@@ -27,6 +28,8 @@ func main() {
 	uploadsDir := flag.String("uploads", "uploads", "thư mục lưu file/ảnh người dùng gửi")
 	mode := flag.String("migrate", "up", "up | down (down: rollback rồi thoát, không start server)")
 	steps := flag.Int("steps", 0, "số migration (0 = mặc định)")
+	iceJSON := flag.String("ice-servers", envOr("ICE_SERVERS", `[{"urls":["stun:stun.cloudflare.com:3478"]}]`),
+		"máy chủ STUN/TURN cho gọi điện (JSON giống RTCIceServer[]; mặc định lấy ICE_SERVERS)")
 	giphyKey := flag.String("giphy-key", os.Getenv("GIPHY_API_KEY"), "API key GIPHY để tìm GIF (mặc định lấy từ biến môi trường GIPHY_API_KEY; rỗng = tắt)")
 	flag.Parse()
 
@@ -61,6 +64,12 @@ func main() {
 	if *giphyKey == "" {
 		log.Printf("Tìm GIF đang tắt: đặt GIPHY_API_KEY (hoặc -giphy-key) để bật")
 	}
+	var ice []controller.ICEServer
+	if err := json.Unmarshal([]byte(*iceJSON), &ice); err != nil {
+		log.Fatalf("-ice-servers không phải JSON hợp lệ: %v", err)
+	}
+	api.SetICEServers(ice)
+
 	// nhắc việc tới giờ, bình chọn hết hạn
 	go api.RunScheduler(ctx, 15*time.Second)
 
@@ -113,4 +122,11 @@ func displayAddr(addr string) string {
 		return addr[i:]
 	}
 	return addr
+}
+
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }

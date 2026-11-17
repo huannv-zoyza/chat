@@ -33,6 +33,8 @@ type API struct {
 	giphyBase      string
 	giphyClient    *http.Client
 	gifs           gifCache
+	calls          callRegistry
+	iceServers     []ICEServer
 }
 
 // originPatterns: các origin được phép gọi API và mở websocket từ trình duyệt/app,
@@ -94,6 +96,7 @@ func (a *API) Handler(ui http.Handler) http.Handler {
 
 	mux.HandleFunc("GET /api/users", a.requireAuth(a.searchUsers))
 	mux.HandleFunc("GET /api/gifs", a.requireAuth(a.searchGifs))
+	mux.HandleFunc("GET /api/rtc-config", a.requireAuth(a.rtcConfig))
 
 	mux.HandleFunc("GET /api/keys/me", a.requireAuth(a.getMyKey))
 	mux.HandleFunc("PUT /api/keys/me", a.requireAuth(a.putMyKey))

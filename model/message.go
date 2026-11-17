@@ -67,6 +67,9 @@ type Embed struct {
 	Width   int    `json:"width,omitempty"`
 	Height  int    `json:"height,omitempty"`
 	Title   string `json:"title,omitempty"`
+	// Nhật ký cuộc gọi (type "call", do máy chủ tạo): id = completed | missed | declined.
+	Video    bool `json:"video,omitempty"`
+	Duration int  `json:"duration,omitempty"` // giây
 }
 
 // Reaction: một emoji và những ai đã thả nó.

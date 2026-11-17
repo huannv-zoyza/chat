@@ -9,6 +9,10 @@ export type ServerEvent =
   | { type: "key.updated"; user_id: number; public_key: string }
   | { type: "poll.updated"; channel_id: number; message_id: number; poll: Poll }
   | { type: "reminder.due"; reminder: Reminder }
+  | { type: "call.incoming"; call_id: string; channel_id: number; from: PublicUser; video: boolean }
+  | { type: "call.accepted"; call_id: string }
+  | { type: "call.signal"; call_id: string; data: { sdp?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit } }
+  | { type: "call.ended"; call_id: string; reason: string }
   | { type: "typing"; channel_id: number; user_id: number }
   | { type: "presence"; user_id: number; online: boolean }
   | { type: "user.updated"; user: PublicUser }
@@ -33,7 +37,14 @@ export type SendOptions = {
   forwarded?: boolean;
 };
 
+/** Yêu cầu gọi điện gửi lên máy chủ (xem controller/calls.go). */
+export type CallRequest =
+  | { type: "call.invite"; call_id: string; channel_id: number; video: boolean }
+  | { type: "call.accept" | "call.decline" | "call.hangup"; call_id: string }
+  | { type: "call.signal"; call_id: string; data: unknown };
+
 export type ClientRequest =
+  | CallRequest
   | {
       type: "message.send";
       channel_id: number;
@@ -197,6 +208,11 @@ export class ChatSocket {
   }
 
   /** Sự kiện phụ (typing, read): mất kết nối thì bỏ qua, không xếp hàng. */
+  /** Tín hiệu gọi điện: chỉ gửi khi đang kết nối (không xếp hàng). Trả về false nếu không gửi được. */
+  sendCall(req: CallRequest): boolean {
+    return this.status === "open" && this.rawSend(req);
+  }
+
   sendTyping(channelId: number) {
     if (this.status === "open") this.rawSend({ type: "typing", channel_id: channelId });
   }

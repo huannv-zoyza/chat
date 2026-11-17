@@ -212,6 +212,24 @@ func (h *Hub) ToUser(userID int64, msg []byte) {
 	}
 }
 
+// ToUserExcept gửi msg tới mọi kết nối của userID trừ except.
+func (h *Hub) ToUserExcept(userID int64, msg []byte, except *Client) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for c := range h.byUser[userID] {
+		if c != except {
+			c.enqueue(msg)
+		}
+	}
+}
+
+// IsOnline: userID có kết nối nào đang mở không.
+func (h *Hub) IsOnline(userID int64) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.byUser[userID]) > 0
+}
+
 // ToClient gửi msg tới đúng một kết nối.
 func (h *Hub) ToClient(c *Client, msg []byte) {
 	h.mu.RLock()

@@ -1,4 +1,15 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { CallController } from "../lib/calls";
 import { ApiError, type Api, type Embed, type Message, type User, socketUrl } from "../lib/api";
 import { embedSummary } from "../components/Embeds";
 import { previewText } from "../components/MessageExtras";
@@ -25,6 +36,8 @@ const TYPING_THROTTLE_MS = 3_000;
 type ChatContextValue = {
   state: ChatState;
   dispatch: React.Dispatch<Action>;
+  /** Gọi thoại / video (null khi chưa kết nối). */
+  calls: CallController | null;
   api: Api;
   serverUrl: string;
   selectChannel: (id: number | null) => void;
@@ -114,6 +127,7 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
   stateRef.current = state;
 
   const socketRef = useRef<ChatSocket | null>(null);
+  const [calls, setCalls] = useState<CallController | null>(null);
   const lastTypingSent = useRef<Record<number, number>>({});
 
   const isViewing = useCallback((channelId: number) => {
@@ -309,7 +323,7 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
   );
 
   // để các hành động gọi lẫn nhau (chuyển tiếp -> gửi tin) mà không phụ thuộc vòng
-  const actionsRef = useRef<Omit<ChatContextValue, "state"> | null>(null);
+  const actionsRef = useRef<Omit<ChatContextValue, "state" | "calls"> | null>(null);
 
   /* ---------- Kết nối socket ---------- */
 
@@ -317,10 +331,19 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
     const sock = new ChatSocket(socketUrl(serverUrl, token));
     socketRef.current = sock;
     let everReady = false;
+    const calls = new CallController(
+      api,
+      (req) => sock.sendCall(req),
+      (title, body) => {
+        if (!document.hasFocus()) void showNotification(title, body, () => window.focus());
+      },
+    );
+    setCalls(calls);
 
     const offs = [
       sock.onStatus((status) => {
         dispatch({ type: "status", status });
+        if (status !== "open") calls.onDisconnected();
         if (status === "unauthorized") onUnauthorized();
       }),
 
@@ -354,6 +377,10 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       sock.on("message.updated", (ev) => dispatch({ type: "message.updated", message: ev.message })),
       sock.on("key.updated", (ev) => e2ee.onKeyUpdated(ev.user_id, ev.public_key)),
       sock.on("poll.updated", (ev) => dispatch({ type: "poll.set", messageId: ev.message_id, poll: ev.poll })),
+      sock.on("call.incoming", (ev) => void calls.onEvent(ev)),
+      sock.on("call.accepted", (ev) => void calls.onEvent(ev)),
+      sock.on("call.signal", (ev) => void calls.onEvent(ev)),
+      sock.on("call.ended", (ev) => void calls.onEvent(ev)),
       sock.on("reminder.due", (ev) => {
         const r = ev.reminder;
         dispatch({ type: "reminder.upsert", reminder: r });
@@ -407,6 +434,8 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
 
     return () => {
       offs.forEach((off) => off());
+      calls.hangup();
+      setCalls(null);
       sock.close();
       socketRef.current = null;
     };
@@ -448,7 +477,7 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
 
   // Các hành động KHÔNG phụ thuộc state (đọc state qua stateRef), nên giữ nguyên identity giữa
   // các lần render. Nếu không, effect nào dùng chúng làm dependency sẽ chạy lại sau mỗi tin nhắn.
-  const actions = useMemo<Omit<ChatContextValue, "state">>(
+  const actions = useMemo<Omit<ChatContextValue, "state" | "calls">>(
     () => ({
       dispatch,
       api,
@@ -674,7 +703,7 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
   );
 
   actionsRef.current = actions;
-  const value = useMemo<ChatContextValue>(() => ({ state, ...actions }), [state, actions]);
+  const value = useMemo<ChatContextValue>(() => ({ state, ...actions, calls }), [state, calls, actions]);
 
   return (
     <ChatContext.Provider value={value}>

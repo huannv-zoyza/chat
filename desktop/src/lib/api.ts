@@ -50,13 +50,16 @@ export type Attachment = {
 
 /** Sticker (bộ có sẵn trong app) hoặc GIF (GIPHY) gửi thay cho nội dung chữ. */
 export type Embed = {
-  type: "sticker" | "gif";
+  type: "sticker" | "gif" | "call";
   id: string;
   url?: string;
   preview?: string;
   width?: number;
   height?: number;
   title?: string;
+  /** Nhật ký cuộc gọi (type "call"). */
+  video?: boolean;
+  duration?: number;
 };
 
 export type PollOption = { id: number; text: string; votes: number; voter_ids?: number[] };
@@ -303,6 +306,7 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
       request<Poll>("POST", `/api/messages/${messageId}/poll/options`, { text }),
     remind: (messageId: number, at: string, note: string) =>
       request<Reminder>("POST", `/api/messages/${messageId}/remind`, { at, note }),
+    rtcConfig: () => request<{ ice_servers: RTCIceServer[] }>("GET", "/api/rtc-config"),
     reminders: () => request<Reminder[]>("GET", "/api/reminders"),
     snoozeReminder: (id: number, at: string) => request<Reminder>("PATCH", `/api/reminders/${id}`, { at }),
     deleteReminder: (id: number) => request<void>("DELETE", `/api/reminders/${id}`),

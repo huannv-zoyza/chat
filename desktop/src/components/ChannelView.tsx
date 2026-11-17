@@ -22,6 +22,7 @@ import { ChannelSigil } from "./ChannelDialogs";
 import { ConfirmDeleteDialog, MessageEditor } from "./MessageEditor";
 import { EmbedView } from "./Embeds";
 import { PollView } from "./Polls";
+import { CallButtons } from "./CallOverlay";
 import { ForwardDialog, PinsDialog, QuoteBlock, previewText } from "./MessageExtras";
 import { findMessage } from "../state/chat";
 import { RemindDialog } from "./Reminders";
@@ -143,6 +144,7 @@ export function ChannelView({ channel, membersOpen, onToggleMembers, onOpenSetti
         )}
         {direct && (
           <div className="room-actions">
+            {peerId !== null && <CallButtons channelId={channel.id} peerId={peerId} />}
             {pinsBtn}
             <button
               className={`icon-btn${enc.encrypted ? " is-secure" : ""}`}
@@ -645,7 +647,7 @@ export function MessageRow(props: RowProps) {
         ) : message?.poll ? (
           <PollView message={message} />
         ) : embed ? (
-          <EmbedView embed={embed} />
+          <EmbedView embed={embed} channelId={message?.channel_id} userId={message?.user_id} />
         ) : (
           text && <MessageText content={text} meId={state.me.id} edited={message?.edited_at} />
         )}

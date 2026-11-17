@@ -90,6 +90,7 @@ Lỗi trả về `{"error": "<câu hiển thị cho người dùng>"}`.
 | POST | `/api/messages/{id}/remind` | `{at, note}` hẹn nhắc tin này |
 | GET | `/api/reminders` | Nhắc việc của mình |
 | PATCH / DELETE | `/api/reminders/{id}` | `{at}` hoãn / xoá |
+| GET | `/api/rtc-config` | Máy chủ STUN/TURN cho gọi điện |
 | PATCH | `/api/messages/{id}` | `{content}` sửa tin của mình |
 | DELETE | `/api/messages/{id}` | Xoá tin (người viết, hoặc chủ kênh) |
 | PUT | `/api/me/password` | `{current_password, new_password}`; đăng xuất các thiết bị khác |

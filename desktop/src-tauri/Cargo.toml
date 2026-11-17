@@ -25,3 +25,7 @@ tauri = { version = "2.12.5", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-opener = "2"
+
+# Linux (WebKitGTK): bật micro/camera + WebRTC cho gọi thoại/video (mặc định WebKitGTK tắt).
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = { version = "=2.0.2", features = ["v2_38"] }

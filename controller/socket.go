@@ -48,6 +48,7 @@ type clientRequest struct {
 	CallID string          `json:"call_id"`
 	Video  bool            `json:"video"`
 	Data   json.RawMessage `json:"data"` // SDP / ICE (máy chủ chuyển nguyên văn)
+	To     string          `json:"to"`   // gọi nhóm: id kết nối nhận tín hiệu
 }
 
 // serveSocket: GET /ws?token=<token>
@@ -98,13 +99,17 @@ func (a *API) serveSocket(w http.ResponseWriter, r *http.Request) {
 		close(writerDone)
 	}()
 
-	a.hub.ToClient(client, mustJSON(readyEvent{Type: "ready", User: user, OnlineUserIDs: a.hub.OnlineUserIDs()}))
+	a.hub.ToClient(client, mustJSON(readyEvent{
+		Type: "ready", User: user, OnlineUserIDs: a.hub.OnlineUserIDs(), UIBuild: a.uiBuild,
+		GroupCalls: a.groups.statesFor(channelIDs),
+	}))
 	if firstConn {
 		a.hub.ToAll(mustJSON(presenceEvent{Type: "presence", UserID: user.ID, Online: true}))
 	}
 
 	defer func() {
 		a.calls.clientGone(a, client) // kết thúc cuộc gọi đang dùng kết nối này
+		a.leaveGroup(0, client)
 		if lastConn := a.hub.Remove(client); lastConn {
 			a.hub.ToAll(mustJSON(presenceEvent{Type: "presence", UserID: user.ID, Online: false}))
 		}
@@ -228,6 +233,9 @@ func (a *API) handleRequest(ctx context.Context, client *socket.Client, user mod
 
 	case "call.invite", "call.accept", "call.decline", "call.hangup", "call.signal":
 		a.handleCall(ctx, client, user, req)
+
+	case "groupcall.join", "groupcall.leave", "groupcall.signal":
+		a.handleGroupCall(ctx, client, user, req)
 
 	case "typing":
 		if a.hub.IsSubscribed(client, req.ChannelID) {

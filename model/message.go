@@ -70,6 +70,8 @@ type Embed struct {
 	// Nhật ký cuộc gọi (type "call", do máy chủ tạo): id = completed | missed | declined.
 	Video    bool `json:"video,omitempty"`
 	Duration int  `json:"duration,omitempty"` // giây
+	// Gọi nhóm (id = group): số người đông nhất.
+	Participants int `json:"participants,omitempty"`
 }
 
 // Reaction: một emoji và những ai đã thả nó.

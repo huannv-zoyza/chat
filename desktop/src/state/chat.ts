@@ -76,6 +76,8 @@ export type ChatState = {
   pins: Record<number, Message[]>;
   /** Nhắc việc của mình (null: chưa tải). */
   reminders: Reminder[] | null;
+  /** Máy chủ đang phục vụ bản giao diện mới hơn bản đang chạy. */
+  updateAvailable: boolean;
   /** channelId -> userId -> id tin đã xem tới (để hiện "đã xem"). */
   reads: Record<number, Record<number, number>>;
 };
@@ -100,6 +102,7 @@ export function initialState(me: User): ChatState {
     highlight: null,
     pins: {},
     reminders: null,
+    updateAvailable: false,
     reads: {},
   };
 }
@@ -125,6 +128,7 @@ export type Action =
   | { type: "highlight"; messageId: number | null }
   | { type: "pins.loaded"; channelId: number; messages: Message[] }
   | { type: "reminders.loaded"; reminders: Reminder[] }
+  | { type: "update.available" }
   | { type: "reminder.upsert"; reminder: Reminder }
   | { type: "reminder.remove"; id: number }
   | { type: "pending.add"; pending: PendingMessage }
@@ -384,6 +388,9 @@ export function reducer(s: ChatState, a: Action): ChatState {
 
     case "highlight":
       return { ...s, highlight: a.messageId ? { id: a.messageId, at: Date.now() } : null };
+
+    case "update.available":
+      return s.updateAvailable ? s : { ...s, updateAvailable: true };
 
     case "reminders.loaded":
       return { ...s, reminders: a.reminders };

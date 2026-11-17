@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useCallState } from "../lib/calls";
+import { useGroupCall } from "../lib/groupcall";
 import { displayName } from "../lib/format";
 import { useChat } from "../state/ChatProvider";
 import { Avatar, Icon } from "./ui";
@@ -153,9 +154,10 @@ export function CallOverlay() {
 
 /** Nút gọi trên đầu cuộc trò chuyện riêng. */
 export function CallButtons({ channelId, peerId }: { channelId: number; peerId: number }) {
-  const { calls, state } = useChat();
+  const { calls, state, groupCalls } = useChat();
   const call = useCallState(calls);
-  const busy = call.phase !== "idle" && call.phase !== "ended";
+  const inGroup = !!useGroupCall(groupCalls).active;
+  const busy = inGroup || (call.phase !== "idle" && call.phase !== "ended");
   const peer = state.users[peerId];
   if (!calls || !peer || peerId === state.me.id) return null;
   return (
@@ -189,7 +191,9 @@ export function CallLog({
   duration,
   channelId,
   callerId,
+  participants,
 }: {
+  participants?: number;
   outcome: string;
   video?: boolean;
   duration?: number;
@@ -203,16 +207,18 @@ export function CallLog({
   const kind = video ? "video" : "thoại";
   const fmt = (s: number) => (s >= 60 ? `${Math.floor(s / 60)} phút ${s % 60} giây` : `${s} giây`);
   const text =
-    outcome === "completed"
-      ? `Cuộc gọi ${kind} · ${fmt(duration ?? 0)}`
-      : outcome === "declined"
-        ? mine
-          ? `Cuộc gọi ${kind} bị từ chối`
-          : `Bạn đã từ chối cuộc gọi ${kind}`
-        : mine
-          ? `Cuộc gọi ${kind} không được trả lời`
-          : `Cuộc gọi ${kind} nhỡ`;
-  const missed = outcome !== "completed";
+    outcome === "group"
+      ? `Cuộc gọi ${kind} nhóm · ${fmt(duration ?? 0)}${participants ? ` · ${participants} người` : ""}`
+      : outcome === "completed"
+        ? `Cuộc gọi ${kind} · ${fmt(duration ?? 0)}`
+        : outcome === "declined"
+          ? mine
+            ? `Cuộc gọi ${kind} bị từ chối`
+            : `Bạn đã từ chối cuộc gọi ${kind}`
+          : mine
+            ? `Cuộc gọi ${kind} không được trả lời`
+            : `Cuộc gọi ${kind} nhỡ`;
+  const missed = outcome !== "completed" && outcome !== "group";
   return (
     <div className={`call-log${missed && !mine ? " is-missed" : ""}`}>
       <span className="call-log-icon">

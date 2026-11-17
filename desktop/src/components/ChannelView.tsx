@@ -23,6 +23,7 @@ import { ConfirmDeleteDialog, MessageEditor } from "./MessageEditor";
 import { EmbedView } from "./Embeds";
 import { PollView } from "./Polls";
 import { CallButtons } from "./CallOverlay";
+import { GroupCallBanner, GroupCallButtons } from "./GroupCall";
 import { ForwardDialog, PinsDialog, QuoteBlock, previewText } from "./MessageExtras";
 import { findMessage } from "../state/chat";
 import { RemindDialog } from "./Reminders";
@@ -158,6 +159,7 @@ export function ChannelView({ channel, membersOpen, onToggleMembers, onOpenSetti
         )}
         {!direct && (
           <div className="room-actions">
+            <GroupCallButtons channel={channel} />
             {pinsBtn}
             <button
               className={`chip${membersOpen ? " is-on" : ""}`}
@@ -195,6 +197,7 @@ export function ChannelView({ channel, membersOpen, onToggleMembers, onOpenSetti
         </div>
       )}
 
+      {!direct && <GroupCallBanner channel={channel} />}
       <MessageList channel={channel} />
       <TypingIndicator channelId={channel.id} />
       {direct && <E2EEBanner channel={channel} />}

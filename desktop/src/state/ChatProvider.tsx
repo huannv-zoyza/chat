@@ -10,6 +10,10 @@ import {
   type ReactNode,
 } from "react";
 import { CallController } from "../lib/calls";
+import { GroupCallController } from "../lib/groupcall";
+import { servedByServer } from "../lib/platform";
+
+declare const __BUILD_ID__: string;
 import { ApiError, type Api, type Embed, type Message, type User, socketUrl } from "../lib/api";
 import { embedSummary } from "../components/Embeds";
 import { previewText } from "../components/MessageExtras";
@@ -38,6 +42,8 @@ type ChatContextValue = {
   dispatch: React.Dispatch<Action>;
   /** Gọi thoại / video (null khi chưa kết nối). */
   calls: CallController | null;
+  /** Gọi nhóm trong kênh. */
+  groupCalls: GroupCallController | null;
   api: Api;
   serverUrl: string;
   selectChannel: (id: number | null) => void;
@@ -128,6 +134,7 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
 
   const socketRef = useRef<ChatSocket | null>(null);
   const [calls, setCalls] = useState<CallController | null>(null);
+  const [groupCalls, setGroupCalls] = useState<GroupCallController | null>(null);
   const lastTypingSent = useRef<Record<number, number>>({});
 
   const isViewing = useCallback((channelId: number) => {
@@ -323,7 +330,7 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
   );
 
   // để các hành động gọi lẫn nhau (chuyển tiếp -> gửi tin) mà không phụ thuộc vòng
-  const actionsRef = useRef<Omit<ChatContextValue, "state" | "calls"> | null>(null);
+  const actionsRef = useRef<Omit<ChatContextValue, "state" | "calls" | "groupCalls"> | null>(null);
 
   /* ---------- Kết nối socket ---------- */
 
@@ -339,16 +346,35 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       },
     );
     setCalls(calls);
+    const groups = new GroupCallController(
+      api,
+      (req) => sock.sendGroup(req),
+      (title, body, channelId) => {
+        if (!document.hasFocus())
+          void showNotification(title, body, () => dispatch({ type: "channel.select", channelId }));
+      },
+      () => {
+        const p = calls.getSnapshot().phase;
+        return p !== "idle" && p !== "ended";
+      },
+    );
+    setGroupCalls(groups);
 
     const offs = [
       sock.onStatus((status) => {
         dispatch({ type: "status", status });
-        if (status !== "open") calls.onDisconnected();
+        if (status !== "open") {
+          calls.onDisconnected();
+          groups.onDisconnected();
+        }
         if (status === "unauthorized") onUnauthorized();
       }),
 
       sock.on("ready", (ev) => {
         dispatch({ type: "ready", me: ev.user, online: ev.online_user_ids });
+        groups.setRooms(ev.group_calls ?? []);
+        // bản web đang chạy cũ hơn bản máy chủ phục vụ: nhắc tải lại (app desktop có bản riêng)
+        if (servedByServer && ev.ui_build && ev.ui_build !== __BUILD_ID__) dispatch({ type: "update.available" });
         api
           .reminders()
           .then((reminders) => dispatch({ type: "reminders.loaded", reminders }))
@@ -377,6 +403,11 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       sock.on("message.updated", (ev) => dispatch({ type: "message.updated", message: ev.message })),
       sock.on("key.updated", (ev) => e2ee.onKeyUpdated(ev.user_id, ev.public_key)),
       sock.on("poll.updated", (ev) => dispatch({ type: "poll.set", messageId: ev.message_id, poll: ev.poll })),
+      sock.on("groupcall.state", (ev) => void groups.onEvent(ev)),
+      sock.on("groupcall.started", (ev) => void groups.onEvent(ev)),
+      sock.on("groupcall.welcome", (ev) => void groups.onEvent(ev)),
+      sock.on("groupcall.signal", (ev) => void groups.onEvent(ev)),
+      sock.on("groupcall.error", (ev) => void groups.onEvent(ev)),
       sock.on("call.incoming", (ev) => void calls.onEvent(ev)),
       sock.on("call.accepted", (ev) => void calls.onEvent(ev)),
       sock.on("call.signal", (ev) => void calls.onEvent(ev)),
@@ -435,7 +466,9 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
     return () => {
       offs.forEach((off) => off());
       calls.hangup();
+      groups.leave();
       setCalls(null);
+      setGroupCalls(null);
       sock.close();
       socketRef.current = null;
     };
@@ -477,7 +510,7 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
 
   // Các hành động KHÔNG phụ thuộc state (đọc state qua stateRef), nên giữ nguyên identity giữa
   // các lần render. Nếu không, effect nào dùng chúng làm dependency sẽ chạy lại sau mỗi tin nhắn.
-  const actions = useMemo<Omit<ChatContextValue, "state" | "calls">>(
+  const actions = useMemo<Omit<ChatContextValue, "state" | "calls" | "groupCalls">>(
     () => ({
       dispatch,
       api,
@@ -703,7 +736,10 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
   );
 
   actionsRef.current = actions;
-  const value = useMemo<ChatContextValue>(() => ({ state, ...actions, calls }), [state, calls, actions]);
+  const value = useMemo<ChatContextValue>(
+    () => ({ state, ...actions, calls, groupCalls }),
+    [state, calls, groupCalls, actions],
+  );
 
   return (
     <ChatContext.Provider value={value}>

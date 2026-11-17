@@ -4,6 +4,7 @@ package web
 
 import (
 	"embed"
+	"encoding/json"
 	"io/fs"
 	"net/http"
 	"path"
@@ -19,6 +20,21 @@ var uiFS embed.FS
 func Available() bool {
 	_, err := fs.Stat(uiFS, "ui/dist/index.html")
 	return err == nil
+}
+
+// BuildID: mã bản build giao diện đang nhúng (build.json do Vite tạo), rỗng nếu không có.
+func BuildID() string {
+	b, err := fs.ReadFile(uiFS, "ui/dist/build.json")
+	if err != nil {
+		return ""
+	}
+	var v struct {
+		ID string `json:"id"`
+	}
+	if json.Unmarshal(b, &v) != nil {
+		return ""
+	}
+	return v.ID
 }
 
 // Handler phục vụ giao diện kiểu SPA: file có thật thì trả file, còn lại trả index.html.

@@ -128,13 +128,14 @@ func (a *API) handleCall(ctx context.Context, client *socket.Client, user model.
 			fail("invalid")
 			return
 		}
-		if reg.busy(peer) {
+		if reg.busy(peer) || a.groups.inCall(peer) {
 			reg.mu.Unlock()
 			fail("busy")
 			return
 		}
 		if !a.hub.IsOnline(peer) {
 			reg.mu.Unlock()
+			log.Printf("call %s: %s gọi user %d nhưng người này offline", req.CallID, user.Username, peer)
 			fail("offline")
 			a.logCall(ch.ID, user, req.Video, "missed", 0)
 			return
@@ -216,6 +217,7 @@ func (a *API) endCall(id, reason string) {
 	c.timer.Stop()
 	reg.mu.Unlock()
 
+	log.Printf("call %s: %s -> user %d kết thúc (%s), đã nghe: %v", id, c.from.Username, c.calleeID, reason, !c.answered.IsZero())
 	ev := mustJSON(callEvent{Type: "call.ended", CallID: id, Reason: reason})
 	a.hub.ToClient(c.caller, ev)
 	if c.callee != nil {

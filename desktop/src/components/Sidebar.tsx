@@ -5,6 +5,7 @@ import { displayName } from "../lib/format";
 import { Avatar, Icon } from "./ui";
 import { ChannelSigil } from "./ChannelDialogs";
 import { channelTitle, dmPeerId, isDM } from "../lib/channel";
+import { useGroupCall } from "../lib/groupcall";
 
 const STATUS_LABEL: Record<SocketStatus, string> = {
   idle: "Đang kết nối",
@@ -38,7 +39,8 @@ export function Sidebar({
   onSearch,
   onReminders,
 }: Props) {
-  const { state, selectChannel } = useChat();
+  const { state, selectChannel, groupCalls } = useChat();
+  const liveRooms = useGroupCall(groupCalls).rooms;
   const channels = useMemo(
     () =>
       Object.values(state.channels)
@@ -107,6 +109,11 @@ export function Sidebar({
                       <ChannelSigil channel={c} size={13} />
                     </span>
                     <span className="channel-name">{c.name}</span>
+                    {liveRooms[c.id] && (
+                      <span className="channel-live" title="Đang có cuộc gọi nhóm" aria-label="Đang có cuộc gọi nhóm">
+                        <Icon name="phone" size={13} />
+                      </span>
+                    )}
                     {mentions > 0 ? (
                       <span className="badge badge-mention" aria-label={`${mentions} lần nhắc tên bạn`}>
                         @{mentions > 99 ? "99+" : mentions}

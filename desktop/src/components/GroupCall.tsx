@@ -1,0 +1,257 @@
+import { useEffect, useRef, useState } from "react";
+import type { Channel, PublicUser } from "../lib/api";
+import { useCallState } from "../lib/calls";
+import { channelLabel } from "../lib/channel";
+import { displayName } from "../lib/format";
+import { useGroupCall } from "../lib/groupcall";
+import { useChat } from "../state/ChatProvider";
+import { Avatar, Icon } from "./ui";
+
+function Media({ stream, muted, mirror }: { stream?: MediaStream; muted?: boolean; mirror?: boolean }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    if (ref.current && ref.current.srcObject !== (stream ?? null)) ref.current.srcObject = stream ?? null;
+  }, [stream]);
+  return <video ref={ref} autoPlay playsInline muted={muted} className={mirror ? "is-mirror" : undefined} />;
+}
+
+function useClock(since?: number) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!since) return;
+    const t = window.setInterval(() => tick((x) => x + 1), 1000);
+    return () => window.clearInterval(t);
+  }, [since]);
+  if (!since) return "";
+  const s = Math.max(0, Math.floor((Date.now() - since) / 1000));
+  const h = Math.floor(s / 3600);
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+  const ss = String(s % 60).padStart(2, "0");
+  return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+function Tile({
+  user,
+  stream,
+  self,
+  camOff,
+  state,
+}: {
+  user?: PublicUser;
+  stream?: MediaStream;
+  self?: boolean;
+  camOff?: boolean;
+  state?: string;
+}) {
+  // có hình khi có track video đang bật; video vẫn được gắn (ẩn) để phát tiếng
+  const [, force] = useState(0);
+  useEffect(() => {
+    if (!stream) return;
+    const on = () => force((x) => x + 1);
+    stream.addEventListener("addtrack", on);
+    stream.getTracks().forEach((t) => {
+      t.addEventListener("mute", on);
+      t.addEventListener("unmute", on);
+    });
+    return () => stream.removeEventListener("addtrack", on);
+  }, [stream]);
+  const hasVideo = !!stream?.getVideoTracks().some((t) => t.enabled && !t.muted) && !camOff;
+  return (
+    <div className={`gc-tile${hasVideo ? " has-video" : ""}`}>
+      <Media stream={stream} muted={self} mirror={self} />
+      {!hasVideo && (
+        <div className="gc-tile-avatar">
+          <Avatar user={user} size={72} />
+        </div>
+      )}
+      <span className="gc-tile-name">
+        {self ? "Bạn" : displayName(user)}
+        {state && state !== "connected" && state !== "new" && (
+          <em> · {state === "failed" ? "lỗi kết nối" : "đang nối…"}</em>
+        )}
+        {state === "new" && <em> · đang nối…</em>}
+      </span>
+    </div>
+  );
+}
+
+/** Màn hình gọi nhóm (to) hoặc thanh nổi khi thu nhỏ; thẻ mời; thông báo lỗi. */
+export function GroupCallOverlay() {
+  const { groupCalls: g, state, selectChannel } = useChat();
+  const gs = useGroupCall(g);
+  const a = gs.active;
+  const clock = useClock(
+    a ? (gs.rooms[a.channelId]?.started_at ? Date.parse(gs.rooms[a.channelId].started_at!) : a.joinedAt) : undefined,
+  );
+  if (!g) return null;
+
+  const invite = gs.invite;
+  const inviteCh = invite ? state.channels[invite.channelId] : undefined;
+  const ch = a ? state.channels[a.channelId] : undefined;
+  const peers = a ? Object.values(a.peers) : [];
+  const count = peers.length + (a ? 1 : 0);
+  const label = ch ? channelLabel(ch, state.users, state.me.id) : "Cuộc gọi nhóm";
+
+  return (
+    <>
+      {gs.error && (
+        <div className="gc-toast is-error" role="alert">
+          <span>{gs.error}</span>
+          <button type="button" className="icon-btn" onClick={() => g.dismissError()} aria-label="Đóng">
+            <Icon name="x" size={15} />
+          </button>
+        </div>
+      )}
+
+      {invite && !a && (
+        <div className="gc-toast" role="alertdialog" aria-label="Lời mời gọi nhóm">
+          <Avatar user={state.users[invite.by.id] ?? invite.by} size={36} />
+          <span className="gc-toast-text">
+            <strong>{displayName(state.users[invite.by.id] ?? invite.by)}</strong> bắt đầu gọi{" "}
+            {invite.video ? "video" : "thoại"} nhóm
+            {inviteCh ? ` trong ${channelLabel(inviteCh, state.users, state.me.id)}` : ""}
+          </span>
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            onClick={() => {
+              selectChannel(invite.channelId);
+              void g.join(invite.channelId, invite.video);
+            }}
+          >
+            Tham gia
+          </button>
+          <button type="button" className="btn btn-sm" onClick={() => g.dismissInvite()}>
+            Bỏ qua
+          </button>
+        </div>
+      )}
+
+      {a && (
+        <div className={`gc-overlay${a.minimized ? " is-min" : ""}`} role="dialog" aria-label={`Gọi nhóm ${label}`}>
+          <div className="gc-head">
+            <strong>{label}</strong>
+            <span>
+              {clock} · {count} người
+            </span>
+          </div>
+          <div className={`gc-grid n${Math.min(count, 9)}`}>
+            <Tile user={state.users[state.me.id] ?? state.me} stream={a.local} self camOff={a.camOff} />
+            {peers.map((p) => (
+              <Tile key={p.peerId} user={state.users[p.user.id] ?? p.user} stream={p.stream} state={p.state} />
+            ))}
+          </div>
+          {peers.length === 0 && <p className="gc-wait">Đang chờ người khác tham gia…</p>}
+          <div className="gc-controls">
+            <button
+              type="button"
+              className={`call-btn${a.muted ? " is-off" : ""}`}
+              onClick={() => g.toggleMute()}
+              aria-label={a.muted ? "Bật micro" : "Tắt micro"}
+            >
+              <Icon name={a.muted ? "micOff" : "mic"} size={22} />
+              <span>Micro</span>
+            </button>
+            {!!a.local?.getVideoTracks().length && (
+              <button
+                type="button"
+                className={`call-btn${a.camOff ? " is-off" : ""}`}
+                onClick={() => g.toggleCamera()}
+                aria-label={a.camOff ? "Bật camera" : "Tắt camera"}
+              >
+                <Icon name={a.camOff ? "videoOff" : "video"} size={22} />
+                <span>Camera</span>
+              </button>
+            )}
+            <button
+              type="button"
+              className="call-btn"
+              onClick={() => g.minimize(!a.minimized)}
+              aria-label={a.minimized ? "Phóng to" : "Thu nhỏ"}
+            >
+              <Icon name={a.minimized ? "arrowUp" : "arrowDown"} size={22} />
+              <span>{a.minimized ? "Mở" : "Thu nhỏ"}</span>
+            </button>
+            <button type="button" className="call-btn is-danger" onClick={() => g.leave()} aria-label="Rời cuộc gọi">
+              <Icon name="phoneOff" size={24} />
+              <span>Rời</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** Nút gọi nhóm trên đầu kênh + dải "đang có cuộc gọi". */
+export function GroupCallButtons({ channel }: { channel: Channel }) {
+  const { groupCalls: g, calls } = useChat();
+  const gs = useGroupCall(g);
+  const one = useCallState(calls);
+  if (!g) return null;
+  const busy = !!gs.active || (one.phase !== "idle" && one.phase !== "ended");
+  const room = gs.rooms[channel.id];
+  return (
+    <>
+      <button
+        className={`icon-btn${room ? " is-live" : ""}`}
+        disabled={busy}
+        onClick={() => void g.join(channel.id, false)}
+        title={room ? "Tham gia cuộc gọi nhóm" : "Gọi thoại nhóm"}
+        aria-label={room ? "Tham gia cuộc gọi nhóm" : "Gọi thoại nhóm"}
+      >
+        <Icon name="phone" />
+      </button>
+      <button
+        className="icon-btn"
+        disabled={busy}
+        onClick={() => void g.join(channel.id, true)}
+        title={room ? "Tham gia bằng video" : "Gọi video nhóm"}
+        aria-label={room ? "Tham gia cuộc gọi nhóm bằng video" : "Gọi video nhóm"}
+      >
+        <Icon name="video" />
+      </button>
+    </>
+  );
+}
+
+export function GroupCallBanner({ channel }: { channel: Channel }) {
+  const { groupCalls: g, state } = useChat();
+  const gs = useGroupCall(g);
+  const room = gs.rooms[channel.id];
+  if (!g || !room || gs.active?.channelId === channel.id) return null;
+  const names = room.participants.map((p) =>
+    p.user.id === state.me.id ? "Bạn" : displayName(state.users[p.user.id] ?? p.user),
+  );
+  return (
+    <div className="gc-banner" role="status">
+      <span className="gc-live-dot" aria-hidden />
+      <span className="gc-banner-text">
+        Đang có cuộc gọi nhóm · {names.slice(0, 3).join(", ")}
+        {names.length > 3 ? ` và ${names.length - 3} người khác` : ""}
+      </span>
+      <button
+        type="button"
+        className="btn btn-sm btn-primary"
+        disabled={!!gs.active}
+        onClick={() => void g.join(channel.id, false)}
+      >
+        Tham gia
+      </button>
+    </div>
+  );
+}
+
+/** Dải "có phiên bản mới" (bản web đang chạy cũ hơn máy chủ). */
+export function UpdateBanner() {
+  const { state } = useChat();
+  if (!state.updateAvailable) return null;
+  return (
+    <div className="update-banner" role="status">
+      <span>Đã có phiên bản mới của Go Chat (có tính năng mới như gọi điện).</span>
+      <button type="button" className="btn btn-sm btn-primary" onClick={() => window.location.reload()}>
+        Tải lại
+      </button>
+    </div>
+  );
+}

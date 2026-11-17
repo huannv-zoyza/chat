@@ -1,8 +1,21 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+// Mã bản build giao diện: server Go đọc build.json (nhúng kèm) và báo cho client qua sự kiện
+// "ready"; tab nào đang chạy bản cũ sẽ hiện "Có phiên bản mới, tải lại".
+const BUILD_ID = Date.now().toString(36);
+
 export default defineConfig({
-  plugins: [react()],
+  define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
+  plugins: [
+    react(),
+    {
+      name: "build-id",
+      generateBundle() {
+        this.emitFile({ type: "asset", fileName: "build.json", source: JSON.stringify({ id: BUILD_ID }) });
+      },
+    },
+  ],
   // Không xoá log của Rust khi chạy `tauri dev`.
   clearScreen: false,
   server: {

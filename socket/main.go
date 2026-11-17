@@ -3,6 +3,8 @@ package socket
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"sync"
 	"time"
 
@@ -21,6 +23,8 @@ const (
 
 // Client là MỘT kết nối websocket. Một user có thể có nhiều Client (nhiều máy/cửa sổ).
 type Client struct {
+	// ID ngẫu nhiên của kết nối (định tuyến tín hiệu cuộc gọi nhóm tới đúng thiết bị).
+	ID     string
 	UserID int64
 	// SessionHash: phiên đăng nhập đã mở kết nối này, để đóng đúng kết nối khi phiên bị huỷ.
 	SessionHash string
@@ -32,7 +36,10 @@ type Client struct {
 }
 
 func NewClient(userID int64, sessionHash string, conn *websocket.Conn) *Client {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
 	return &Client{
+		ID:          hex.EncodeToString(b),
 		UserID:      userID,
 		SessionHash: sessionHash,
 		Conn:        conn,

@@ -1,9 +1,28 @@
+import type { GroupParticipant, GroupRoom } from "./groupcall";
 import type { Embed, Poll, Reminder, Message, Channel, PublicUser, Reaction, ThreadSummary, User } from "./api";
 
 /* ---------- Giao thức (khớp controller/events.go và controller/socket.go) ---------- */
 
 export type ServerEvent =
-  | { type: "ready"; user: User; online_user_ids: number[] }
+  | {
+      type: "ready";
+      user: User;
+      online_user_ids: number[];
+      /** Mã bản build giao diện máy chủ đang phục vụ. */
+      ui_build?: string;
+      group_calls?: GroupRoom[];
+    }
+  | { type: "groupcall.state"; channel_id: number; started_at?: string; participants?: GroupParticipant[] }
+  | { type: "groupcall.started"; channel_id: number; by: PublicUser; video?: boolean }
+  | { type: "groupcall.welcome"; channel_id: number; self: string; participants?: GroupParticipant[] }
+  | {
+      type: "groupcall.signal";
+      channel_id: number;
+      from: string;
+      from_user: PublicUser;
+      data: { sdp?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit };
+    }
+  | { type: "groupcall.error"; channel_id: number; message: string }
   | { type: "message.new"; message: Message; client_id?: string }
   | { type: "message.updated"; message: Message }
   | { type: "key.updated"; user_id: number; public_key: string }
@@ -211,6 +230,11 @@ export class ChatSocket {
   /** Tín hiệu gọi điện: chỉ gửi khi đang kết nối (không xếp hàng). Trả về false nếu không gửi được. */
   sendCall(req: CallRequest): boolean {
     return this.status === "open" && this.rawSend(req);
+  }
+
+  /** Tín hiệu gọi nhóm (không xếp hàng). */
+  sendGroup(req: Record<string, unknown>): boolean {
+    return this.status === "open" && this.rawSend(req as unknown as ClientRequest);
   }
 
   sendTyping(channelId: number) {

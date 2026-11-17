@@ -111,6 +111,7 @@ const paths: Record<string, ReactNode> = {
   send: <path d="M4 12 20 4l-4 16-4-7-8-1ZM12 13l8-9" />,
   refresh: <path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" />,
   arrowDown: <path d="M12 5v14M6 13l6 6 6-6" />,
+  arrowUp: <path d="M12 19V5M6 11l6-6 6 6" />,
   arrowLeft: <path d="M19 12H5M11 6l-6 6 6 6" />,
   play: <path d="M8 5.5v13l11-6.5-11-6.5Z" fill="currentColor" />,
   smilePlus: (

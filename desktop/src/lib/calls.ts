@@ -263,6 +263,8 @@ export class CallController {
         this.set({ phase: "connecting" });
         try {
           const pc = await this.peer();
+          // máy mình không có camera: vẫn nhận hình của người kia trong cuộc gọi video
+          if (s.video && !this.state.local?.getVideoTracks().length) pc.addTransceiver("video", { direction: "recvonly" });
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
           this.send({ type: "call.signal", call_id: ev.call_id, data: { sdp: pc.localDescription!.toJSON() } });

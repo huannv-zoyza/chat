@@ -35,6 +35,10 @@ type readyEvent struct {
 	Type          string     `json:"type"`
 	User          model.User `json:"user"`
 	OnlineUserIDs []int64    `json:"online_user_ids"`
+	// Mã bản build giao diện web đang phục vụ: khác bản client đang chạy thì client nhắc tải lại.
+	UIBuild string `json:"ui_build,omitempty"`
+	// Các cuộc gọi nhóm đang diễn ra trong những kênh mình tham gia.
+	GroupCalls []groupCallState `json:"group_calls"`
 }
 
 type messageNewEvent struct {

@@ -60,6 +60,7 @@ export type Embed = {
   /** Nhật ký cuộc gọi (type "call"). */
   video?: boolean;
   duration?: number;
+  participants?: number;
 };
 
 export type PollOption = { id: number; text: string; votes: number; voter_ids?: number[] };

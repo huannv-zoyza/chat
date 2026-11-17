@@ -69,6 +69,7 @@ func main() {
 		log.Fatalf("-ice-servers không phải JSON hợp lệ: %v", err)
 	}
 	api.SetICEServers(ice)
+	api.SetUIBuild(web.BuildID())
 
 	// nhắc việc tới giờ, bình chọn hết hạn
 	go api.RunScheduler(ctx, 15*time.Second)

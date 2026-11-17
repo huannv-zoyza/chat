@@ -47,6 +47,7 @@ export function EmbedView({ embed, channelId, userId }: { embed: Embed; channelI
         duration={embed.duration}
         channelId={channelId ?? 0}
         callerId={userId ?? 0}
+        participants={embed.participants}
       />
     );
   }

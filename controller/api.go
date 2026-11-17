@@ -34,8 +34,13 @@ type API struct {
 	giphyClient    *http.Client
 	gifs           gifCache
 	calls          callRegistry
+	groups         groupRegistry
 	iceServers     []ICEServer
+	uiBuild        string
 }
+
+// SetUIBuild: mã bản build giao diện web đang nhúng (gửi cho client trong sự kiện "ready").
+func (a *API) SetUIBuild(id string) { a.uiBuild = id }
 
 // originPatterns: các origin được phép gọi API và mở websocket từ trình duyệt/app,
 // ví dụ []string{"localhost:*"}. Cú pháp giống AcceptOptions.OriginPatterns của websocket.

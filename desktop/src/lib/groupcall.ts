@@ -4,7 +4,7 @@
  * chỉ trả lời. Máy chủ chỉ chuyển tín hiệu (controller/groupcalls.go).
  */
 import { useSyncExternalStore } from "react";
-import type { Api, PublicUser } from "./api";
+import { insecureMediaMessage, type Api, type PublicUser } from "./api";
 
 export type GroupParticipant = { peer_id: string; user: PublicUser; video: boolean };
 export type GroupRoom = { channel_id: number; started_at?: string; participants: GroupParticipant[] };
@@ -94,10 +94,7 @@ export class GroupCallController {
   async join(channelId: number, video: boolean) {
     if (this.state.active || this.busyElsewhere()) return;
     if (!navigator.mediaDevices?.getUserMedia) {
-      this.set({
-        error:
-          "Trình duyệt chặn micro/camera vì trang không chạy trên https. Hãy mở bằng địa chỉ https hoặc app desktop.",
-      });
+      this.set({ error: await insecureMediaMessage(this.api) });
       return;
     }
     let local: MediaStream;
@@ -114,12 +111,11 @@ export class GroupCallController {
         return;
       }
     }
-    if (!this.iceServers) {
-      this.iceServers = await this.api
-        .rtcConfig()
-        .then((r) => r.ice_servers)
-        .catch(() => []);
-    }
+    // lấy mới mỗi lần vào: tài khoản TURN tạm có hạn
+    this.iceServers = await this.api
+      .rtcConfig()
+      .then((r) => r.ice_servers)
+      .catch(() => this.iceServers ?? []);
     this.set({
       invite: undefined,
       error: undefined,

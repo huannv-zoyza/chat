@@ -21,6 +21,9 @@ func TestGroupCalls(t *testing.T) {
 	defer wb.conn.CloseNow()
 	defer wc.conn.CloseNow()
 	defer wd.conn.CloseNow()
+	for _, w := range []*wsClient{wa, wb, wc, wd} {
+		w.waitFor("ready") // đã đăng ký xong với hub, chắc chắn nhận được sự kiện kênh
+	}
 
 	// người ngoài kênh không vào được
 	wd.send(map[string]any{"type": "groupcall.join", "channel_id": ch.ID})

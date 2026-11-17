@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"net"
 	"net/http"
+	"strconv"
 	"regexp"
 	"sync"
 	"time"
@@ -37,13 +39,35 @@ type ICEServer struct {
 // SetICEServers đặt danh sách STUN/TURN gửi cho client.
 func (a *API) SetICEServers(list []ICEServer) { a.iceServers = list }
 
-// GET /api/rtc-config
+// TURNProvider: TURN nhúng cấp tài khoản tạm cho từng người (rtc.TURN).
+type TURNProvider interface {
+	Credentials(user string) (urls []string, username, credential string, err error)
+}
+
+func (a *API) SetTURN(t TURNProvider) { a.turn = t }
+
+// SetTLSPort: cổng HTTPS cho LAN (để gợi ý người đang dùng http chuyển sang).
+func (a *API) SetTLSPort(port string) { a.tlsPort = port }
+
+// GET /api/rtc-config: STUN/TURN (kèm tài khoản TURN tạm cho người gọi) và địa chỉ https
+// tương ứng nếu trang đang mở bằng http (trình duyệt chặn micro/camera trên http).
 func (a *API) rtcConfig(w http.ResponseWriter, r *http.Request) {
-	list := a.iceServers
-	if list == nil {
-		list = []ICEServer{}
+	list := append([]ICEServer{}, a.iceServers...)
+	if a.turn != nil {
+		urls, u, p, err := a.turn.Credentials(strconv.FormatInt(currentUser(r).ID, 10))
+		if err == nil {
+			list = append(list, ICEServer{URLs: urls, Username: u, Credential: p})
+		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ice_servers": list})
+	res := map[string]any{"ice_servers": list}
+	if a.tlsPort != "" && r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" {
+		host := r.Host
+		if h, _, err := net.SplitHostPort(r.Host); err == nil {
+			host = h
+		}
+		res["secure_url"] = "https://" + net.JoinHostPort(host, a.tlsPort) + "/"
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 type call struct {

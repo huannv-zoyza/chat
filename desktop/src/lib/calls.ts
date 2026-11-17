@@ -6,7 +6,7 @@
  * Người nghe: incoming -> accept -> nhận offer -> gửi answer.
  */
 import { useSyncExternalStore } from "react";
-import type { Api, PublicUser } from "./api";
+import { insecureMediaMessage, type Api, type PublicUser } from "./api";
 import type { CallRequest, ServerEvent } from "./socket";
 
 export type CallPhase = "idle" | "outgoing" | "incoming" | "connecting" | "active" | "ended";
@@ -110,11 +110,7 @@ export class CallController {
   }
 
   private async media(video: boolean): Promise<MediaStream> {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      throw new Error(
-        "Trình duyệt chặn micro/camera vì trang không chạy trên https. Hãy mở bằng địa chỉ https (tunnel) hoặc app desktop.",
-      );
-    }
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error(await insecureMediaMessage(this.api));
     try {
       return await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true },
@@ -134,12 +130,11 @@ export class CallController {
   }
 
   private async peer(): Promise<RTCPeerConnection> {
-    if (!this.iceServers) {
-      this.iceServers = await this.api
-        .rtcConfig()
-        .then((r) => r.ice_servers)
-        .catch(() => []);
-    }
+    // lấy mới mỗi cuộc gọi: tài khoản TURN tạm có hạn
+    this.iceServers = await this.api
+      .rtcConfig()
+      .then((r) => r.ice_servers)
+      .catch(() => this.iceServers ?? []);
     const pc = new RTCPeerConnection({ iceServers: this.iceServers });
     const remote = new MediaStream();
     this.set({ remote });

@@ -248,6 +248,26 @@ export function Icon({ name, size = 18 }: { name: keyof typeof paths | string; s
   );
 }
 
+/* ---------- Chữ có link bấm được (thông báo lỗi kèm địa chỉ) ---------- */
+
+export function Linkified({ text }: { text?: string }) {
+  if (!text) return null;
+  const parts = text.split(/(https?:\/\/[^\s)]+)/g);
+  return (
+    <>
+      {parts.map((p, i) =>
+        /^https?:\/\//.test(p) ? (
+          <a key={i} href={p} className="msg-link">
+            {p}
+          </a>
+        ) : (
+          p
+        ),
+      )}
+    </>
+  );
+}
+
 /* ---------- Lỗi biểu mẫu ---------- */
 
 export function FormError({ children }: { children: ReactNode }) {

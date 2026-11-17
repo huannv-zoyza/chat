@@ -4576,3 +4576,9 @@ button {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+.call-status .msg-link {
+  color: #ffd66b;
+}
+.call-status {
+  max-width: 34rem;
+}

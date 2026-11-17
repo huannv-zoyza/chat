@@ -37,6 +37,8 @@ type API struct {
 	groups         groupRegistry
 	iceServers     []ICEServer
 	uiBuild        string
+	turn           TURNProvider
+	tlsPort        string
 }
 
 // SetUIBuild: mã bản build giao diện web đang nhúng (gửi cho client trong sự kiện "ready").

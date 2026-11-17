@@ -3,7 +3,7 @@ import { useCallState } from "../lib/calls";
 import { useGroupCall } from "../lib/groupcall";
 import { displayName } from "../lib/format";
 import { useChat } from "../state/ChatProvider";
-import { Avatar, Icon } from "./ui";
+import { Avatar, Icon, Linkified } from "./ui";
 
 function useTimer(startedAt?: number) {
   const [, tick] = useState(0);
@@ -66,7 +66,9 @@ export function CallOverlay() {
             <Avatar user={peer} size={96} />
           </span>
           <h2 className="call-name">{name}</h2>
-          <p className="call-status">{status}</p>
+          <p className="call-status">
+            <Linkified text={status} />
+          </p>
         </div>
       )}
       {remoteVideo && inCall && (

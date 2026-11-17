@@ -105,6 +105,17 @@ export type Reminder = {
   message?: Message;
 };
 
+/** Câu báo khi trang chạy trên http (trình duyệt chặn micro/camera), kèm địa chỉ https nếu có. */
+export async function insecureMediaMessage(api: { rtcConfig: () => Promise<{ secure_url?: string }> }) {
+  const url = await api
+    .rtcConfig()
+    .then((r) => r.secure_url)
+    .catch(() => undefined);
+  return url
+    ? `Trình duyệt chỉ cho dùng micro/camera trên https. Hãy mở ${url} (lần đầu bấm "Nâng cao" → "Tiếp tục" vì chứng chỉ tự ký) hoặc dùng app desktop.`
+    : "Trình duyệt chặn micro/camera vì trang không chạy trên https. Hãy mở bằng địa chỉ https hoặc app desktop.";
+}
+
 export type GifResult = { id: string; title: string; url: string; preview: string; width: number; height: number };
 
 export type Message = {
@@ -307,7 +318,7 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
       request<Poll>("POST", `/api/messages/${messageId}/poll/options`, { text }),
     remind: (messageId: number, at: string, note: string) =>
       request<Reminder>("POST", `/api/messages/${messageId}/remind`, { at, note }),
-    rtcConfig: () => request<{ ice_servers: RTCIceServer[] }>("GET", "/api/rtc-config"),
+    rtcConfig: () => request<{ ice_servers: RTCIceServer[]; secure_url?: string }>("GET", "/api/rtc-config"),
     reminders: () => request<Reminder[]>("GET", "/api/reminders"),
     snoozeReminder: (id: number, at: string) => request<Reminder>("PATCH", `/api/reminders/${id}`, { at }),
     deleteReminder: (id: number) => request<void>("DELETE", `/api/reminders/${id}`),

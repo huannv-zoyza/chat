@@ -4,3 +4,4 @@ chat.db-shm
 /go-chat
 /web/ui/dist/
 /uploads/
+/tls/

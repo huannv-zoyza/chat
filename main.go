@@ -3,17 +3,21 @@ package main
 import (
 	"chat/controller"
 	"chat/database"
+	"chat/rtc"
 	"chat/socket"
 	"chat/store"
 	"chat/web"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"flag"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -30,6 +34,11 @@ func main() {
 	steps := flag.Int("steps", 0, "số migration (0 = mặc định)")
 	iceJSON := flag.String("ice-servers", envOr("ICE_SERVERS", `[{"urls":["stun:stun.cloudflare.com:3478"]}]`),
 		"máy chủ STUN/TURN cho gọi điện (JSON giống RTCIceServer[]; mặc định lấy ICE_SERVERS)")
+	tlsAddr := flag.String("tls-addr", envOr("TLS_ADDR", ":4443"), "cổng HTTPS cho mạng LAN (trình duyệt chỉ cho micro/camera trên https); rỗng = tắt")
+	tlsCert := flag.String("tls-cert", os.Getenv("TLS_CERT"), "file chứng chỉ (rỗng = tự tạo chứng chỉ tự ký)")
+	tlsKey := flag.String("tls-key", os.Getenv("TLS_KEY"), "file khoá của chứng chỉ")
+	turnAddr := flag.String("turn-addr", envOr("TURN_ADDR", ":3478"), "TURN nhúng (UDP+TCP) để gọi điện qua máy chủ khi hai máy không nối thẳng được; rỗng = tắt")
+	turnIP := flag.String("turn-ip", os.Getenv("TURN_IP"), "IP client dùng để tới TURN (rỗng = tự đoán IP LAN)")
 	giphyKey := flag.String("giphy-key", os.Getenv("GIPHY_API_KEY"), "API key GIPHY để tìm GIF (mặc định lấy từ biến môi trường GIPHY_API_KEY; rỗng = tắt)")
 	flag.Parse()
 
@@ -71,6 +80,22 @@ func main() {
 	api.SetICEServers(ice)
 	api.SetUIBuild(web.BuildID())
 
+	if *turnAddr != "" {
+		ip := rtc.DetectLANIP()
+		if *turnIP != "" {
+			ip = net.ParseIP(*turnIP)
+		}
+		if ip == nil {
+			log.Printf("TURN tắt: không tìm được IP LAN (đặt -turn-ip)")
+		} else if t, err := rtc.StartTURN(*turnAddr, ip); err != nil {
+			log.Printf("TURN tắt: %v", err)
+		} else {
+			defer t.Close()
+			api.SetTURN(t)
+			log.Printf("TURN chạy tại %s:%s (relay UDP %d-%d)", ip, strings.TrimPrefix(*turnAddr, ":"), rtc.RelayMinPort, rtc.RelayMaxPort)
+		}
+	}
+
 	// nhắc việc tới giờ, bình chọn hết hạn
 	go api.RunScheduler(ctx, 15*time.Second)
 
@@ -78,6 +103,28 @@ func main() {
 		Addr:              *addr,
 		Handler:           api.Handler(web.Handler()),
 		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	var tlsSrv *http.Server
+	if *tlsAddr != "" {
+		cert, err := rtc.LoadOrCreateCert(filepath.Join(filepath.Dir(*dbPath), "tls"), *tlsCert, *tlsKey)
+		if err != nil {
+			log.Printf("HTTPS tắt: %v", err)
+		} else {
+			api.SetTLSPort(strings.TrimPrefix(*tlsAddr, ":"))
+			tlsSrv = &http.Server{
+				Addr:              *tlsAddr,
+				Handler:           srv.Handler,
+				ReadHeaderTimeout: 10 * time.Second,
+				TLSConfig:         &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12},
+			}
+			go func() {
+				log.Printf("HTTPS (LAN, chứng chỉ tự ký) tại https://<IP máy này>%s: dùng để gọi điện trong LAN", displayAddr(*tlsAddr))
+				if err := tlsSrv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+					log.Printf("HTTPS: %v", err)
+				}
+			}()
+		}
 	}
 
 	errCh := make(chan error, 1)
@@ -103,6 +150,9 @@ func main() {
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			log.Printf("shutdown: %v", err)
+		}
+		if tlsSrv != nil {
+			_ = tlsSrv.Shutdown(shutdownCtx)
 		}
 	}
 }

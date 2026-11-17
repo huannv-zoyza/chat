@@ -5,7 +5,7 @@ import { channelLabel } from "../lib/channel";
 import { displayName } from "../lib/format";
 import { useGroupCall } from "../lib/groupcall";
 import { useChat } from "../state/ChatProvider";
-import { Avatar, Icon } from "./ui";
+import { Avatar, Icon, Linkified } from "./ui";
 
 function Media({ stream, muted, mirror }: { stream?: MediaStream; muted?: boolean; mirror?: boolean }) {
   const ref = useRef<HTMLVideoElement>(null);
@@ -96,7 +96,9 @@ export function GroupCallOverlay() {
     <>
       {gs.error && (
         <div className="gc-toast is-error" role="alert">
-          <span>{gs.error}</span>
+          <span>
+            <Linkified text={gs.error} />
+          </span>
           <button type="button" className="icon-btn" onClick={() => g.dismissError()} aria-label="Đóng">
             <Icon name="x" size={15} />
           </button>

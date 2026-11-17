@@ -77,6 +77,7 @@ Lỗi trả về `{"error": "<câu hiển thị cho người dùng>"}`.
 | GET | `/api/avatars/{key}` | ảnh đại diện đã tải lên (công khai) |
 | GET | `/api/users?q=` | Tìm người dùng (để nhắn riêng) |
 | POST | `/api/dms` | `{user_id}` → mở/tạo cuộc trò chuyện riêng (kênh `kind: "dm"`) |
+| GET | `/api/gifs?q=&offset=` | Tìm GIF qua GIPHY (`q` rỗng: thịnh hành); `enabled: false` nếu server chưa có key |
 | PATCH | `/api/messages/{id}` | `{content}` sửa tin của mình |
 | DELETE | `/api/messages/{id}` | Xoá tin (người viết, hoặc chủ kênh) |
 | PUT | `/api/me/password` | `{current_password, new_password}`; đăng xuất các thiết bị khác |
@@ -106,6 +107,7 @@ Client gửi:
 
 ```json
 { "type": "message.send", "channel_id": 1, "content": "...", "client_id": "uuid" }
+{ "type": "message.send", "channel_id": 1, "content": "", "client_id": "uuid", "embed": { "type": "sticker", "id": "text/oke" } }
 { "type": "typing", "channel_id": 1 }
 { "type": "read", "channel_id": 1, "message_id": 42 }
 { "type": "ping" }

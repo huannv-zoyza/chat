@@ -27,6 +27,7 @@ func main() {
 	uploadsDir := flag.String("uploads", "uploads", "thư mục lưu file/ảnh người dùng gửi")
 	mode := flag.String("migrate", "up", "up | down (down: rollback rồi thoát, không start server)")
 	steps := flag.Int("steps", 0, "số migration (0 = mặc định)")
+	giphyKey := flag.String("giphy-key", os.Getenv("GIPHY_API_KEY"), "API key GIPHY để tìm GIF (mặc định lấy từ biến môi trường GIPHY_API_KEY; rỗng = tắt)")
 	flag.Parse()
 
 	db, err := database.InitDB(*dbPath)
@@ -56,6 +57,10 @@ func main() {
 
 	hub := socket.NewHub()
 	api := controller.NewAPI(store.New(db), hub, splitList(*origins), *uploadsDir)
+	api.SetGiphyKey(*giphyKey)
+	if *giphyKey == "" {
+		log.Printf("Tìm GIF đang tắt: đặt GIPHY_API_KEY (hoặc -giphy-key) để bật")
+	}
 
 	srv := &http.Server{
 		Addr:              *addr,

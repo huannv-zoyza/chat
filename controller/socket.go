@@ -27,17 +27,19 @@ const maxMessageRunes = 4000
 
 // Yêu cầu client gửi lên. Mọi yêu cầu đều có "type".
 //
-//	message.send  {channel_id, content, client_id, parent_id?}   gửi tin (parent_id: trả lời trong luồng)
+//	message.send  {channel_id, content, client_id, parent_id?, embed?}   gửi tin (parent_id: trả lời trong luồng;
+//	              embed: sticker/GIF, khi đó content để trống)
 //	typing        {channel_id}                       đang gõ (client tự giới hạn tần suất)
 //	read          {channel_id, message_id}           đã đọc tới tin message_id
 //	ping          {}                                 kiểm tra kết nối, server trả "pong"
 type clientRequest struct {
-	Type      string `json:"type"`
-	ChannelID int64  `json:"channel_id"`
-	MessageID int64  `json:"message_id"`
-	Content   string `json:"content"`
-	ClientID  string `json:"client_id"`
-	ParentID  int64  `json:"parent_id"` // khác 0: trả lời trong luồng của tin này
+	Type      string       `json:"type"`
+	ChannelID int64        `json:"channel_id"`
+	MessageID int64        `json:"message_id"`
+	Content   string       `json:"content"`
+	ClientID  string       `json:"client_id"`
+	ParentID  int64        `json:"parent_id"` // khác 0: trả lời trong luồng của tin này
+	Embed     *model.Embed `json:"embed"`
 }
 
 // serveSocket: GET /ws?token=<token>
@@ -129,7 +131,15 @@ func (a *API) handleRequest(ctx context.Context, client *socket.Client, user mod
 
 	case "message.send":
 		content := strings.TrimSpace(req.Content)
-		if content == "" {
+		var embed *model.Embed
+		if req.Embed != nil {
+			var msg string
+			if embed, msg = validateEmbed(req.Embed); msg != "" {
+				reply(msg)
+				return
+			}
+			content = "" // sticker/GIF đi một mình
+		} else if content == "" {
 			reply("Tin nhắn đang trống.")
 			return
 		}
@@ -165,7 +175,7 @@ func (a *API) handleRequest(ctx context.Context, client *socket.Client, user mod
 			}
 			parentID = &req.ParentID
 		}
-		if _, err := a.createAndBroadcast(ctx, user, req.ChannelID, content, nil, req.ClientID, parentID); err != nil {
+		if _, err := a.createAndBroadcast(ctx, user, req.ChannelID, content, nil, req.ClientID, parentID, embed); err != nil {
 			log.Printf("ws create message: %v", err)
 			reply("Server gặp lỗi, thử gửi lại.")
 			return

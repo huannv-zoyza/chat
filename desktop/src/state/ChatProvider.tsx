@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from "react";
-import { ApiError, type Api, type Message, type User, socketUrl } from "../lib/api";
+import { ApiError, type Api, type Embed, type Message, type User, socketUrl } from "../lib/api";
+import { embedSummary } from "../components/Embeds";
 import { ChatSocket } from "../lib/socket";
 import { ServerUrlContext } from "../components/ui";
 import { displayName, newClientId } from "../lib/format";
@@ -19,6 +20,8 @@ type ChatContextValue = {
   selectChannel: (id: number | null) => void;
   /** parentId: trả lời trong luồng của tin đó. */
   sendMessage: (channelId: number, content: string, files?: File[], parentId?: number) => void;
+  /** Gửi sticker / GIF (một mình, không kèm chữ). */
+  sendEmbed: (channelId: number, embed: Embed, parentId?: number) => void;
   /** Thả/bỏ cảm xúc; cập nhật ngay trên máy mình rồi đồng bộ với server. */
   toggleReaction: (messageId: number, emoji: string) => void;
   /** Mở luồng của tin gốc (null để đóng). */
@@ -122,7 +125,9 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
     if (seeingIt || (!direct && !mentioned && !repliedToMe)) return;
     const where = channel ? channelLabel(channel, s.users, s.me.id) : "kênh";
     const who = displayName(s.users[m.user_id] ?? m.user);
-    const body = m.content || (m.attachments?.length ? `Đã gửi ${m.attachments.length} file` : "");
+    const body =
+      m.content ||
+      (m.embed ? embedSummary(m.embed) : m.attachments?.length ? `Đã gửi ${m.attachments.length} file` : "");
     const title = direct
       ? `${who} nhắn cho bạn`
       : mentioned
@@ -305,12 +310,29 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
         lastTypingSent.current[channelId] = 0;
       },
 
+      sendEmbed: (channelId, embed, parentId) => {
+        const clientId = newClientId();
+        dispatch({
+          type: "pending.add",
+          pending: {
+            clientId,
+            channelId,
+            content: "",
+            createdAt: new Date().toISOString(),
+            status: "sending",
+            embed,
+            ...(parentId ? { parentId } : {}),
+          },
+        });
+        socketRef.current?.sendMessage(channelId, "", clientId, parentId, embed);
+      },
+
       retryMessage: (clientId) => {
         const p = stateRef.current.pending.find((x) => x.clientId === clientId);
         if (!p) return;
         dispatch({ type: "pending.retry", clientId });
         if (p.files?.length) void upload(clientId, p.channelId, p.content, p.files, p.parentId);
-        else socketRef.current?.sendMessage(p.channelId, p.content, clientId, p.parentId);
+        else socketRef.current?.sendMessage(p.channelId, p.content, clientId, p.parentId, p.embed);
       },
 
       toggleReaction: (messageId, emoji) => {

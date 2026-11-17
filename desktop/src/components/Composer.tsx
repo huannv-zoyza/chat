@@ -17,6 +17,7 @@ import { channelLabel, channelTitle, isDM } from "../lib/channel";
 import { lastOwnMessage } from "./MessageEditor";
 import { isTouchDevice } from "../lib/useMedia";
 import { EmojiPicker } from "./EmojiPicker";
+import { StickerPicker } from "./StickerPicker";
 import { FileCard, formatSize, useObjectUrls } from "./MessageParts";
 import { Avatar, Icon } from "./ui";
 
@@ -45,7 +46,8 @@ type ComposerProps = {
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer({ channel, parentId }, handle) {
   const draftKey = parentId ? `t${parentId}` : `c${channel.id}`;
-  const { state, dispatch, sendMessage, notifyTyping, loadMembers } = useChat();
+  const { state, dispatch, sendMessage, sendEmbed, notifyTyping, loadMembers } = useChat();
+  const [stickerOpen, setStickerOpen] = useState(false);
   const [text, setText] = useState(() => drafts.get(draftKey)?.text ?? "");
   const [files, setFiles] = useState<File[]>(() => drafts.get(draftKey)?.files ?? []);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -54,6 +56,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const [active, setActive] = useState(0);
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const gifInput = useRef<HTMLInputElement>(null);
   // Vị trí con trỏ cần đặt sau khi chèn @tên/emoji. Đặt ngay sau render (useLayoutEffect),
   // trước khi trình duyệt xử lý phím tiếp theo; đặt trễ hơn thì chữ gõ nhanh sẽ rơi sai chỗ.
   const pendingCaret = useRef<number | null>(null);
@@ -67,6 +70,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     setFileError(null);
     setMention(null);
     setEmojiOpen(false);
+    setStickerOpen(false);
     ref.current?.focus();
   }, [draftKey]);
 
@@ -268,6 +272,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       )}
 
       {emojiOpen && <EmojiPicker onPick={(e) => insertAtCaret(e)} onClose={() => setEmojiOpen(false)} />}
+      {stickerOpen && (
+        <StickerPicker
+          onPick={(embed) => {
+            sendEmbed(channel.id, embed, parentId);
+            setStickerOpen(false);
+          }}
+          onPickFile={() => {
+            setStickerOpen(false);
+            gifInput.current?.click();
+          }}
+          onClose={() => setStickerOpen(false)}
+        />
+      )}
 
       <div className={`composer-box${tooLong ? " is-invalid" : ""}`}>
         {files.length > 0 && (
@@ -297,6 +314,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           >
             <Icon name="paperclip" />
           </button>
+          <input
+            ref={gifInput}
+            type="file"
+            accept="image/gif"
+            hidden
+            onChange={(e) => {
+              addFiles(Array.from(e.target.files ?? []));
+              e.target.value = "";
+            }}
+          />
           <input
             ref={fileInput}
             type="file"
@@ -350,8 +377,24 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
           <button
             type="button"
+            className={`tool-btn${stickerOpen ? " is-on" : ""}`}
+            onClick={() => {
+              setEmojiOpen(false);
+              setStickerOpen((v) => !v);
+            }}
+            title="Gửi sticker hoặc GIF"
+            aria-label="Gửi sticker hoặc GIF"
+            aria-expanded={stickerOpen}
+          >
+            <Icon name="sticker" />
+          </button>
+          <button
+            type="button"
             className={`tool-btn${emojiOpen ? " is-on" : ""}`}
-            onClick={() => setEmojiOpen((v) => !v)}
+            onClick={() => {
+              setStickerOpen(false);
+              setEmojiOpen((v) => !v);
+            }}
             title="Chèn biểu tượng cảm xúc"
             aria-label="Chèn biểu tượng cảm xúc"
             aria-expanded={emojiOpen}

@@ -1,4 +1,4 @@
-import type { Message, Channel, PublicUser, Reaction, ThreadSummary, User } from "./api";
+import type { Embed, Message, Channel, PublicUser, Reaction, ThreadSummary, User } from "./api";
 
 /* ---------- Giao thức (khớp controller/events.go và controller/socket.go) ---------- */
 
@@ -22,7 +22,7 @@ export type ServerEvent =
   | { type: "pong" };
 
 export type ClientRequest =
-  | { type: "message.send"; channel_id: number; content: string; client_id: string; parent_id?: number }
+  | { type: "message.send"; channel_id: number; content: string; client_id: string; parent_id?: number; embed?: Embed }
   | { type: "typing"; channel_id: number }
   | { type: "read"; channel_id: number; message_id: number }
   | { type: "ping" };
@@ -143,13 +143,14 @@ export class ChatSocket {
    * Gửi tin nhắn. Đang mất kết nối thì xếp hàng, kết nối lại sẽ tự gửi.
    * Kết quả trả về qua sự kiện "message.new" (cùng client_id) hoặc onSendFailed.
    */
-  sendMessage(channelId: number, content: string, clientId: string, parentId?: number) {
+  sendMessage(channelId: number, content: string, clientId: string, parentId?: number, embed?: Embed) {
     const req = {
       type: "message.send",
       channel_id: channelId,
       content,
       client_id: clientId,
       ...(parentId ? { parent_id: parentId } : {}),
+      ...(embed ? { embed } : {}),
     } as const;
     if (this.status === "open" && this.rawSend(req)) {
       this.trackAck(clientId);

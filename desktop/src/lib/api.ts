@@ -48,6 +48,19 @@ export type Attachment = {
   url: string;
 };
 
+/** Sticker (bộ có sẵn trong app) hoặc GIF (GIPHY) gửi thay cho nội dung chữ. */
+export type Embed = {
+  type: "sticker" | "gif";
+  id: string;
+  url?: string;
+  preview?: string;
+  width?: number;
+  height?: number;
+  title?: string;
+};
+
+export type GifResult = { id: string; title: string; url: string; preview: string; width: number; height: number };
+
 export type Message = {
   id: number;
   channel_id: number;
@@ -58,6 +71,7 @@ export type Message = {
   edited_at?: string;
   /** Tin đã bị xoá: không còn nội dung, file, cảm xúc. */
   deleted_at?: string;
+  embed?: Embed;
   user?: PublicUser;
   attachments?: Attachment[];
   /** Id những người được nhắc tên trong tin. */
@@ -208,6 +222,12 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     searchUsers: (q: string) => request<PublicUser[]>("GET", `/api/users?q=${encodeURIComponent(q)}`),
     /** Mở (hoặc tạo) cuộc trò chuyện riêng với userId. */
     openDM: (userId: number) => request<Channel>("POST", "/api/dms", { user_id: userId }),
+    /** Tìm GIF (q rỗng: đang thịnh hành). enabled=false: server chưa cấu hình GIPHY. */
+    gifs: (q: string, offset = 0) =>
+      request<{ enabled: boolean; results: GifResult[]; next_offset?: number }>(
+        "GET",
+        `/api/gifs?q=${encodeURIComponent(q)}&offset=${offset}`,
+      ),
     editMessage: (id: number, content: string) => request<Message>("PATCH", `/api/messages/${id}`, { content }),
     deleteMessage: (id: number) => request<Message>("DELETE", `/api/messages/${id}`),
     discover: () => request<Channel[]>("GET", "/api/channels/discover"),
@@ -216,8 +236,7 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     updateChannel: (id: number, b: { name?: string; description?: string; is_private?: boolean }) =>
       request<Channel>("PATCH", `/api/channels/${id}`, b),
     regenerateInvite: (id: number) => request<Channel>("POST", `/api/channels/${id}/invite`),
-    invitePreview: (code: string) =>
-      request<{ channel: Channel; is_member: boolean }>("GET", `/api/invites/${code}`),
+    invitePreview: (code: string) => request<{ channel: Channel; is_member: boolean }>("GET", `/api/invites/${code}`),
     joinByInvite: (code: string) => request<Channel>("POST", `/api/invites/${code}/join`),
     /** Link mời đầy đủ; mở trên trình duyệt sẽ vào bản web của chính server này. */
     inviteLink: (code: string) => `${serverUrl}/invite/${code}`,

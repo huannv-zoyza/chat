@@ -29,6 +29,10 @@ func (a *API) editMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Tin nhắn đã bị xoá.")
 		return
 	}
+	if msg.Embed != nil {
+		writeError(w, http.StatusBadRequest, "Không sửa được sticker hay GIF, hãy xoá rồi gửi lại.")
+		return
+	}
 	var req editMessageRequest
 	if !decodeJSON(w, r, &req) {
 		return

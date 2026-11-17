@@ -28,6 +28,19 @@ type Message struct {
 	ParentUserID int64  `db:"-"         json:"parent_user_id,omitempty"`
 	// Tóm tắt luồng của tin gốc (nil nếu chưa ai trả lời).
 	Thread *ThreadSummary `db:"-" json:"thread,omitempty"`
+	// Sticker hoặc GIF (cột embed, JSON). Tin có embed thì không có nội dung chữ.
+	Embed *Embed `db:"embed" json:"embed,omitempty"`
+}
+
+// Embed: sticker (bộ sticker có sẵn trong app) hoặc GIF (từ GIPHY).
+type Embed struct {
+	Type    string `json:"type"`              // "sticker" | "gif"
+	ID      string `json:"id"`                // sticker: "<bộ>/<tên>"; gif: id trên GIPHY
+	URL     string `json:"url,omitempty"`     // gif: ảnh động hiển thị trong tin
+	Preview string `json:"preview,omitempty"` // gif: ảnh nhỏ (không bắt buộc)
+	Width   int    `json:"width,omitempty"`
+	Height  int    `json:"height,omitempty"`
+	Title   string `json:"title,omitempty"`
 }
 
 // Reaction: một emoji và những ai đã thả nó.

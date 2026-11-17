@@ -7,7 +7,7 @@
 
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 
-.PHONY: all web server desktop run test icons clean install-service install-tunnel route-dns deploy logs status start stop stop-tunnel disable enable
+.PHONY: all web server desktop run test icons clean giphy-key install-service install-tunnel route-dns deploy logs status start stop stop-tunnel disable enable
 
 all: server desktop
 
@@ -33,8 +33,21 @@ install-service: server
 	sed 's#__DIR__#$(CURDIR)#g' deploy/go-chat.service > $(SERVICE_DIR)/go-chat.service
 	systemctl --user daemon-reload
 	systemctl --user enable --now go-chat.service
+	systemctl --user restart go-chat.service
 	@loginctl show-user "$$USER" -p Linger | grep -q yes || \
 		echo "Chưa bật linger: chạy 'sudo loginctl enable-linger $$USER' để dịch vụ tự chạy khi máy khởi động mà không cần đăng nhập."
+
+# Bật tìm GIF: make giphy-key KEY=<API key GIPHY> (lấy miễn phí tại https://developers.giphy.com).
+# Key lưu ở ~/.config/go-chat/env (chỉ mình bạn đọc được), không nằm trong repo.
+ENV_FILE := $(HOME)/.config/go-chat/env
+giphy-key:
+	@test -n "$(KEY)" || { echo "Dùng: make giphy-key KEY=<api key>"; exit 1; }
+	@mkdir -p $(dir $(ENV_FILE))
+	@touch $(ENV_FILE) && chmod 600 $(ENV_FILE)
+	@grep -v '^GIPHY_API_KEY=' $(ENV_FILE) > $(ENV_FILE).tmp || true
+	@echo 'GIPHY_API_KEY=$(KEY)' >> $(ENV_FILE).tmp && mv $(ENV_FILE).tmp $(ENV_FILE) && chmod 600 $(ENV_FILE)
+	systemctl --user restart go-chat.service
+	@echo "Đã bật tìm GIF."
 
 # Đưa chat ra internet qua Cloudflare Tunnel. Tunnel phải được tạo và route DNS trước:
 #   cloudflared tunnel create <tên-tunnel>

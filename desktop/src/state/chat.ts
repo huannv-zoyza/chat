@@ -1,4 +1,4 @@
-import type { Channel, Message, PublicUser, ReadState, Reaction, ThreadSummary, User } from "../lib/api";
+import type { Channel, Embed, Message, PublicUser, ReadState, Reaction, ThreadSummary, User } from "../lib/api";
 import type { SocketStatus } from "../lib/socket";
 
 /* ---------- State ---------- */
@@ -16,6 +16,8 @@ export type PendingMessage = {
   progress?: number;
   /** Có nếu đang trả lời trong luồng của tin này. */
   parentId?: number;
+  /** Sticker / GIF đang gửi. */
+  embed?: Embed;
 };
 
 /** Một luồng trả lời đã mở: tin gốc + các trả lời (cũ -> mới). */

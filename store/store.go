@@ -4,6 +4,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -497,7 +498,7 @@ func (s *Store) ReadStates(ctx context.Context, channelID int64) ([]model.ReadSt
 
 /* ---------- Messages ---------- */
 
-const messageColumns = `msg.id, msg.channel_id, msg.user_id, msg.content, msg.created_at, msg.edited_at, msg.deleted_at,
+const messageColumns = `msg.id, msg.channel_id, msg.user_id, msg.content, msg.created_at, msg.edited_at, msg.deleted_at, msg.embed,
 	msg.parent_id, COALESCE(p.user_id, 0),
 	u.id, u.username, u.display_name, u.avatar, u.status_text`
 
@@ -509,10 +510,17 @@ const messageFrom = ` FROM messages msg
 func scanMessage(row scanner) (model.Message, error) {
 	var m model.Message
 	var u model.PublicUser
-	err := row.Scan(&m.ID, &m.ChannelID, &m.UserID, &m.Content, &m.CreatedAt, &m.EditedAt, &m.DeletedAt,
+	var embed sql.NullString
+	err := row.Scan(&m.ID, &m.ChannelID, &m.UserID, &m.Content, &m.CreatedAt, &m.EditedAt, &m.DeletedAt, &embed,
 		&m.ParentID, &m.ParentUserID,
 		&u.ID, &u.Username, &u.DisplayName, &u.Avatar, &u.StatusText)
 	m.User = &u
+	if embed.Valid && embed.String != "" {
+		var e model.Embed
+		if json.Unmarshal([]byte(embed.String), &e) == nil {
+			m.Embed = &e
+		}
+	}
 	m.Attachments = []model.Attachment{}
 	m.Mentions = []int64{}
 	m.Reactions = []model.Reaction{}
@@ -545,6 +553,7 @@ type NewMessage struct {
 	Attachments []model.Attachment // StorageKey, FileName, ContentType, Size, Width, Height
 	MentionIDs  []int64
 	ParentID    *int64 // khác nil: trả lời trong luồng của tin này
+	Embed       *model.Embed
 }
 
 // CreateMessage lưu tin nhắn, file đính kèm và người được nhắc trong cùng một transaction.
@@ -555,10 +564,18 @@ func (s *Store) CreateMessage(ctx context.Context, in NewMessage) (model.Message
 	}
 	defer tx.Rollback()
 
+	var embed sql.NullString
+	if in.Embed != nil {
+		b, err := json.Marshal(in.Embed)
+		if err != nil {
+			return model.Message{}, err
+		}
+		embed = sql.NullString{String: string(b), Valid: true}
+	}
 	var id int64
 	if err := tx.QueryRowContext(ctx,
-		`INSERT INTO messages (channel_id, user_id, content, parent_id) VALUES (?, ?, ?, ?) RETURNING id`,
-		in.ChannelID, in.UserID, in.Content, in.ParentID).Scan(&id); err != nil {
+		`INSERT INTO messages (channel_id, user_id, content, parent_id, embed) VALUES (?, ?, ?, ?, ?) RETURNING id`,
+		in.ChannelID, in.UserID, in.Content, in.ParentID, embed).Scan(&id); err != nil {
 		return model.Message{}, err
 	}
 	for _, a := range in.Attachments {
@@ -637,7 +654,7 @@ func (s *Store) DeleteMessage(ctx context.Context, id int64) (model.Message, []s
 		`DELETE FROM attachments WHERE message_id = ?`,
 		`DELETE FROM message_mentions WHERE message_id = ?`,
 		`DELETE FROM message_reactions WHERE message_id = ?`,
-		`UPDATE messages SET content = '', deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND deleted_at IS NULL`,
+		`UPDATE messages SET content = '', embed = NULL, deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND deleted_at IS NULL`,
 	} {
 		if _, err := tx.ExecContext(ctx, q, id); err != nil {
 			return model.Message{}, nil, err

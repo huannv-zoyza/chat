@@ -133,7 +133,7 @@ func (a *API) createMessageWithFiles(w http.ResponseWriter, r *http.Request) {
 		parentID = &id
 	}
 
-	msg, err := a.createAndBroadcast(r.Context(), me, ch.ID, content, saved, clientID, parentID)
+	msg, err := a.createAndBroadcast(r.Context(), me, ch.ID, content, saved, clientID, parentID, nil)
 	if err != nil {
 		internalError(w, r, err)
 		return
@@ -144,7 +144,7 @@ func (a *API) createMessageWithFiles(w http.ResponseWriter, r *http.Request) {
 
 // createAndBroadcast lưu tin (kèm mention) rồi phát message.new cho cả kênh.
 // Dùng chung cho tin gửi qua websocket và tin kèm file gửi qua HTTP.
-func (a *API) createAndBroadcast(ctx context.Context, me model.User, channelID int64, content string, atts []model.Attachment, clientID string, parentID *int64) (model.Message, error) {
+func (a *API) createAndBroadcast(ctx context.Context, me model.User, channelID int64, content string, atts []model.Attachment, clientID string, parentID *int64, embed *model.Embed) (model.Message, error) {
 	usernames, all := parseMentions(content)
 	mentionIDs, err := a.store.ResolveMentions(ctx, channelID, me.ID, usernames, all)
 	if err != nil {
@@ -157,6 +157,7 @@ func (a *API) createAndBroadcast(ctx context.Context, me model.User, channelID i
 		Attachments: atts,
 		MentionIDs:  mentionIDs,
 		ParentID:    parentID,
+		Embed:       embed,
 	})
 	if err != nil {
 		return model.Message{}, err

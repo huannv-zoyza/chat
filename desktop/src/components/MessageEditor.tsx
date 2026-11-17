@@ -4,6 +4,7 @@ import { displayName } from "../lib/format";
 import { isTouchDevice } from "../lib/useMedia";
 import { useChat } from "../state/ChatProvider";
 import { Dialog } from "./ui";
+import { embedSummary } from "./Embeds";
 
 const MAX_RUNES = 4000;
 
@@ -105,7 +106,7 @@ export function ConfirmDeleteDialog({ message, onClose }: { message: Message; on
   const preview =
     message.content.length > 160
       ? message.content.slice(0, 160) + "…"
-      : message.content || "(tin chỉ có file đính kèm)";
+      : message.content || (message.embed ? embedSummary(message.embed) : "(tin chỉ có file đính kèm)");
 
   const confirm = async () => {
     setBusy(true);
@@ -149,7 +150,7 @@ export function ConfirmDeleteDialog({ message, onClose }: { message: Message; on
 export function lastOwnMessage(items: Message[], meId: number): Message | undefined {
   for (let i = items.length - 1; i >= 0; i--) {
     const m = items[i];
-    if (m.user_id === meId && !m.deleted_at) return m;
+    if (m.user_id === meId && !m.deleted_at && !m.embed) return m;
   }
   return undefined;
 }

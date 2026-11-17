@@ -154,6 +154,12 @@ const paths: Record<string, ReactNode> = {
       <circle cx="12" cy="12.5" r="3.5" />
     </>
   ),
+  sticker: (
+    <>
+      <path d="M20 12.5V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h5.5L20 12.5Z" />
+      <path d="M12.5 20v-4.5a3 3 0 0 1 3-3H20M8.5 13.5a4 4 0 0 0 5 1M9 9.5h.01M14.5 9.5h.01" />
+    </>
+  ),
   pencil: <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4ZM13.5 6.5l4 4" />,
   trash: <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />,
   copy: (

@@ -29,6 +29,10 @@ type API struct {
 	logins         *loginLimiter
 	unfurlClient   *http.Client // xem trước link: chỉ kết nối được tới internet công khai
 	unfurls        unfurlCache
+	giphyKey       string // rỗng: tắt tìm GIF
+	giphyBase      string
+	giphyClient    *http.Client
+	gifs           gifCache
 }
 
 // originPatterns: các origin được phép gọi API và mở websocket từ trình duyệt/app,
@@ -78,6 +82,7 @@ func (a *API) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("DELETE /api/messages/{id}", a.requireAuth(a.deleteMessage))
 
 	mux.HandleFunc("GET /api/users", a.requireAuth(a.searchUsers))
+	mux.HandleFunc("GET /api/gifs", a.requireAuth(a.searchGifs))
 	mux.HandleFunc("POST /api/dms", a.requireAuth(a.openDM))
 
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {

@@ -18,6 +18,7 @@ import {
 import { COMPACT_QUERY, useMediaQuery } from "../lib/useMedia";
 import { ChannelSigil } from "./ChannelDialogs";
 import { ConfirmDeleteDialog, MessageEditor } from "./MessageEditor";
+import { EmbedView } from "./Embeds";
 import { channelLabel, channelTitle, dmPeerId, isDM } from "../lib/channel";
 
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
@@ -477,7 +478,9 @@ export function MessageRow(props: RowProps) {
   const live = !!message && !deleted; // tin đã gửi, chưa xoá: có thao tác
   const room = message ? state.channels[message.channel_id] : undefined;
   const ownMsg = !!message && message.user_id === state.me.id;
-  const onEdit = live && ownMsg ? () => dispatch({ type: "edit.start", messageId: message!.id }) : undefined;
+  const embed = message?.embed ?? pending?.embed;
+  const onEdit =
+    live && ownMsg && !message!.embed ? () => dispatch({ type: "edit.start", messageId: message!.id }) : undefined;
   const canDelete = live && (ownMsg || (!!room && !isDM(room) && room.owner_id === state.me.id));
   const onDelete = canDelete ? () => setConfirmDelete(true) : undefined;
   const longPress = useLongPress(() => setSheetOpen(true), live && compact && !editing);
@@ -526,6 +529,8 @@ export function MessageRow(props: RowProps) {
           </p>
         ) : editing ? (
           <MessageEditor message={message!} />
+        ) : embed ? (
+          <EmbedView embed={embed} />
         ) : (
           content && <MessageText content={content} meId={state.me.id} edited={message?.edited_at} />
         )}

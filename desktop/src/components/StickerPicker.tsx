@@ -133,6 +133,21 @@ function StickerTab({ onPick }: { onPick: (s: Sticker) => void }) {
   );
 }
 
+/**
+ * Chia GIF vào 2 cột kiểu xếp gạch: mỗi GIF vào cột đang thấp hơn (theo tỉ lệ cao/rộng),
+ * để lưới chỉ dài theo chiều dọc và hai cột cao gần bằng nhau.
+ */
+function splitColumns(items: GifResult[], n = 2): GifResult[][] {
+  const cols: GifResult[][] = Array.from({ length: n }, () => []);
+  const heights = new Array<number>(n).fill(0);
+  for (const g of items) {
+    const i = heights.indexOf(Math.min(...heights));
+    cols[i].push(g);
+    heights[i] += g.height / Math.max(1, g.width);
+  }
+  return cols;
+}
+
 function GifTab({ onPick, onPickFile }: { onPick: (e: Embed) => void; onPickFile: () => void }) {
   const { api } = useChat();
   const [query, setQuery] = useState("");
@@ -215,27 +230,37 @@ function GifTab({ onPick, onPickFile }: { onPick: (e: Embed) => void; onPickFile
             if (el.scrollHeight - el.scrollTop - el.clientHeight < 120) void more();
           }}
         >
-          {results.map((g) => (
-            <button
-              key={g.id}
-              type="button"
-              className="gif-btn"
-              title={g.title}
-              aria-label={`Gửi GIF ${g.title || ""}`.trim()}
-              onClick={() =>
-                onPick({
-                  type: "gif",
-                  id: g.id,
-                  url: g.url,
-                  preview: g.preview,
-                  width: g.width,
-                  height: g.height,
-                  title: g.title,
-                })
-              }
-            >
-              <img src={g.preview || g.url} alt="" loading="lazy" referrerPolicy="no-referrer" />
-            </button>
+          {splitColumns(results).map((col, ci) => (
+            <div key={ci} className="gif-col">
+              {col.map((g) => (
+                <button
+                  key={g.id}
+                  type="button"
+                  className="gif-btn"
+                  title={g.title}
+                  aria-label={`Gửi GIF ${g.title || ""}`.trim()}
+                  onClick={() =>
+                    onPick({
+                      type: "gif",
+                      id: g.id,
+                      url: g.url,
+                      preview: g.preview,
+                      width: g.width,
+                      height: g.height,
+                      title: g.title,
+                    })
+                  }
+                >
+                  <img
+                    src={g.preview || g.url}
+                    alt=""
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
+                    style={{ aspectRatio: `${g.width} / ${g.height}` }}
+                  />
+                </button>
+              ))}
+            </div>
           ))}
         </div>
       )}

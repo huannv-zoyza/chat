@@ -48,7 +48,7 @@ function newCallId() {
 }
 
 /** Chuông: hai nốt ngắn lặp lại (không cần file âm thanh). */
-class Ringer {
+export class Ringer {
   private ctx: AudioContext | null = null;
   private timer: number | undefined;
   start(kind: "incoming" | "outgoing") {

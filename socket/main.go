@@ -257,6 +257,19 @@ func (h *Hub) ToAll(msg []byte) {
 	}
 }
 
+// ChannelOnlineUsers: số người (khác exceptUser) đang online và nhận tin của channelID.
+func (h *Hub) ChannelOnlineUsers(channelID, exceptUser int64) int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	seen := map[int64]bool{}
+	for c := range h.byChan[channelID] {
+		if c.UserID != exceptUser {
+			seen[c.UserID] = true
+		}
+	}
+	return len(seen)
+}
+
 func (h *Hub) OnlineUserIDs() []int64 {
 	h.mu.RLock()
 	defer h.mu.RUnlock()

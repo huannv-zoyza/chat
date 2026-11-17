@@ -33,6 +33,9 @@ func TestGroupCalls(t *testing.T) {
 	wa.send(map[string]any{"type": "groupcall.join", "channel_id": ch.ID, "video": true})
 	wel := wa.waitFor("groupcall.welcome")
 	aliceID := wel["self"].(string)
+	if wel["invited"].(float64) != 2 { // bob + carol đang online trong kênh (dave không phải thành viên)
+		t.Fatalf("invited: %v", wel)
+	}
 	if _, has := wel["participants"]; has {
 		t.Fatalf("first joiner should see nobody: %v", wel)
 	}

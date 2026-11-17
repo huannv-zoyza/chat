@@ -104,6 +104,8 @@ type groupEvent struct {
 	Participants []groupParticipant `json:"participants,omitempty"`
 	Data         json.RawMessage    `json:"data,omitempty"`
 	Message      string             `json:"message,omitempty"`
+	// welcome cho người mở cuộc gọi: số người đang online trong kênh đã được mời.
+	Invited *int `json:"invited,omitempty"`
 }
 
 type groupStateEvent struct {
@@ -163,9 +165,16 @@ func (a *API) handleGroupCall(ctx context.Context, client *socket.Client, user m
 		st := room.state()
 		g.mu.Unlock()
 
-		log.Printf("groupcall: %s vào kênh %d (%d người)", user.Username, ch.ID, len(st.Participants))
+		var invited *int
+		if created {
+			n := a.hub.ChannelOnlineUsers(ch.ID, user.ID)
+			invited = &n
+			log.Printf("groupcall: %s mở cuộc gọi ở kênh %d, mời %d người đang online", user.Username, ch.ID, n)
+		} else {
+			log.Printf("groupcall: %s vào kênh %d (%d người)", user.Username, ch.ID, len(st.Participants))
+		}
 		a.hub.ToClient(client, mustJSON(groupEvent{
-			Type: "groupcall.welcome", ChannelID: ch.ID, Self: client.ID, Participants: others,
+			Type: "groupcall.welcome", ChannelID: ch.ID, Self: client.ID, Participants: others, Invited: invited,
 		}))
 		a.hub.ToChannel(ch.ID, mustJSON(groupStateEvent{Type: "groupcall.state", groupCallState: st}), nil)
 		if created {

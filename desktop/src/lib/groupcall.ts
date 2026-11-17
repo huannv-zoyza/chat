@@ -5,6 +5,7 @@
  */
 import { useSyncExternalStore } from "react";
 import { insecureMediaMessage, type Api, type PublicUser } from "./api";
+import { Ringer } from "./calls";
 
 export type GroupParticipant = { peer_id: string; user: PublicUser; video: boolean };
 export type GroupRoom = { channel_id: number; started_at?: string; participants: GroupParticipant[] };
@@ -29,6 +30,8 @@ export type GroupState = {
     muted: boolean;
     camOff: boolean;
     minimized: boolean;
+    /** Người mở cuộc gọi: số người đang online trong kênh đã được mời. */
+    invited?: number;
   };
   /** Lời mời khi có người bắt đầu gọi nhóm. */
   invite?: { channelId: number; by: PublicUser; video: boolean };
@@ -40,7 +43,7 @@ type Send = (req: Record<string, unknown>) => boolean;
 type GroupEvent =
   | { type: "groupcall.state"; channel_id: number; started_at?: string; participants?: GroupParticipant[] }
   | { type: "groupcall.started"; channel_id: number; by: PublicUser; video?: boolean }
-  | { type: "groupcall.welcome"; channel_id: number; self: string; participants?: GroupParticipant[] }
+  | { type: "groupcall.welcome"; channel_id: number; self: string; participants?: GroupParticipant[]; invited?: number }
   | {
       type: "groupcall.signal";
       channel_id: number;
@@ -62,6 +65,8 @@ export class GroupCallController {
   private pcs = new Map<string, RTCPeerConnection>();
   private pendingIce = new Map<string, RTCIceCandidateInit[]>();
   private iceServers: RTCIceServer[] | null = null;
+  private ringer = new Ringer();
+  private ringTimer: number | undefined;
 
   constructor(
     private api: Api,
@@ -116,6 +121,7 @@ export class GroupCallController {
       .rtcConfig()
       .then((r) => r.ice_servers)
       .catch(() => this.iceServers ?? []);
+    this.ringer.stop();
     this.set({
       invite: undefined,
       error: undefined,
@@ -152,6 +158,7 @@ export class GroupCallController {
   }
 
   dismissInvite() {
+    this.ringer.stop();
     this.set({ invite: undefined });
   }
 
@@ -230,7 +237,10 @@ export class GroupCallController {
         if (participants.length) rooms[ev.channel_id] = { ...ev, participants };
         else delete rooms[ev.channel_id];
         this.set({ rooms });
-        if (!participants.length && this.state.invite?.channelId === ev.channel_id) this.set({ invite: undefined });
+        if (!participants.length && this.state.invite?.channelId === ev.channel_id) {
+          this.ringer.stop();
+          this.set({ invite: undefined });
+        }
         // người đã rời: đóng kết nối tới họ
         if (a && a.channelId === ev.channel_id) {
           const present = new Set(participants.map((p) => p.peer_id));
@@ -241,12 +251,16 @@ export class GroupCallController {
       case "groupcall.started": {
         if (a || this.busyElsewhere()) return;
         this.set({ invite: { channelId: ev.channel_id, by: ev.by, video: !!ev.video } });
+        // đổ chuông ~20 giây (dừng khi tham gia / bỏ qua / cuộc gọi kết thúc)
+        this.ringer.start("incoming");
+        window.clearTimeout(this.ringTimer);
+        this.ringTimer = window.setTimeout(() => this.ringer.stop(), 20000);
         this.notify("📞 Cuộc gọi nhóm", `${ev.by.display_name || ev.by.username} vừa bắt đầu gọi nhóm`, ev.channel_id);
         return;
       }
       case "groupcall.welcome": {
         if (!a || a.channelId !== ev.channel_id) return;
-        this.setActive({ selfId: ev.self });
+        this.setActive({ selfId: ev.self, invited: ev.invited });
         // người mới vào: gửi offer cho từng người đang có mặt
         for (const p of ev.participants ?? []) {
           const pc = this.peer(p.peer_id, p.user);

@@ -143,7 +143,15 @@ export function GroupCallOverlay() {
               <Tile key={p.peerId} user={state.users[p.user.id] ?? p.user} stream={p.stream} state={p.state} />
             ))}
           </div>
-          {peers.length === 0 && <p className="gc-wait">Đang chờ người khác tham gia…</p>}
+          {peers.length === 0 && (
+            <p className="gc-wait">
+              {a.invited === undefined
+                ? "Đang chờ người khác tham gia…"
+                : a.invited === 0
+                  ? "Không ai khác trong kênh đang online nên chưa ai nhận được lời mời."
+                  : `Đã mời ${a.invited} người đang online trong kênh, đang chờ tham gia…`}
+            </p>
+          )}
           <div className="gc-controls">
             <button
               type="button"

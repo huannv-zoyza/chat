@@ -349,10 +349,11 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
     const groups = new GroupCallController(
       api,
       (req) => sock.sendGroup(req),
-      (title, body, channelId) => {
-        if (!document.hasFocus())
-          void showNotification(title, body, () => dispatch({ type: "channel.select", channelId }));
-      },
+      (title, body, channelId) =>
+        void showNotification(title, body, () => {
+          window.focus();
+          dispatch({ type: "channel.select", channelId });
+        }),
       () => {
         const p = calls.getSnapshot().phase;
         return p !== "idle" && p !== "ended";

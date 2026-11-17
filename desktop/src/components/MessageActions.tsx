@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type TouchEvent } from "react";
-import type { Message } from "../lib/api";
+import type { Message, Reaction } from "../lib/api";
 import { copyText, displayName, formatDay, formatTime } from "../lib/format";
-import { COMPACT_QUERY, useMediaQuery } from "../lib/useMedia";
+import { COMPACT_QUERY, TOUCH_QUERY, useMediaQuery } from "../lib/useMedia";
+import { findMessage } from "../state/chat";
 import { useChat } from "../state/ChatProvider";
 import { EmojiPicker, rememberEmoji } from "./EmojiPicker";
-import { Avatar, Icon } from "./ui";
+import { Avatar, Dialog, Icon } from "./ui";
 
 /** Cảm xúc hay dùng, hiện sẵn khi rê chuột/nhấn giữ tin nhắn. */
 export const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🎉"];
@@ -12,30 +13,17 @@ export const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🎉"
 /* ---------- Chip cảm xúc dưới tin ---------- */
 
 export function ReactionBar({ message, onAdd }: { message: Message; onAdd: (anchor: HTMLElement) => void }) {
-  const { state, toggleReaction } = useChat();
+  const { state } = useChat();
+  const [who, setWho] = useState<string | null>(null);
   const reactions = message.reactions ?? [];
   if (reactions.length === 0) return null;
 
   return (
     <div className="reactions" role="group" aria-label="Cảm xúc">
-      {reactions.map((r) => {
-        const mine = r.user_ids.includes(state.me.id);
-        const names = r.user_ids.map((id) => (id === state.me.id ? "Bạn" : displayName(state.users[id])));
-        return (
-          <button
-            key={r.emoji}
-            type="button"
-            className={`reaction${mine ? " is-mine" : ""}`}
-            aria-pressed={mine}
-            title={`${names.join(", ")} đã thả ${r.emoji}`}
-            aria-label={`${r.emoji} ${r.user_ids.length}, ${mine ? "bấm để bỏ" : "bấm để thả"}`}
-            onClick={() => toggleReaction(message.id, r.emoji)}
-          >
-            <span className="reaction-emoji">{r.emoji}</span>
-            <span className="reaction-count">{r.user_ids.length}</span>
-          </button>
-        );
-      })}
+      {reactions.map((r) => (
+        <ReactionChip key={r.emoji} message={message} reaction={r} meId={state.me.id} onShowWho={setWho} />
+      ))}
+      {who && <ReactionsDialog message={message} initial={who} onClose={() => setWho(null)} />}
       <button
         type="button"
         className="reaction reaction-add"
@@ -46,6 +34,140 @@ export function ReactionBar({ message, onAdd }: { message: Message; onAdd: (anch
         <Icon name="smilePlus" size={16} />
       </button>
     </div>
+  );
+}
+
+/**
+ * Một nút cảm xúc: chạm/bấm để thả hoặc gỡ. Xem ai đã thả: rê chuột (máy tính),
+ * nhấn giữ (điện thoại) hoặc chuột phải.
+ */
+function ReactionChip({
+  message,
+  reaction: r,
+  meId,
+  onShowWho,
+}: {
+  message: Message;
+  reaction: Reaction;
+  meId: number;
+  onShowWho: (emoji: string) => void;
+}) {
+  const { state, toggleReaction } = useChat();
+  const touch = useMediaQuery(TOUCH_QUERY);
+  const press: Partial<
+    Record<"onTouchStart" | "onTouchMove" | "onTouchEnd" | "onTouchCancel", (e: TouchEvent) => void>
+  > = useLongPress(() => onShowWho(r.emoji), touch);
+  const mine = r.user_ids.includes(meId);
+  const names = r.user_ids.map((id) => (id === meId ? "Bạn" : displayName(state.users[id])));
+  // Không để nhấn giữ nút cảm xúc lan lên tin nhắn (sẽ mở luôn bảng thao tác của tin).
+  const stop =
+    <E extends React.SyntheticEvent>(fn?: (e: E) => void) =>
+    (e: E) => {
+      e.stopPropagation();
+      fn?.(e);
+    };
+  return (
+    <button
+      type="button"
+      className={`reaction${mine ? " is-mine" : ""}`}
+      aria-pressed={mine}
+      title={`${names.join(", ")} đã thả ${r.emoji}`}
+      aria-label={`${r.emoji} ${r.user_ids.length}: ${names.join(", ")}. ${mine ? "Bấm để bỏ" : "Bấm để thả"}, nhấn giữ để xem ai đã thả`}
+      onClick={() => toggleReaction(message.id, r.emoji)}
+      onTouchStart={stop(press.onTouchStart)}
+      onTouchMove={stop(press.onTouchMove)}
+      onTouchEnd={stop(press.onTouchEnd)}
+      onTouchCancel={stop(press.onTouchCancel)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onShowWho(r.emoji);
+      }}
+    >
+      <span className="reaction-emoji">{r.emoji}</span>
+      <span className="reaction-count">{r.user_ids.length}</span>
+    </button>
+  );
+}
+
+/** Danh sách ai đã thả cảm xúc nào (tab "Tất cả" + từng emoji). Chạm dòng của mình để gỡ. */
+export function ReactionsDialog({
+  message,
+  initial,
+  onClose,
+}: {
+  message: Message;
+  initial: string;
+  onClose: () => void;
+}) {
+  const { state, toggleReaction } = useChat();
+  const [tab, setTab] = useState(initial);
+  // lấy bản mới nhất của tin (cảm xúc có thể đổi trong lúc đang mở)
+  const reactions = (findMessage(state, message.id) ?? message).reactions ?? [];
+  useEffect(() => {
+    if (reactions.length === 0) onClose();
+  }, [reactions.length, onClose]);
+  const total = reactions.reduce((n, r) => n + r.user_ids.length, 0);
+  const rows = reactions
+    .filter((r) => tab === "all" || r.emoji === tab)
+    .flatMap((r) => r.user_ids.map((uid) => ({ uid, emoji: r.emoji })));
+  // mình lên đầu, rồi theo tên
+  rows.sort(
+    (a, b) =>
+      Number(b.uid === state.me.id) - Number(a.uid === state.me.id) ||
+      displayName(state.users[a.uid]).localeCompare(displayName(state.users[b.uid]), "vi"),
+  );
+
+  return (
+    <Dialog title="Cảm xúc" onClose={onClose}>
+      <div className="who-tabs" role="tablist" aria-label="Lọc theo cảm xúc">
+        <button
+          type="button"
+          role="tab"
+          className="who-tab"
+          aria-selected={tab === "all"}
+          onClick={() => setTab("all")}
+        >
+          Tất cả <span>{total}</span>
+        </button>
+        {reactions.map((r) => (
+          <button
+            key={r.emoji}
+            type="button"
+            role="tab"
+            className="who-tab"
+            aria-selected={tab === r.emoji}
+            onClick={() => setTab(r.emoji)}
+          >
+            <span className="who-tab-emoji">{r.emoji}</span> <span>{r.user_ids.length}</span>
+          </button>
+        ))}
+      </div>
+      <ul className="who-list">
+        {rows.map(({ uid, emoji }) => {
+          const me = uid === state.me.id;
+          const user = state.users[uid];
+          return (
+            <li key={`${uid}-${emoji}`}>
+              <button
+                type="button"
+                className="who-row"
+                disabled={!me}
+                onClick={() => me && toggleReaction(message.id, emoji)}
+                aria-label={me ? `Bạn đã thả ${emoji}, chạm để gỡ` : `${displayName(user)} đã thả ${emoji}`}
+              >
+                <Avatar user={user} size={34} />
+                <span className="who-text">
+                  <span className="who-name">{me ? "Bạn" : displayName(user)}</span>
+                  {me && <span className="who-sub">Chạm để gỡ</span>}
+                </span>
+                <span className="who-emoji">{emoji}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </Dialog>
   );
 }
 
@@ -228,12 +350,14 @@ export function MessageActionSheet({
   onReply,
   onEdit,
   onDelete,
+  onShowReactions,
 }: {
   message: Message;
   onClose: () => void;
   onReply?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
+  onShowReactions?: () => void;
 }) {
   const { toggleReaction, state } = useChat();
   const [picking, setPicking] = useState(false);
@@ -261,6 +385,9 @@ export function MessageActionSheet({
         onClose();
       }}
       onClick={(e) => e.target === ref.current && onClose()}
+      onTouchStart={(e) => e.stopPropagation()}
+      onTouchMove={(e) => e.stopPropagation()}
+      onTouchEnd={(e) => e.stopPropagation()}
     >
       <div className="dialog-body">
         {picking ? (
@@ -308,6 +435,19 @@ export function MessageActionSheet({
                 >
                   <Icon name="copy" />
                   Sao chép nội dung
+                </button>
+              )}
+              {onShowReactions && (message.reactions?.length ?? 0) > 0 && (
+                <button
+                  type="button"
+                  className="sheet-action"
+                  onClick={() => {
+                    onClose();
+                    onShowReactions();
+                  }}
+                >
+                  <Icon name="smilePlus" />
+                  Xem ai đã thả cảm xúc
                 </button>
               )}
               {onEdit && (

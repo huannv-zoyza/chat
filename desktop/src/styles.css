@@ -3510,3 +3510,87 @@ button {
     grid-template-columns: repeat(3, auto);
   }
 }
+
+/* ---------- Ai đã thả cảm xúc ---------- */
+
+.who-tabs {
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+  margin: -0.25rem 0 0.5rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--line);
+  scrollbar-width: none;
+}
+.who-tab {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  height: 2.1rem;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.who-tab[aria-selected="true"] {
+  background: var(--signal-soft);
+  color: var(--text);
+}
+.who-tab-emoji {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+.who-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: min(55vh, 26rem);
+  overflow-y: auto;
+}
+.who-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 3.1rem;
+  padding: 0.35rem 0.25rem;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+.who-row:disabled {
+  opacity: 1;
+  cursor: default;
+}
+.who-row:not(:disabled):hover {
+  background: var(--raised);
+}
+.who-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.who-name {
+  font-weight: 600;
+}
+.who-sub {
+  font-size: var(--step--1);
+  color: var(--muted);
+}
+.who-emoji {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+/* nút cảm xúc: không cho bôi đen chữ khi nhấn giữ trên điện thoại */
+.reaction {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}

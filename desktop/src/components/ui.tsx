@@ -63,6 +63,12 @@ export function Dialog({ title, onClose, children, wide }: DialogProps) {
         // bấm ra ngoài khung (vào nền mờ) để đóng
         if (e.target === ref.current) onClose();
       }}
+      // Hộp thoại có thể nằm trong một tin nhắn (cây React): đừng để chạm/nhấn giữ lan ra tin
+      // nhắn bên ngoài (sẽ mở bảng thao tác của tin).
+      onTouchStart={(e) => e.stopPropagation()}
+      onTouchMove={(e) => e.stopPropagation()}
+      onTouchEnd={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.stopPropagation()}
       aria-labelledby="dialog-title"
     >
       <div className="dialog-body">

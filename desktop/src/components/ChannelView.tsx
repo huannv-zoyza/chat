@@ -11,6 +11,7 @@ import {
   MessageActionSheet,
   MessageToolbar,
   ReactionBar,
+  ReactionsDialog,
   ReactionPicker,
   ThreadSummaryLink,
   useLongPress,
@@ -499,6 +500,7 @@ export function MessageRow(props: RowProps) {
   const [pickerAnchor, setPickerAnchor] = useState<HTMLElement | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [whoOpen, setWhoOpen] = useState(false);
   const deleted = !!message?.deleted_at;
   // Tin mã hoá đầu cuối: giải mã ngay trên máy (có bộ nhớ đệm); render lại khi mở khoá bằng PIN.
   useE2EE();
@@ -640,8 +642,10 @@ export function MessageRow(props: RowProps) {
           onReply={props.onOpenThread}
           onEdit={onEdit}
           onDelete={onDelete}
+          onShowReactions={() => setWhoOpen(true)}
         />
       )}
+      {message && whoOpen && <ReactionsDialog message={message} initial="all" onClose={() => setWhoOpen(false)} />}
       {message && confirmDelete && <ConfirmDeleteDialog message={view!} onClose={() => setConfirmDelete(false)} />}
     </article>
   );

@@ -24,6 +24,7 @@ type Props = {
   onJoinByLink: () => void;
   onOpenSettings: () => void;
   onNewDM: () => void;
+  onSearch: () => void;
 };
 
 export function Sidebar({
@@ -33,6 +34,7 @@ export function Sidebar({
   onJoinByLink,
   onOpenSettings,
   onNewDM,
+  onSearch,
 }: Props) {
   const { state, selectChannel } = useChat();
   const channels = useMemo(
@@ -57,6 +59,14 @@ export function Sidebar({
     <nav className="sidebar" aria-label="Kênh">
       <header className="sidebar-top">
         <span className="brand">Go Chat</span>
+        <button
+          className="icon-btn icon-btn-ink sidebar-search"
+          onClick={onSearch}
+          title="Tìm tin nhắn (Ctrl+K)"
+          aria-label="Tìm tin nhắn"
+        >
+          <Icon name="search" size={17} />
+        </button>
         <span className={`conn conn-${state.status}`} title={STATUS_LABEL[state.status]}>
           <span className="conn-dot" />
           <span className="sr-only">{STATUS_LABEL[state.status]}</span>

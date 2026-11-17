@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -40,7 +41,9 @@ type clientRequest struct {
 	ClientID  string       `json:"client_id"`
 	ParentID  int64        `json:"parent_id"` // khác 0: trả lời trong luồng của tin này
 	Embed     *model.Embed `json:"embed"`
-	Cipher    string       `json:"cipher"` // tin mã hoá đầu cuối (chỉ trong tin nhắn riêng)
+	Cipher    string       `json:"cipher"`      // tin mã hoá đầu cuối (chỉ trong tin nhắn riêng)
+	ReplyToID int64        `json:"reply_to_id"` // trả lời trích dẫn tin này
+	Forwarded bool         `json:"forwarded"`
 }
 
 // serveSocket: GET /ws?token=<token>
@@ -195,7 +198,24 @@ func (a *API) handleRequest(ctx context.Context, client *socket.Client, user mod
 			}
 			parentID = &req.ParentID
 		}
-		if _, err := a.createAndBroadcast(ctx, user, req.ChannelID, content, nil, req.ClientID, parentID, embed, cipher); err != nil {
+		var replyRaw string
+		if req.ReplyToID > 0 {
+			replyRaw = strconv.FormatInt(req.ReplyToID, 10)
+		}
+		replyTo, msg, err := a.validateReplyTo(ctx, req.ChannelID, replyRaw)
+		if err != nil {
+			log.Printf("ws validate reply: %v", err)
+			reply("Server gặp lỗi, thử gửi lại.")
+			return
+		}
+		if msg != "" {
+			reply(msg)
+			return
+		}
+		if _, err := a.createAndBroadcast(ctx, user, req.ChannelID, outgoing{
+			Content: content, ClientID: req.ClientID, ParentID: parentID, Embed: embed, Cipher: cipher,
+			ReplyToID: replyTo, Forwarded: req.Forwarded,
+		}); err != nil {
 			log.Printf("ws create message: %v", err)
 			reply("Server gặp lỗi, thử gửi lại.")
 			return

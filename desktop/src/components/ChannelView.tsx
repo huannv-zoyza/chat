@@ -12,6 +12,7 @@ import {
   MessageToolbar,
   ReactionBar,
   ReactionsDialog,
+  type MessageActionSet,
   ReactionPicker,
   ThreadSummaryLink,
   useLongPress,
@@ -21,6 +22,8 @@ import { ChannelSigil } from "./ChannelDialogs";
 import { ConfirmDeleteDialog, MessageEditor } from "./MessageEditor";
 import { EmbedView } from "./Embeds";
 import { PollView } from "./Polls";
+import { ForwardDialog, PinsDialog, QuoteBlock, previewText } from "./MessageExtras";
+import { findMessage } from "../state/chat";
 import { EncryptedAttachments } from "./EncryptedAttachments";
 import { E2EEBanner, SafetyDialog, useDMEncryption } from "./E2EEDialogs";
 import { e2ee, useE2EE } from "../lib/e2ee";
@@ -48,6 +51,23 @@ export function ChannelView({ channel, membersOpen, onToggleMembers, onOpenSetti
   const peerOnline = peerId !== null && peerId !== state.me.id && state.status === "open" && !!state.online[peerId];
   const enc = useDMEncryption(channel);
   const [safetyOpen, setSafetyOpen] = useState(false);
+  const [pinsOpen, setPinsOpen] = useState(false);
+  const { loadPins } = useChat();
+  const pinCount = state.pins[channel.id]?.length ?? 0;
+  useEffect(() => {
+    loadPins(channel.id).catch(() => {});
+  }, [channel.id, loadPins]);
+  const pinsBtn = (
+    <button
+      className={`chip${pinCount ? "" : " chip-quiet"}`}
+      onClick={() => setPinsOpen(true)}
+      title="Tin đã ghim"
+      aria-label={`Tin đã ghim (${pinCount})`}
+    >
+      <Icon name="pin" size={16} />
+      {pinCount > 0 && pinCount}
+    </button>
+  );
   const composer = useRef<ComposerHandle>(null);
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
@@ -122,6 +142,7 @@ export function ChannelView({ channel, membersOpen, onToggleMembers, onOpenSetti
         )}
         {direct && (
           <div className="room-actions">
+            {pinsBtn}
             <button
               className={`icon-btn${enc.encrypted ? " is-secure" : ""}`}
               onClick={() => setSafetyOpen(true)}
@@ -134,6 +155,7 @@ export function ChannelView({ channel, membersOpen, onToggleMembers, onOpenSetti
         )}
         {!direct && (
           <div className="room-actions">
+            {pinsBtn}
             <button
               className={`chip${membersOpen ? " is-on" : ""}`}
               onClick={onToggleMembers}
@@ -175,6 +197,7 @@ export function ChannelView({ channel, membersOpen, onToggleMembers, onOpenSetti
       {direct && <E2EEBanner channel={channel} />}
       <Composer ref={composer} channel={channel} />
       {safetyOpen && <SafetyDialog channel={channel} onClose={() => setSafetyOpen(false)} />}
+      {pinsOpen && <PinsDialog channel={channel} onClose={() => setPinsOpen(false)} />}
 
       {dragging && (
         <div className="drop-overlay" aria-hidden>
@@ -496,7 +519,7 @@ type RowProps = {
 
 export function MessageRow(props: RowProps) {
   const { mine, mentioned, grouped, name, avatarUser, time, content, attachments, pending, message } = props;
-  const { state, dispatch } = useChat();
+  const { state, dispatch, setReply, pinMessage } = useChat();
   const compact = useMediaQuery(COMPACT_QUERY);
   const [pickerAnchor, setPickerAnchor] = useState<HTMLElement | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -522,6 +545,25 @@ export function MessageRow(props: RowProps) {
   const canDelete = live && (ownMsg || (!!room && !isDM(room) && room.owner_id === state.me.id));
   const onDelete = canDelete ? () => setConfirmDelete(true) : undefined;
   const longPress = useLongPress(() => setSheetOpen(true), live && compact && !editing);
+  const [forwardOpen, setForwardOpen] = useState(false);
+  const replyKey = message?.parent_id ? `t${message.parent_id}` : `c${message?.channel_id}`;
+  const canForward = live && !message!.poll && (!message!.cipher || !!dec?.ok);
+  const acts: MessageActionSet = {
+    onThread: props.onOpenThread,
+    onQuote: live ? () => setReply(replyKey, message!.id) : undefined,
+    onEdit,
+    onDelete,
+    onPin: live ? () => void pinMessage(message!.id, !message!.pinned_at).catch(() => {}) : undefined,
+    pinned: !!message?.pinned_at,
+    onForward: canForward ? () => setForwardOpen(true) : undefined,
+  };
+  // nhảy tới từ tìm kiếm / tin ghim / bản trích: cuộn tới giữa màn hình và nháy nền
+  const rowRef = useRef<HTMLElement>(null);
+  const hl = state.highlight;
+  const highlighted = !!message && hl?.id === message.id && Date.now() - hl.at < 3000;
+  useEffect(() => {
+    if (highlighted) rowRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [highlighted, hl?.at]);
   const failed = pending?.status === "failed";
   const uploading = pending && pending.status === "sending" && pending.files?.length;
   const cls = [
@@ -534,12 +576,14 @@ export function MessageRow(props: RowProps) {
     editing && "msg-editing",
     failed && "msg-failed",
     pickerAnchor && "has-popover",
+    highlighted && "is-highlight",
+    message?.pinned_at && !deleted && "is-pinned",
   ]
     .filter(Boolean)
     .join(" ");
 
   return (
-    <article className={cls} {...longPress}>
+    <article className={cls} {...longPress} ref={rowRef} data-msg-id={message?.id}>
       <div className="msg-gutter">
         {grouped ? (
           <time className="msg-gutter-time" dateTime={time} title={formatFull(time)}>
@@ -560,6 +604,27 @@ export function MessageRow(props: RowProps) {
             </time>
           </header>
         )}
+        {!deleted && (message?.pinned_at || message?.forwarded || pending?.forwarded) && (
+          <p className="msg-flags">
+            {message?.pinned_at && (
+              <span className="msg-flag">
+                <Icon name="pin" size={12} />
+                Đã ghim
+                {message.pinned_by
+                  ? ` bởi ${message.pinned_by === state.me.id ? "bạn" : displayName(state.users[message.pinned_by])}`
+                  : ""}
+              </span>
+            )}
+            {(message?.forwarded || pending?.forwarded) && (
+              <span className="msg-flag">
+                <Icon name="forward" size={12} />
+                Đã chuyển tiếp
+              </span>
+            )}
+          </p>
+        )}
+        {!deleted && message?.reply_to && <QuoteBlock quote={message.reply_to} channelId={message.channel_id} />}
+        {pending?.replyToId && <PendingQuote channelId={pending.channelId} messageId={pending.replyToId} />}
         {deleted ? (
           <p className="msg-deleted">
             <Icon name="trash" size={14} />
@@ -626,15 +691,7 @@ export function MessageRow(props: RowProps) {
           ))}
       </div>
 
-      {live && !compact && !editing && (
-        <MessageToolbar
-          message={view!}
-          onPick={setPickerAnchor}
-          onReply={props.onOpenThread}
-          onEdit={onEdit}
-          onDelete={onDelete}
-        />
-      )}
+      {live && !compact && !editing && <MessageToolbar message={view!} onPick={setPickerAnchor} {...acts} />}
       {message && pickerAnchor && (
         <ReactionPicker messageId={message.id} anchor={pickerAnchor} onClose={() => setPickerAnchor(null)} />
       )}
@@ -642,15 +699,32 @@ export function MessageRow(props: RowProps) {
         <MessageActionSheet
           message={view!}
           onClose={() => setSheetOpen(false)}
-          onReply={props.onOpenThread}
-          onEdit={onEdit}
-          onDelete={onDelete}
+          {...acts}
           onShowReactions={() => setWhoOpen(true)}
         />
       )}
       {message && whoOpen && <ReactionsDialog message={message} initial="all" onClose={() => setWhoOpen(false)} />}
+      {message && forwardOpen && <ForwardDialog message={message} onClose={() => setForwardOpen(false)} />}
       {message && confirmDelete && <ConfirmDeleteDialog message={view!} onClose={() => setConfirmDelete(false)} />}
     </article>
+  );
+}
+
+/** Bản trích của tin đang gửi (chưa có phản hồi máy chủ): lấy từ tin trong bộ nhớ. */
+function PendingQuote({ channelId, messageId }: { channelId: number; messageId: number }) {
+  const { state } = useChat();
+  const m = findMessage(state, messageId);
+  if (!m) return null;
+  return (
+    <QuoteBlock
+      channelId={channelId}
+      quote={{
+        id: m.id,
+        user_id: m.user_id,
+        content: previewText({ ...m, deleted: !!m.deleted_at, poll: m.poll }, m.channel_id),
+        parent_id: m.parent_id,
+      }}
+    />
   );
 }
 

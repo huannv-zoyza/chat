@@ -156,7 +156,19 @@ func (a *API) createMessageWithFiles(w http.ResponseWriter, r *http.Request) {
 		parentID = &id
 	}
 
-	msg, err := a.createAndBroadcast(r.Context(), me, ch.ID, content, saved, clientID, parentID, nil, cipher)
+	replyTo, msg2, err := a.validateReplyTo(r.Context(), ch.ID, r.FormValue("reply_to_id"))
+	if err != nil {
+		internalError(w, r, err)
+		return
+	}
+	if msg2 != "" {
+		writeError(w, http.StatusBadRequest, msg2)
+		return
+	}
+	msg, err := a.createAndBroadcast(r.Context(), me, ch.ID, outgoing{
+		Content: content, Atts: saved, ClientID: clientID, ParentID: parentID, Cipher: cipher,
+		ReplyToID: replyTo, Forwarded: r.FormValue("forwarded") == "1",
+	})
 	if err != nil {
 		internalError(w, r, err)
 		return
@@ -167,7 +179,20 @@ func (a *API) createMessageWithFiles(w http.ResponseWriter, r *http.Request) {
 
 // createAndBroadcast lưu tin (kèm mention) rồi phát message.new cho cả kênh.
 // Dùng chung cho tin gửi qua websocket và tin kèm file gửi qua HTTP.
-func (a *API) createAndBroadcast(ctx context.Context, me model.User, channelID int64, content string, atts []model.Attachment, clientID string, parentID *int64, embed *model.Embed, cipher string) (model.Message, error) {
+// outgoing: một tin sắp tạo (từ websocket hoặc HTTP).
+type outgoing struct {
+	Content   string
+	Atts      []model.Attachment
+	ClientID  string
+	ParentID  *int64       // trả lời trong luồng
+	Embed     *model.Embed // sticker / GIF
+	Cipher    string       // tin mã hoá đầu cuối
+	ReplyToID *int64       // trả lời trích dẫn
+	Forwarded bool
+}
+
+func (a *API) createAndBroadcast(ctx context.Context, me model.User, channelID int64, o outgoing) (model.Message, error) {
+	content, atts, clientID, parentID := o.Content, o.Atts, o.ClientID, o.ParentID
 	usernames, all := parseMentions(content)
 	mentionIDs, err := a.store.ResolveMentions(ctx, channelID, me.ID, usernames, all)
 	if err != nil {
@@ -180,8 +205,10 @@ func (a *API) createAndBroadcast(ctx context.Context, me model.User, channelID i
 		Attachments: atts,
 		MentionIDs:  mentionIDs,
 		ParentID:    parentID,
-		Embed:       embed,
-		Cipher:      cipher,
+		Embed:       o.Embed,
+		Cipher:      o.Cipher,
+		ReplyToID:   o.ReplyToID,
+		Forwarded:   o.Forwarded,
 	})
 	if err != nil {
 		return model.Message{}, err

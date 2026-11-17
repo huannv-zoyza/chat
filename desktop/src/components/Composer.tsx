@@ -12,7 +12,8 @@ import {
 import { type Channel, MAX_FILE_SIZE, MAX_FILES, type PublicUser } from "../lib/api";
 import { displayName } from "../lib/format";
 import { useChat } from "../state/ChatProvider";
-import { channelMessages } from "../state/chat";
+import { channelMessages, findMessage } from "../state/chat";
+import { ReplyBar } from "./MessageExtras";
 import { channelLabel, channelTitle, isDM } from "../lib/channel";
 import { lastOwnMessage } from "./MessageEditor";
 import { isTouchDevice } from "../lib/useMedia";
@@ -48,8 +49,14 @@ type ComposerProps = {
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer({ channel, parentId }, handle) {
   const draftKey = parentId ? `t${parentId}` : `c${channel.id}`;
-  const { state, dispatch, sendMessage, sendEmbed, notifyTyping, loadMembers } = useChat();
+  const { state, dispatch, sendMessage, sendEmbed, notifyTyping, loadMembers, setReply } = useChat();
   const [stickerOpen, setStickerOpen] = useState(false);
+  // Trả lời trích dẫn đang chọn cho ô soạn này
+  const replyId = state.replyTo[draftKey];
+  const replyMsg = replyId ? findMessage(state, replyId) : undefined;
+  useEffect(() => {
+    if (replyId) ref.current?.focus();
+  }, [replyId]);
   const [attachOpen, setAttachOpen] = useState(false);
   const [pollOpen, setPollOpen] = useState(false);
   const attachRef = useRef<HTMLDivElement>(null);
@@ -206,7 +213,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
   const submit = () => {
     if (!canSend) return;
-    sendMessage(channel.id, trimmed, files.length ? files : undefined, parentId);
+    sendMessage(
+      channel.id,
+      trimmed,
+      files.length ? files : undefined,
+      parentId,
+      replyId ? { replyToId: replyId } : undefined,
+    );
+    if (replyId) setReply(draftKey, null);
     setText("");
     setFiles([]);
     setFileError(null);
@@ -231,6 +245,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         setMention(null);
         return;
       }
+    }
+    if (e.key === "Escape" && replyId) {
+      e.preventDefault();
+      setReply(draftKey, null);
+      return;
     }
     // ↑ khi ô soạn đang trống: sửa tin gần nhất của mình.
     if (e.key === "ArrowUp" && !e.shiftKey && !text && files.length === 0) {
@@ -301,7 +320,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       {stickerOpen && (
         <StickerPicker
           onPick={(embed) => {
-            sendEmbed(channel.id, embed, parentId);
+            sendEmbed(channel.id, embed, parentId, replyId ? { replyToId: replyId } : undefined);
+            if (replyId) setReply(draftKey, null);
             setStickerOpen(false);
           }}
           onPickFile={() => {
@@ -312,6 +332,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         />
       )}
 
+      {replyMsg && <ReplyBar message={replyMsg} onCancel={() => setReply(draftKey, null)} />}
       <div className={`composer-box${tooLong ? " is-invalid" : ""}`}>
         {files.length > 0 && (
           <div className="composer-files">

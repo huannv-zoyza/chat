@@ -168,6 +168,22 @@ const paths: Record<string, ReactNode> = {
   ),
   poll: <path d="M5 20V10M12 20V4M19 20v-7M3 20h18" />,
   check: <path d="m5 12.5 4.5 4.5L19 7" strokeWidth="2.4" />,
+  reply: <path d="M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />,
+  forward: <path d="m15 14 5-5-5-5M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />,
+  pin: <path d="M9 4h6l-1 6 3 3H7l3-3-1-6ZM12 13v7" />,
+  more: (
+    <>
+      <circle cx="5.5" cy="12" r="1.3" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.3" fill="currentColor" />
+      <circle cx="18.5" cy="12" r="1.3" fill="currentColor" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="m20 20-4.2-4.2" />
+    </>
+  ),
   pencil: <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4ZM13.5 6.5l4 4" />,
   trash: <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />,
   copy: (

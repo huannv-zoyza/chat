@@ -83,6 +83,9 @@ Lỗi trả về `{"error": "<câu hiển thị cho người dùng>"}`.
 | POST | `/api/channels/{id}/polls` | `{question, options[], multiple, anonymous, client_id}` tạo bình chọn |
 | POST | `/api/messages/{id}/votes` | `{option_ids[]}` bỏ phiếu (thay toàn bộ lựa chọn của mình; `[]` = rút) |
 | POST | `/api/messages/{id}/poll/close` | `{closed}` người tạo kết thúc / mở lại |
+| POST | `/api/messages/{id}/pin` | `{pinned}` ghim / bỏ ghim |
+| GET | `/api/channels/{id}/pins` | Tin đang ghim |
+| GET | `/api/search?q=&channel_id=&before=` | Tìm toàn văn (không dấu) trong các kênh mình tham gia |
 | PATCH | `/api/messages/{id}` | `{content}` sửa tin của mình |
 | DELETE | `/api/messages/{id}` | Xoá tin (người viết, hoặc chủ kênh) |
 | PUT | `/api/me/password` | `{current_password, new_password}`; đăng xuất các thiết bị khác |

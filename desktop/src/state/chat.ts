@@ -18,6 +18,9 @@ export type PendingMessage = {
   parentId?: number;
   /** Sticker / GIF đang gửi. */
   embed?: Embed;
+  /** Trả lời trích dẫn tin này. */
+  replyToId?: number;
+  forwarded?: boolean;
 };
 
 /** Một luồng trả lời đã mở: tin gốc + các trả lời (cũ -> mới). */
@@ -54,6 +57,12 @@ export type ChatState = {
   openThreadId: number | null;
   /** Tin đang được sửa tại chỗ (mỗi lúc chỉ một tin). */
   editingId: number | null;
+  /** Đang trả lời trích dẫn: khoá ô soạn ("c<kênh>" / "t<tin gốc>") -> id tin được trả lời. */
+  replyTo: Record<string, number>;
+  /** Tin đang được làm nổi bật sau khi nhảy tới (từ tìm kiếm, tin ghim, bản trích). */
+  highlight: { id: number; at: number } | null;
+  /** Tin đang ghim của từng kênh (đã tải). */
+  pins: Record<number, Message[]>;
   /** channelId -> userId -> id tin đã xem tới (để hiện "đã xem"). */
   reads: Record<number, Record<number, number>>;
 };
@@ -74,6 +83,9 @@ export function initialState(me: User): ChatState {
     threads: {},
     openThreadId: null,
     editingId: null,
+    replyTo: {},
+    highlight: null,
+    pins: {},
     reads: {},
   };
 }
@@ -95,6 +107,9 @@ export type Action =
   | { type: "message.new"; message: Message; clientId?: string; countUnread: boolean }
   | { type: "message.updated"; message: Message }
   | { type: "edit.start"; messageId: number | null }
+  | { type: "reply.set"; key: string; messageId: number | null }
+  | { type: "highlight"; messageId: number | null }
+  | { type: "pins.loaded"; channelId: number; messages: Message[] }
   | { type: "pending.add"; pending: PendingMessage }
   | { type: "pending.failed"; clientId: string; error: string }
   | { type: "pending.retry"; clientId: string }
@@ -332,8 +347,36 @@ export function reducer(s: ChatState, a: Action): ChatState {
     case "message.updated": {
       // giữ tóm tắt luồng hiện có (sự kiện sửa/xoá không đổi luồng)
       const m = a.message;
-      return updateMessage(s, m.id, (old) => ({ ...m, thread: m.thread ?? old.thread }));
+      const next = updateMessage(s, m.id, (old) => ({
+        ...m,
+        thread: m.thread ?? old.thread,
+        poll: m.poll && old.poll ? { ...m.poll, my_votes: old.poll.my_votes } : m.poll,
+      }));
+      // danh sách tin ghim của kênh (nếu đã tải): thêm / bỏ / cập nhật
+      const list = s.pins[m.channel_id];
+      if (!list) return next;
+      const rest = list.filter((x) => x.id !== m.id);
+      const pins = m.pinned_at && !m.deleted_at ? [m, ...rest] : rest;
+      return { ...next, pins: { ...next.pins, [m.channel_id]: pins } };
     }
+
+    case "reply.set": {
+      const { [a.key]: _old, ...rest } = s.replyTo;
+      return { ...s, replyTo: a.messageId ? { ...rest, [a.key]: a.messageId } : rest };
+    }
+
+    case "highlight":
+      return { ...s, highlight: a.messageId ? { id: a.messageId, at: Date.now() } : null };
+
+    case "pins.loaded":
+      return {
+        ...s,
+        users: withUsers(
+          s.users,
+          a.messages.map((m) => m.user),
+        ),
+        pins: { ...s.pins, [a.channelId]: a.messages },
+      };
 
     case "edit.start":
       return s.editingId === a.messageId ? s : { ...s, editingId: a.messageId };

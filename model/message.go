@@ -34,6 +34,28 @@ type Message struct {
 	Cipher string `db:"cipher" json:"cipher,omitempty"`
 	// Bình chọn (bảng polls) nếu tin là một cuộc bình chọn.
 	Poll *Poll `db:"-" json:"poll,omitempty"`
+
+	// Ghim: thời điểm và người ghim (nil nếu không ghim).
+	PinnedAt *time.Time `db:"pinned_at" json:"pinned_at,omitempty"`
+	PinnedBy int64      `db:"pinned_by" json:"pinned_by,omitempty"`
+	// Trả lời trích dẫn: id tin được trả lời và bản trích ngắn của tin đó.
+	ReplyToID *int64         `db:"reply_to_id" json:"reply_to_id,omitempty"`
+	ReplyTo   *QuotedMessage `db:"-"           json:"reply_to,omitempty"`
+	// Tin được chuyển tiếp từ nơi khác.
+	Forwarded bool `db:"forwarded" json:"forwarded,omitempty"`
+}
+
+// QuotedMessage: bản trích của tin được trả lời (đủ để hiện một dòng xem trước).
+type QuotedMessage struct {
+	ID          int64  `json:"id"`
+	UserID      int64  `json:"user_id"`
+	Content     string `json:"content"`
+	Cipher      string `json:"cipher,omitempty"` // tin mã hoá: client tự giải mã để hiện trích
+	Embed       *Embed `json:"embed,omitempty"`
+	Attachments int    `json:"attachments,omitempty"`
+	Poll        string `json:"poll,omitempty"` // câu hỏi nếu là bình chọn
+	ParentID    *int64 `json:"parent_id,omitempty"`
+	Deleted     bool   `json:"deleted,omitempty"`
 }
 
 // Embed: sticker (bộ sticker có sẵn trong app) hoặc GIF (từ GIPHY).

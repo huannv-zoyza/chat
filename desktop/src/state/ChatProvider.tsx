@@ -28,9 +28,18 @@ type ChatContextValue = {
   serverUrl: string;
   selectChannel: (id: number | null) => void;
   /** parentId: trả lời trong luồng của tin đó. */
-  sendMessage: (channelId: number, content: string, files?: File[], parentId?: number) => void;
+  sendMessage: (channelId: number, content: string, files?: File[], parentId?: number, extra?: SendExtra) => void;
   /** Gửi sticker / GIF (một mình, không kèm chữ). */
-  sendEmbed: (channelId: number, embed: Embed, parentId?: number) => void;
+  sendEmbed: (channelId: number, embed: Embed, parentId?: number, extra?: SendExtra) => void;
+  /** Bắt đầu / huỷ trả lời trích dẫn trong ô soạn có khoá key ("c<kênh>" / "t<tin gốc>"). */
+  setReply: (key: string, messageId: number | null) => void;
+  /** Ghim / bỏ ghim. */
+  pinMessage: (messageId: number, pinned: boolean) => Promise<void>;
+  loadPins: (channelId: number) => Promise<void>;
+  /** Mở kênh (và luồng nếu cần), tải thêm tin cũ tới khi thấy tin rồi làm nổi bật nó. */
+  jumpToMessage: (m: { id: number; channel_id: number; parent_id?: number }) => Promise<void>;
+  /** Chuyển tiếp tin (chữ, sticker/GIF, file) sang kênh / tin nhắn riêng khác. */
+  forwardMessage: (message: Message, toChannelId: number) => Promise<void>;
   /** Thả/bỏ cảm xúc; cập nhật ngay trên máy mình rồi đồng bộ với server. */
   toggleReaction: (messageId: number, emoji: string) => void;
   /** Mở luồng của tin gốc (null để đóng). */
@@ -57,6 +66,14 @@ type ChatContextValue = {
   reconnectNow: () => void;
   onLogout: () => void;
 };
+
+export type SendExtra = { replyToId?: number; forwarded?: boolean };
+
+const sendOpts = (p: PendingMessage) => ({
+  parentId: p.parentId,
+  replyToId: p.replyToId,
+  forwarded: p.forwarded,
+});
 
 const ChatContext = createContext<ChatContextValue | null>(null);
 
@@ -184,17 +201,13 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
   // Gửi tin kèm file qua HTTP. Thành công thì tự thêm tin vào danh sách (phòng khi socket
   // đang rớt chưa kịp nhận "message.new"); reducer bỏ trùng theo id.
   const upload = useCallback(
-    async (
-      clientId: string,
-      channelId: number,
-      content: string,
-      files: (File | Blob)[],
-      parentId?: number,
-      cipher?: string,
-    ) => {
+    async (p: PendingMessage, content: string, files: (File | Blob)[], cipher?: string) => {
+      const { clientId, channelId } = p;
       try {
-        const msg = await api.sendWithFiles(channelId, { content, clientId, files, parentId, cipher }, (progress) =>
-          dispatch({ type: "pending.progress", clientId, progress }),
+        const msg = await api.sendWithFiles(
+          channelId,
+          { content, clientId, files, parentId: p.parentId, cipher, replyToId: p.replyToId, forwarded: p.forwarded },
+          (progress) => dispatch({ type: "pending.progress", clientId, progress }),
         );
         dispatch({ type: "message.new", message: msg, clientId, countUnread: false });
       } catch (err) {
@@ -239,16 +252,14 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
               theirPub,
             );
             await upload(
-              p.clientId,
-              p.channelId,
+              p,
               "",
               enc.map((e) => e.blob),
-              p.parentId,
               cipher,
             );
           } else {
             const cipher = e2ee.encrypt(p.embed ? { embed: p.embed } : { text: p.content }, p.channelId, theirPub);
-            socketRef.current?.sendMessage(p.channelId, "", p.clientId, p.parentId, undefined, cipher);
+            socketRef.current?.sendMessage(p.channelId, "", p.clientId, { ...sendOpts(p), cipher });
           }
         } catch (err) {
           console.error("mã hoá:", err);
@@ -256,8 +267,8 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
         }
         return;
       }
-      if (p.files?.length) await upload(p.clientId, p.channelId, p.content, p.files, p.parentId);
-      else socketRef.current?.sendMessage(p.channelId, p.content, p.clientId, p.parentId, p.embed);
+      if (p.files?.length) await upload(p, p.content, p.files);
+      else socketRef.current?.sendMessage(p.channelId, p.content, p.clientId, { ...sendOpts(p), embed: p.embed });
     },
     [upload],
   );
@@ -267,6 +278,25 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
     void e2ee.start(api, me.id, serverUrl);
     return () => e2ee.stop();
   }, [api, me.id, serverUrl]);
+
+  const loadOlder = useCallback(
+    async (channelId: number) => {
+      const cm = channelMessages(stateRef.current, channelId);
+      if (cm.loadingOlder || !cm.hasMore || cm.items.length === 0) return;
+      dispatch({ type: "messages.loadingOlder", channelId, loading: true });
+      try {
+        const res = await api.messages(channelId, cm.items[0].id);
+        dispatch({ type: "messages.loaded", channelId, messages: res.messages, hasMore: res.has_more, older: true });
+      } catch (err) {
+        console.error("tải tin cũ:", err);
+        dispatch({ type: "messages.loadingOlder", channelId, loading: false });
+      }
+    },
+    [api],
+  );
+
+  // để các hành động gọi lẫn nhau (chuyển tiếp -> gửi tin) mà không phụ thuộc vòng
+  const actionsRef = useRef<Omit<ChatContextValue, "state"> | null>(null);
 
   /* ---------- Kết nối socket ---------- */
 
@@ -392,9 +422,10 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       },
       selectChannel: (id) => dispatch({ type: "channel.select", channelId: id }),
 
-      sendMessage: (channelId, content, files, parentId) => {
+      sendMessage: (channelId, content, files, parentId, extra) => {
         const hasFiles = !!files && files.length > 0;
         const p: PendingMessage = {
+          ...extra,
           clientId: newClientId(),
           channelId,
           content,
@@ -408,8 +439,9 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
         lastTypingSent.current[channelId] = 0;
       },
 
-      sendEmbed: (channelId, embed, parentId) => {
+      sendEmbed: (channelId, embed, parentId, extra) => {
         const p: PendingMessage = {
+          ...extra,
           clientId: newClientId(),
           channelId,
           content: "",
@@ -503,17 +535,75 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
         socketRef.current?.sendTyping(channelId);
       },
 
-      loadOlder: async (channelId) => {
-        const cm = channelMessages(stateRef.current, channelId);
-        if (cm.loadingOlder || !cm.hasMore || cm.items.length === 0) return;
-        dispatch({ type: "messages.loadingOlder", channelId, loading: true });
-        try {
-          const res = await api.messages(channelId, cm.items[0].id);
-          dispatch({ type: "messages.loaded", channelId, messages: res.messages, hasMore: res.has_more, older: true });
-        } catch (err) {
-          console.error("tải tin cũ:", err);
-          dispatch({ type: "messages.loadingOlder", channelId, loading: false });
+      loadOlder,
+
+      setReply: (key, messageId) => dispatch({ type: "reply.set", key, messageId }),
+
+      pinMessage: async (messageId, pinned) => {
+        const msg = await api.pin(messageId, pinned);
+        dispatch({ type: "message.updated", message: msg });
+      },
+
+      loadPins: async (channelId) => {
+        const messages = await api.pins(channelId);
+        dispatch({ type: "pins.loaded", channelId, messages });
+      },
+
+      jumpToMessage: async (m) => {
+        dispatch({ type: "channel.select", channelId: m.channel_id });
+        if (m.parent_id) {
+          dispatch({ type: "thread.open", parentId: m.parent_id });
+          await loadThread(m.parent_id);
+          dispatch({ type: "highlight", messageId: m.id });
+          return;
         }
+        const tick = () => new Promise((r) => setTimeout(r, 30)); // chờ React cập nhật stateRef
+        if (!channelMessages(stateRef.current, m.channel_id).loaded) {
+          await loadLatest(m.channel_id);
+          await tick();
+        }
+        // tin cũ: tải thêm từng trang (tối đa ~1500 tin) tới khi thấy
+        for (let i = 0; i < 30; i++) {
+          const cm = channelMessages(stateRef.current, m.channel_id);
+          if (cm.items.some((x) => x.id === m.id) || !cm.hasMore) break;
+          await loadOlder(m.channel_id);
+          await tick();
+        }
+        dispatch({ type: "highlight", messageId: m.id });
+      },
+
+      forwardMessage: async (message, toChannelId) => {
+        let text = message.content;
+        let embed = message.embed;
+        let files: File[] = [];
+        if (message.cipher) {
+          const dec = e2ee.decrypt(message);
+          if (!dec.ok) throw new ApiError(0, "Không giải mã được tin này để chuyển tiếp.");
+          text = dec.payload.text ?? "";
+          embed = dec.payload.embed;
+          const metas = dec.payload.files ?? [];
+          files = await Promise.all(
+            metas.map(async (meta, i) => {
+              const att = message.attachments?.[i];
+              if (!att) throw new ApiError(0, "Thiếu file đính kèm.");
+              const buf = await (await fetch(api.fileUrl(att, true))).arrayBuffer();
+              return new File([await e2ee.decryptFile(buf, meta)], meta.name, { type: meta.type });
+            }),
+          );
+        } else if (message.attachments?.length) {
+          files = await Promise.all(
+            message.attachments.map(async (att) => {
+              const res = await fetch(api.fileUrl(att, true));
+              if (!res.ok) throw new ApiError(res.status, `Không tải được ${att.file_name}.`);
+              return new File([await res.blob()], att.file_name, { type: att.content_type });
+            }),
+          );
+        }
+        if (embed) actionsRef.current!.sendEmbed(toChannelId, embed, undefined, { forwarded: true });
+        else
+          actionsRef.current!.sendMessage(toChannelId, text, files.length ? files : undefined, undefined, {
+            forwarded: true,
+          });
       },
 
       loadMembers: async (channelId) => {
@@ -523,9 +613,10 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
 
       reconnectNow: () => socketRef.current?.reconnectNow(),
     }),
-    [api, serverUrl, onLogout, deliver, loadThread],
+    [api, serverUrl, onLogout, deliver, loadThread, loadOlder, loadLatest],
   );
 
+  actionsRef.current = actions;
   const value = useMemo<ChatContextValue>(() => ({ state, ...actions }), [state, actions]);
 
   return (

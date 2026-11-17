@@ -195,19 +195,68 @@ export function ThreadSummaryLink({ message, onOpen }: { message: Message; onOpe
 
 /* ---------- Thanh thao tác khi rê chuột (máy tính) ---------- */
 
-type ToolbarProps = {
-  message: Message;
-  onPick: (anchor: HTMLElement) => void;
-  onReply?: () => void;
+/** Các thao tác có thể làm với một tin (thiếu = không được phép / không áp dụng). */
+export type MessageActionSet = {
+  onThread?: () => void; // trả lời trong luồng
+  onQuote?: () => void; // trả lời trích dẫn
   onEdit?: () => void;
   onDelete?: () => void;
+  onPin?: () => void;
+  pinned?: boolean;
+  onForward?: () => void;
 };
 
-export function MessageToolbar({ message, onPick, onReply, onEdit, onDelete }: ToolbarProps) {
+type ToolbarProps = MessageActionSet & {
+  message: Message;
+  onPick: (anchor: HTMLElement) => void;
+};
+
+export function MessageToolbar({
+  message,
+  onPick,
+  onThread,
+  onQuote,
+  onEdit,
+  onDelete,
+  onPin,
+  pinned,
+  onForward,
+}: ToolbarProps) {
   const { toggleReaction } = useChat();
+  const [menu, setMenu] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const onDown = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setMenu(false);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenu(false);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menu]);
+  const item = (label: string, icon: string, fn?: () => void, danger = false) =>
+    fn && (
+      <button
+        type="button"
+        role="menuitem"
+        className={danger ? "is-danger" : undefined}
+        aria-label={label}
+        onClick={() => {
+          setMenu(false);
+          fn();
+        }}
+      >
+        <Icon name={icon} size={16} />
+        {label}
+      </button>
+    );
+  const hasMenu = onPin || onForward || onEdit || onDelete || message.content;
+
   return (
-    <div className="msg-toolbar" role="toolbar" aria-label="Thao tác với tin nhắn">
-      {QUICK_REACTIONS.slice(0, 4).map((e) => (
+    <div className={`msg-toolbar${menu ? " is-open" : ""}`} role="toolbar" aria-label="Thao tác với tin nhắn" ref={ref}>
+      {QUICK_REACTIONS.slice(0, 3).map((e) => (
         <button
           key={e}
           type="button"
@@ -228,32 +277,43 @@ export function MessageToolbar({ message, onPick, onReply, onEdit, onDelete }: T
       >
         <Icon name="smilePlus" size={17} />
       </button>
-      {onReply && (
+      {onQuote && (
+        <button type="button" className="toolbar-btn" title="Trả lời" aria-label="Trả lời" onClick={onQuote}>
+          <Icon name="reply" size={17} />
+        </button>
+      )}
+      {onThread && (
         <button
           type="button"
           className="toolbar-btn"
           title="Trả lời trong luồng"
           aria-label="Trả lời trong luồng"
-          onClick={onReply}
+          onClick={onThread}
         >
           <Icon name="thread" size={17} />
         </button>
       )}
-      {onEdit && (
-        <button type="button" className="toolbar-btn" title="Sửa tin nhắn" aria-label="Sửa tin nhắn" onClick={onEdit}>
-          <Icon name="pencil" size={17} />
-        </button>
-      )}
-      {onDelete && (
+      {hasMenu && (
         <button
           type="button"
-          className="toolbar-btn toolbar-danger"
-          title="Xoá tin nhắn"
-          aria-label="Xoá tin nhắn"
-          onClick={onDelete}
+          className="toolbar-btn"
+          title="Thêm"
+          aria-label="Thao tác khác"
+          aria-haspopup="menu"
+          aria-expanded={menu}
+          onClick={() => setMenu((v) => !v)}
         >
-          <Icon name="trash" size={17} />
+          <Icon name="more" size={17} />
         </button>
+      )}
+      {menu && (
+        <div className="more-menu" role="menu">
+          {item(pinned ? "Bỏ ghim" : "Ghim tin nhắn", "pin", onPin)}
+          {item("Chuyển tiếp", "forward", onForward)}
+          {message.content && item("Sao chép nội dung", "copy", () => void copyText(message.content))}
+          {item("Sửa tin nhắn", "pencil", onEdit)}
+          {item("Xoá tin nhắn", "trash", onDelete, true)}
+        </div>
       )}
     </div>
   );
@@ -347,16 +407,17 @@ export function useLongPress(onLongPress: () => void, enabled: boolean) {
 export function MessageActionSheet({
   message,
   onClose,
-  onReply,
+  onThread: onReply,
+  onQuote,
   onEdit,
   onDelete,
+  onPin,
+  pinned,
+  onForward,
   onShowReactions,
-}: {
+}: MessageActionSet & {
   message: Message;
   onClose: () => void;
-  onReply?: () => void;
-  onEdit?: () => void;
-  onDelete?: () => void;
   onShowReactions?: () => void;
 }) {
   const { toggleReaction, state } = useChat();
@@ -411,6 +472,19 @@ export function MessageActionSheet({
               </button>
             </div>
             <div className="sheet-actions">
+              {onQuote && (
+                <button
+                  type="button"
+                  className="sheet-action"
+                  onClick={() => {
+                    onClose();
+                    onQuote();
+                  }}
+                >
+                  <Icon name="reply" />
+                  Trả lời
+                </button>
+              )}
               {onReply && (
                 <button
                   type="button"
@@ -435,6 +509,32 @@ export function MessageActionSheet({
                 >
                   <Icon name="copy" />
                   Sao chép nội dung
+                </button>
+              )}
+              {onForward && (
+                <button
+                  type="button"
+                  className="sheet-action"
+                  onClick={() => {
+                    onClose();
+                    onForward();
+                  }}
+                >
+                  <Icon name="forward" />
+                  Chuyển tiếp
+                </button>
+              )}
+              {onPin && (
+                <button
+                  type="button"
+                  className="sheet-action"
+                  onClick={() => {
+                    onClose();
+                    onPin();
+                  }}
+                >
+                  <Icon name="pin" />
+                  {pinned ? "Bỏ ghim" : "Ghim tin nhắn"}
                 </button>
               )}
               {onShowReactions && (message.reactions?.length ?? 0) > 0 && (

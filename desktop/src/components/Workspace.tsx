@@ -14,11 +14,12 @@ import {
 import { clearPendingInvite, peekPendingInvite } from "../lib/platform";
 import { UserSettingsDialog } from "./UserSettingsDialog";
 import { NewDMDialog } from "./NewDMDialog";
+import { SearchDialog } from "./MessageExtras";
 import { isDM } from "../lib/channel";
 import { load, save } from "../lib/storage";
 import { COMPACT_QUERY, useMediaQuery } from "../lib/useMedia";
 
-type DialogName = "create" | "browse" | "channel" | "user" | "invite" | "joinLink" | "dm" | null;
+type DialogName = "create" | "browse" | "channel" | "user" | "invite" | "joinLink" | "dm" | "search" | null;
 
 export function Workspace() {
   const { state, openThread } = useChat();
@@ -28,6 +29,18 @@ export function Workspace() {
   useEffect(clearPendingInvite, []);
   const [membersOpen, setMembersOpen] = useState(() => load("membersOpen", true));
   const channel = state.activeId !== null ? state.channels[state.activeId] : undefined;
+
+  // Ctrl/Cmd + K: mở tìm kiếm
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setDialog("search");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Điện thoại: danh sách kênh và khung chat là 2 màn riêng (như Messenger).
   // Mở kênh thì đẩy 1 mục vào history, để nút Back của điện thoại/trình duyệt quay về danh sách.
@@ -123,6 +136,7 @@ export function Workspace() {
         onJoinByLink={() => setDialog("joinLink")}
         onOpenSettings={() => setDialog("user")}
         onNewDM={() => setDialog("dm")}
+        onSearch={() => setDialog("search")}
       />
 
       {channel ? (
@@ -174,6 +188,7 @@ export function Workspace() {
       {dialog === "channel" && channel && <ChannelSettingsDialog channel={channel} onClose={() => setDialog(null)} />}
       {dialog === "user" && <UserSettingsDialog onClose={() => setDialog(null)} />}
       {dialog === "invite" && channel && <InviteDialog channel={channel} onClose={() => setDialog(null)} />}
+      {dialog === "search" && <SearchDialog onClose={() => setDialog(null)} onJumped={openRoom} />}
       {dialog === "dm" && <NewDMDialog onClose={() => setDialog(null)} onOpened={openRoom} />}
       {dialog === "joinLink" && (
         <JoinByLinkDialog initialCode={inviteCode ?? undefined} onClose={() => setDialog(null)} />

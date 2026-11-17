@@ -72,6 +72,19 @@ export type Poll = {
   my_votes?: number[];
 };
 
+/** Bản trích của tin được trả lời. */
+export type QuotedMessage = {
+  id: number;
+  user_id: number;
+  content: string;
+  cipher?: string;
+  embed?: Embed;
+  attachments?: number;
+  poll?: string;
+  parent_id?: number;
+  deleted?: boolean;
+};
+
 export type GifResult = { id: string; title: string; url: string; preview: string; width: number; height: number };
 
 export type Message = {
@@ -88,6 +101,11 @@ export type Message = {
   /** Tin mã hoá đầu cuối (tin nhắn riêng): nội dung thật nằm trong đây, content để trống. */
   cipher?: string;
   poll?: Poll;
+  pinned_at?: string;
+  pinned_by?: number;
+  reply_to_id?: number;
+  reply_to?: QuotedMessage;
+  forwarded?: boolean;
   user?: PublicUser;
   attachments?: Attachment[];
   /** Id những người được nhắc tên trong tin. */
@@ -244,6 +262,13 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
         "GET",
         `/api/gifs?q=${encodeURIComponent(q)}&offset=${offset}`,
       ),
+    pin: (messageId: number, pinned: boolean) => request<Message>("POST", `/api/messages/${messageId}/pin`, { pinned }),
+    pins: (channelId: number) => request<Message[]>("GET", `/api/channels/${channelId}/pins`),
+    search: (q: string, channelId = 0, before = 0) =>
+      request<{ messages: Message[]; has_more: boolean }>(
+        "GET",
+        `/api/search?q=${encodeURIComponent(q)}${channelId ? `&channel_id=${channelId}` : ""}${before ? `&before=${before}` : ""}`,
+      ),
     createPoll: (
       channelId: number,
       b: { question: string; options: string[]; multiple: boolean; anonymous: boolean; client_id: string },
@@ -280,7 +305,15 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
      */
     sendWithFiles: (
       channelId: number,
-      b: { content: string; clientId: string; files: (File | Blob)[]; parentId?: number; cipher?: string },
+      b: {
+        content: string;
+        clientId: string;
+        files: (File | Blob)[];
+        parentId?: number;
+        cipher?: string;
+        replyToId?: number;
+        forwarded?: boolean;
+      },
       onProgress?: (fraction: number) => void,
     ) =>
       new Promise<Message>((resolve, reject) => {
@@ -289,6 +322,8 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
         form.append("client_id", b.clientId);
         if (b.parentId) form.append("parent_id", String(b.parentId));
         if (b.cipher) form.append("cipher", b.cipher);
+        if (b.replyToId) form.append("reply_to_id", String(b.replyToId));
+        if (b.forwarded) form.append("forwarded", "1");
         // file đã mã hoá không gửi tên thật lên server
         b.files.forEach((f, i) => form.append("files", f, f instanceof File ? f.name : `encrypted-${i + 1}.bin`));
 

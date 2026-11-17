@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"chat/model"
 )
@@ -499,6 +500,7 @@ func (s *Store) ReadStates(ctx context.Context, channelID int64) ([]model.ReadSt
 /* ---------- Messages ---------- */
 
 const messageColumns = `msg.id, msg.channel_id, msg.user_id, msg.content, msg.created_at, msg.edited_at, msg.deleted_at, msg.embed, msg.cipher,
+	msg.pinned_at, COALESCE(msg.pinned_by, 0), msg.reply_to_id, msg.forwarded,
 	msg.parent_id, COALESCE(p.user_id, 0),
 	u.id, u.username, u.display_name, u.avatar, u.status_text`
 
@@ -512,6 +514,7 @@ func scanMessage(row scanner) (model.Message, error) {
 	var u model.PublicUser
 	var embed, cipher sql.NullString
 	err := row.Scan(&m.ID, &m.ChannelID, &m.UserID, &m.Content, &m.CreatedAt, &m.EditedAt, &m.DeletedAt, &embed, &cipher,
+		&m.PinnedAt, &m.PinnedBy, &m.ReplyToID, &m.Forwarded,
 		&m.ParentID, &m.ParentUserID,
 		&u.ID, &u.Username, &u.DisplayName, &u.Avatar, &u.StatusText)
 	m.User = &u
@@ -556,6 +559,8 @@ type NewMessage struct {
 	ParentID    *int64 // khác nil: trả lời trong luồng của tin này
 	Embed       *model.Embed
 	Cipher      string // tin mã hoá đầu cuối
+	ReplyToID   *int64 // trả lời trích dẫn tin này
+	Forwarded   bool
 }
 
 // CreateMessage lưu tin nhắn, file đính kèm và người được nhắc trong cùng một transaction.
@@ -576,8 +581,9 @@ func (s *Store) CreateMessage(ctx context.Context, in NewMessage) (model.Message
 	}
 	var id int64
 	if err := tx.QueryRowContext(ctx,
-		`INSERT INTO messages (channel_id, user_id, content, parent_id, embed, cipher) VALUES (?, ?, ?, ?, ?, NULLIF(?, '')) RETURNING id`,
-		in.ChannelID, in.UserID, in.Content, in.ParentID, embed, in.Cipher).Scan(&id); err != nil {
+		`INSERT INTO messages (channel_id, user_id, content, parent_id, embed, cipher, reply_to_id, forwarded)
+		 VALUES (?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?) RETURNING id`,
+		in.ChannelID, in.UserID, in.Content, in.ParentID, embed, in.Cipher, in.ReplyToID, in.Forwarded).Scan(&id); err != nil {
 		return model.Message{}, err
 	}
 	for _, a := range in.Attachments {
@@ -695,7 +701,7 @@ func (s *Store) DeleteMessage(ctx context.Context, id int64) (model.Message, []s
 		`DELETE FROM message_mentions WHERE message_id = ?`,
 		`DELETE FROM message_reactions WHERE message_id = ?`,
 		`DELETE FROM polls WHERE message_id = ?`,
-		`UPDATE messages SET content = '', embed = NULL, cipher = NULL, deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND deleted_at IS NULL`,
+		`UPDATE messages SET content = '', embed = NULL, cipher = NULL, pinned_at = NULL, pinned_by = NULL, deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND deleted_at IS NULL`,
 	} {
 		if _, err := tx.ExecContext(ctx, q, id); err != nil {
 			return model.Message{}, nil, err
@@ -816,7 +822,135 @@ func (s *Store) loadExtras(ctx context.Context, msgs []model.Message) error {
 	if err := s.loadPolls(ctx, msgs, idx, in, args); err != nil {
 		return err
 	}
+	if err := s.loadQuotes(ctx, msgs); err != nil {
+		return err
+	}
 	return s.loadThreadSummaries(ctx, msgs, idx, in, args)
+}
+
+/* ---------- Trả lời trích dẫn, ghim, tìm kiếm ---------- */
+
+// loadQuotes gắn bản trích của tin được trả lời (reply_to) vào các tin.
+func (s *Store) loadQuotes(ctx context.Context, msgs []model.Message) error {
+	var ids []any
+	seen := map[int64]bool{}
+	for _, m := range msgs {
+		if m.ReplyToID != nil && !seen[*m.ReplyToID] {
+			seen[*m.ReplyToID] = true
+			ids = append(ids, *m.ReplyToID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT m.id, m.user_id, m.content, COALESCE(m.cipher, ''), m.embed, m.parent_id, m.deleted_at IS NOT NULL,
+		       (SELECT COUNT(*) FROM attachments a WHERE a.message_id = m.id),
+		       COALESCE((SELECT question FROM polls p WHERE p.message_id = m.id), '')
+		FROM messages m WHERE m.id IN (?`+strings.Repeat(",?", len(ids)-1)+`)`, ids...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	quotes := map[int64]*model.QuotedMessage{}
+	for rows.Next() {
+		q := &model.QuotedMessage{}
+		var embed sql.NullString
+		if err := rows.Scan(&q.ID, &q.UserID, &q.Content, &q.Cipher, &embed, &q.ParentID, &q.Deleted,
+			&q.Attachments, &q.Poll); err != nil {
+			return err
+		}
+		if embed.Valid && embed.String != "" {
+			var e model.Embed
+			if json.Unmarshal([]byte(embed.String), &e) == nil {
+				q.Embed = &e
+			}
+		}
+		if r := []rune(q.Content); len(r) > 300 {
+			q.Content = string(r[:300]) + "…"
+		}
+		quotes[q.ID] = q
+	}
+	for i := range msgs {
+		if id := msgs[i].ReplyToID; id != nil {
+			msgs[i].ReplyTo = quotes[*id]
+		}
+	}
+	return rows.Err()
+}
+
+// SetPinned ghim (by > 0) hoặc bỏ ghim (by = 0) một tin.
+func (s *Store) SetPinned(ctx context.Context, messageID, by int64) error {
+	var err error
+	if by > 0 {
+		_, err = s.db.ExecContext(ctx,
+			`UPDATE messages SET pinned_at = CURRENT_TIMESTAMP, pinned_by = ? WHERE id = ? AND deleted_at IS NULL`, by, messageID)
+	} else {
+		_, err = s.db.ExecContext(ctx, `UPDATE messages SET pinned_at = NULL, pinned_by = NULL WHERE id = ?`, messageID)
+	}
+	return err
+}
+
+// ListPinned: các tin đang ghim của kênh, mới ghim trước.
+func (s *Store) ListPinned(ctx context.Context, channelID int64) ([]model.Message, error) {
+	return s.queryMessages(ctx, `SELECT `+messageColumns+messageFrom+`
+		WHERE msg.channel_id = ? AND msg.pinned_at IS NOT NULL AND msg.deleted_at IS NULL
+		ORDER BY msg.pinned_at DESC LIMIT 100`, channelID)
+}
+
+// queryMessages chạy câu truy vấn trả về messageColumns rồi nạp phần phụ (file, cảm xúc…).
+func (s *Store) queryMessages(ctx context.Context, q string, args ...any) ([]model.Message, error) {
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	out := []model.Message{}
+	for rows.Next() {
+		m, err := scanMessage(rows)
+		if err != nil {
+			rows.Close()
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, s.loadExtras(ctx, out)
+}
+
+// ftsQuery đổi chuỗi người dùng gõ thành truy vấn FTS5 an toàn: mỗi từ là một cụm trong
+// ngoặc kép, khớp tiền tố ("pho" khớp "phở", "phởbò"…), mọi từ đều phải có (AND).
+func ftsQuery(q string) string {
+	q = strings.NewReplacer("đ", "d", "Đ", "D").Replace(q)
+	var terms []string
+	for _, f := range strings.FieldsFunc(q, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r) && !unicode.Is(unicode.Mn, r)
+	}) {
+		terms = append(terms, `"`+f+`"*`)
+		if len(terms) == 8 {
+			break
+		}
+	}
+	return strings.Join(terms, " ")
+}
+
+// SearchMessages tìm trong các kênh userID đang tham gia (channelID > 0: chỉ kênh đó),
+// mới nhất trước. beforeID > 0 để lấy trang tiếp.
+func (s *Store) SearchMessages(ctx context.Context, userID int64, query string, channelID, beforeID int64, limit int) ([]model.Message, error) {
+	fq := ftsQuery(query)
+	if fq == "" {
+		return []model.Message{}, nil
+	}
+	if beforeID <= 0 {
+		beforeID = 1<<63 - 1
+	}
+	return s.queryMessages(ctx, `SELECT `+messageColumns+messageFrom+`
+		JOIN messages_fts f ON f.rowid = msg.id
+		JOIN channel_members cm ON cm.channel_id = msg.channel_id AND cm.user_id = ?
+		WHERE messages_fts MATCH ? AND msg.deleted_at IS NULL AND msg.id < ? AND (? = 0 OR msg.channel_id = ?)
+		ORDER BY msg.id DESC LIMIT ?`, userID, fq, beforeID, channelID, channelID, limit)
 }
 
 /* ---------- Bình chọn ---------- */

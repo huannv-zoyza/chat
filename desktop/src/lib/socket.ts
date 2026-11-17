@@ -23,6 +23,15 @@ export type ServerEvent =
   | { type: "error"; message: string; client_id?: string }
   | { type: "pong" };
 
+/** Tuỳ chọn khi gửi tin. */
+export type SendOptions = {
+  parentId?: number; // trả lời trong luồng
+  embed?: Embed; // sticker / GIF
+  cipher?: string; // tin mã hoá đầu cuối
+  replyToId?: number; // trả lời trích dẫn
+  forwarded?: boolean;
+};
+
 export type ClientRequest =
   | {
       type: "message.send";
@@ -32,6 +41,8 @@ export type ClientRequest =
       parent_id?: number;
       embed?: Embed;
       cipher?: string;
+      reply_to_id?: number;
+      forwarded?: boolean;
     }
   | { type: "typing"; channel_id: number }
   | { type: "read"; channel_id: number; message_id: number }
@@ -153,15 +164,17 @@ export class ChatSocket {
    * Gửi tin nhắn. Đang mất kết nối thì xếp hàng, kết nối lại sẽ tự gửi.
    * Kết quả trả về qua sự kiện "message.new" (cùng client_id) hoặc onSendFailed.
    */
-  sendMessage(channelId: number, content: string, clientId: string, parentId?: number, embed?: Embed, cipher?: string) {
+  sendMessage(channelId: number, content: string, clientId: string, o: SendOptions = {}) {
     const req = {
       type: "message.send",
       channel_id: channelId,
       content,
       client_id: clientId,
-      ...(parentId ? { parent_id: parentId } : {}),
-      ...(embed ? { embed } : {}),
-      ...(cipher ? { cipher } : {}),
+      ...(o.parentId ? { parent_id: o.parentId } : {}),
+      ...(o.embed ? { embed: o.embed } : {}),
+      ...(o.cipher ? { cipher: o.cipher } : {}),
+      ...(o.replyToId ? { reply_to_id: o.replyToId } : {}),
+      ...(o.forwarded ? { forwarded: true } : {}),
     } as const;
     if (this.status === "open" && this.rawSend(req)) {
       this.trackAck(clientId);

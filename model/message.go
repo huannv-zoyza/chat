@@ -1,0 +1,40 @@
+package model
+
+import "time"
+
+// Message ánh xạ bảng messages.
+type Message struct {
+	ID        int64     `db:"id"         json:"id"`
+	ChannelID int64     `db:"channel_id" json:"channel_id"`
+	UserID    int64     `db:"user_id"    json:"user_id"`
+	Content   string    `db:"content"    json:"content"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+
+	// Người gửi, được JOIN sẵn để client không phải tra thêm.
+	User *PublicUser `db:"-" json:"user,omitempty"`
+	// File/ảnh gửi kèm (bảng attachments).
+	Attachments []Attachment `db:"-" json:"attachments"`
+	// Id những người được nhắc tên trong tin (bảng message_mentions).
+	Mentions []int64 `db:"-" json:"mentions"`
+	// Cảm xúc đã thả, nhóm theo emoji, theo thứ tự emoji được thả đầu tiên.
+	Reactions []Reaction `db:"-" json:"reactions"`
+
+	// Trả lời trong luồng: id tin gốc và người viết tin gốc (để báo "X đã trả lời bạn").
+	ParentID     *int64 `db:"parent_id" json:"parent_id,omitempty"`
+	ParentUserID int64  `db:"-"         json:"parent_user_id,omitempty"`
+	// Tóm tắt luồng của tin gốc (nil nếu chưa ai trả lời).
+	Thread *ThreadSummary `db:"-" json:"thread,omitempty"`
+}
+
+// Reaction: một emoji và những ai đã thả nó.
+type Reaction struct {
+	Emoji   string  `json:"emoji"`
+	UserIDs []int64 `json:"user_ids"`
+}
+
+// ThreadSummary hiển thị dưới tin gốc: "3 trả lời", avatar người tham gia, giờ trả lời gần nhất.
+type ThreadSummary struct {
+	ReplyCount     int       `json:"reply_count"`
+	LastReplyAt    time.Time `json:"last_reply_at"`
+	ParticipantIDs []int64   `json:"participant_ids"` // tối đa 3, người trả lời gần nhất trước
+}

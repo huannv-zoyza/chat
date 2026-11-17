@@ -1,0 +1,15 @@
+# Dịch vụ systemd (cấp user) chạy Cloudflare Tunnel cho Go Chat.
+# Cài bằng `make install-tunnel`. Tự chạy lại khi lỗi/mất mạng và khi máy khởi động.
+[Unit]
+Description=Cloudflare Tunnel cho Go Chat
+After=network-online.target go-chat.service
+Wants=go-chat.service
+StartLimitIntervalSec=0
+
+[Service]
+ExecStart=__CLOUDFLARED__ --no-autoupdate --config __HOME__/.cloudflared/go-chat.yml tunnel run
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

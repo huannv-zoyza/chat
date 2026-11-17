@@ -1,0 +1,12 @@
+# Cấu hình Cloudflare Tunnel riêng cho Go Chat (tạo bởi `make install-tunnel`).
+# Không dùng chung ~/.cloudflared/config.yml để không ảnh hưởng các tunnel khác.
+tunnel: __TUNNEL_ID__
+credentials-file: __HOME__/.cloudflared/__TUNNEL_ID__.json
+
+ingress:
+  - hostname: __HOST__
+    service: http://localhost:4000
+    originRequest:
+      # Giữ Host = tên miền công khai để server nhận đúng origin (websocket, CORS).
+      httpHostHeader: __HOST__
+  - service: http_status:404

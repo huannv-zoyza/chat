@@ -1,0 +1,20 @@
+# Dịch vụ systemd (cấp user) cho server Go Chat.
+# Cài bằng `make install-service` (thay __DIR__ bằng thư mục repo).
+#  - Restart=always: process lỗi/bị kill thì tự chạy lại sau 3 giây, không bao giờ bỏ cuộc.
+#  - WantedBy=default.target + `loginctl enable-linger`: tự chạy khi máy khởi động, không cần đăng nhập.
+[Unit]
+Description=Go Chat server
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+WorkingDirectory=__DIR__
+ExecStart=__DIR__/go-chat -addr :4000 -db __DIR__/chat.db -uploads __DIR__/uploads
+Restart=always
+RestartSec=3
+# Ctrl+C tương đương: cho server tắt gọn (đóng websocket, ghi nốt DB)
+KillSignal=SIGINT
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target

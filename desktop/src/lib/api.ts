@@ -1,0 +1,275 @@
+// REST client cho server go-chat. Kiểu dữ liệu khớp với package model bên Go.
+
+export type User = {
+  id: number;
+  username: string;
+  email: string;
+  display_name: string;
+  avatar: string | null;
+  status_text: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PublicUser = Pick<User, "id" | "username" | "display_name" | "avatar" | "status_text">;
+
+export type Channel = {
+  id: number;
+  name: string;
+  description: string;
+  owner_id: number;
+  /** Kênh riêng tư: không hiện ở "Khám phá kênh", chỉ vào được bằng link mời. */
+  is_private: boolean;
+  /** Mã trong link mời; chỉ có khi mình là thành viên. */
+  invite_code?: string;
+  created_at: string;
+  updated_at: string;
+  member_count: number;
+  unread_count: number;
+  /** Số tin chưa đọc có nhắc tên mình. */
+  mention_count: number;
+};
+
+export type Attachment = {
+  id: number;
+  message_id: number;
+  file_name: string;
+  content_type: string;
+  size: number;
+  width: number;
+  height: number;
+  created_at: string;
+  /** Đường dẫn tương đối trên server, ví dụ "/api/files/<key>". */
+  url: string;
+};
+
+export type Message = {
+  id: number;
+  channel_id: number;
+  user_id: number;
+  content: string;
+  created_at: string;
+  user?: PublicUser;
+  attachments?: Attachment[];
+  /** Id những người được nhắc tên trong tin. */
+  mentions?: number[];
+  /** Cảm xúc đã thả, theo thứ tự emoji được thả đầu tiên. */
+  reactions?: Reaction[];
+  /** Có nếu tin là trả lời trong luồng: id tin gốc và người viết tin gốc. */
+  parent_id?: number;
+  parent_user_id?: number;
+  /** Tóm tắt luồng (chỉ có ở tin gốc đã có người trả lời). */
+  thread?: ThreadSummary;
+};
+
+export type Reaction = { emoji: string; user_ids: number[] };
+
+/** Thông tin xem trước một link (khớp controller.LinkPreview bên Go). */
+export type LinkPreview = {
+  url: string;
+  kind: "page" | "image" | "video" | "audio" | "youtube" | "none";
+  title?: string;
+  description?: string;
+  site_name?: string;
+  image?: string;
+  embed_url?: string;
+};
+
+// Bộ nhớ đệm phía app: cùng một link trong nhiều tin chỉ hỏi server một lần.
+const previewCache = new Map<string, Promise<LinkPreview>>();
+
+export type ThreadSummary = {
+  reply_count: number;
+  last_reply_at: string;
+  /** Tối đa 3 người, ai trả lời gần nhất đứng trước. */
+  participant_ids: number[];
+};
+
+/** Thành viên user_id đã xem tới tin message_id. */
+export type ReadState = { user_id: number; message_id: number; user?: PublicUser };
+
+/** Giới hạn khớp với server (controller/files.go). */
+export const MAX_FILE_SIZE = 20 * 1024 * 1024;
+export const MAX_FILES = 10;
+
+/** Lấy mã mời từ link (".../invite/<mã>") hoặc từ chính mã người dùng dán vào. */
+export function parseInviteCode(input: string): string | null {
+  const s = input.trim();
+  const m = s.match(/invite\/([0-9a-f]{24})/i) ?? s.match(/^([0-9a-f]{24})$/i);
+  return m ? m[1].toLowerCase() : null;
+}
+
+export const isInlineImage = (a: Pick<Attachment, "content_type">) =>
+  ["image/png", "image/jpeg", "image/gif", "image/webp"].includes(a.content_type);
+
+export type AuthResponse = { token: string; user: User };
+
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * Chuẩn hoá địa chỉ server người dùng nhập ("localhost:4000", "http://host:4000/")
+ * thành URL gốc http(s) không có dấu "/" cuối.
+ */
+export function normalizeServerUrl(input: string): string | null {
+  let s = input.trim();
+  if (!s) return null;
+  if (!/^[a-z]+:\/\//i.test(s)) s = "http://" + s;
+  s = s.replace(/^ws(s?):\/\//i, "http$1://");
+  try {
+    const u = new URL(s);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    return u.origin;
+  } catch {
+    return null;
+  }
+}
+
+export function socketUrl(serverUrl: string, token: string) {
+  return serverUrl.replace(/^http/, "ws") + "/ws?token=" + encodeURIComponent(token);
+}
+
+type Options = {
+  serverUrl: string;
+  token?: string | null;
+  /** Gọi khi server trả 401 (token hết hạn) để app quay về màn đăng nhập. */
+  onUnauthorized?: () => void;
+};
+
+export function createApi({ serverUrl, token, onUnauthorized }: Options) {
+  async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+    let res: Response;
+    try {
+      res = await fetch(serverUrl + path, {
+        method,
+        headers: {
+          ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      });
+    } catch {
+      throw new ApiError(0, `Không kết nối được tới ${serverUrl}. Kiểm tra server đã chạy chưa.`);
+    }
+
+    if (res.status === 204) return undefined as T;
+
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      /* body rỗng hoặc không phải JSON */
+    }
+
+    if (!res.ok) {
+      if (res.status === 401 && token) onUnauthorized?.();
+      const serverMsg = (data as { error?: unknown } | null)?.error;
+      throw new ApiError(res.status, typeof serverMsg === "string" ? serverMsg : `Server trả lỗi ${res.status}.`);
+    }
+    return data as T;
+  }
+
+  return {
+    register: (b: { username: string; email: string; password: string; display_name: string }) =>
+      request<AuthResponse>("POST", "/api/auth/register", b),
+    login: (b: { login: string; password: string }) => request<AuthResponse>("POST", "/api/auth/login", b),
+    logout: () => request<void>("POST", "/api/auth/logout"),
+
+    me: () => request<User>("GET", "/api/me"),
+    updateMe: (b: { display_name?: string; avatar?: string; status_text?: string }) =>
+      request<User>("PATCH", "/api/me", b),
+    changePassword: (b: { current_password: string; new_password: string }) =>
+      request<void>("PUT", "/api/me/password", b),
+
+    channels: () => request<Channel[]>("GET", "/api/channels"),
+    discover: () => request<Channel[]>("GET", "/api/channels/discover"),
+    createChannel: (b: { name: string; description: string; is_private: boolean }) =>
+      request<Channel>("POST", "/api/channels", b),
+    updateChannel: (id: number, b: { name?: string; description?: string; is_private?: boolean }) =>
+      request<Channel>("PATCH", `/api/channels/${id}`, b),
+    regenerateInvite: (id: number) => request<Channel>("POST", `/api/channels/${id}/invite`),
+    invitePreview: (code: string) =>
+      request<{ channel: Channel; is_member: boolean }>("GET", `/api/invites/${code}`),
+    joinByInvite: (code: string) => request<Channel>("POST", `/api/invites/${code}/join`),
+    /** Link mời đầy đủ; mở trên trình duyệt sẽ vào bản web của chính server này. */
+    inviteLink: (code: string) => `${serverUrl}/invite/${code}`,
+    deleteChannel: (id: number) => request<void>("DELETE", `/api/channels/${id}`),
+    joinChannel: (id: number) => request<Channel>("POST", `/api/channels/${id}/join`),
+    leaveChannel: (id: number) => request<void>("POST", `/api/channels/${id}/leave`),
+    members: (id: number) => request<PublicUser[]>("GET", `/api/channels/${id}/members`),
+    /**
+     * Gửi tin kèm file (multipart). Dùng XHR thay vì fetch để theo dõi tiến trình tải lên.
+     * Server cũng phát "message.new" (kèm client_id) qua websocket như tin thường.
+     */
+    sendWithFiles: (
+      channelId: number,
+      b: { content: string; clientId: string; files: File[]; parentId?: number },
+      onProgress?: (fraction: number) => void,
+    ) =>
+      new Promise<Message>((resolve, reject) => {
+        const form = new FormData();
+        form.append("content", b.content);
+        form.append("client_id", b.clientId);
+        if (b.parentId) form.append("parent_id", String(b.parentId));
+        for (const f of b.files) form.append("files", f, f.name);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `${serverUrl}/api/channels/${channelId}/messages`);
+        if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) onProgress?.(e.loaded / e.total);
+        };
+        xhr.onload = () => {
+          let data: unknown = null;
+          try {
+            data = JSON.parse(xhr.responseText);
+          } catch {
+            /* không phải JSON */
+          }
+          if (xhr.status >= 200 && xhr.status < 300) return resolve(data as Message);
+          if (xhr.status === 401 && token) onUnauthorized?.();
+          const serverMsg = (data as { error?: unknown } | null)?.error;
+          reject(new ApiError(xhr.status, typeof serverMsg === "string" ? serverMsg : `Server trả lỗi ${xhr.status}.`));
+        };
+        xhr.onerror = () => reject(new ApiError(0, "Mất kết nối khi đang tải file lên."));
+        xhr.send(form);
+      }),
+
+    /** URL tuyệt đối để hiển thị/tải file. download=true: buộc tải về thay vì mở. */
+    fileUrl: (a: Pick<Attachment, "url">, download = false) => serverUrl + a.url + (download ? "?download=1" : ""),
+
+    /** Thả/bỏ cảm xúc (bấm lại cùng emoji để bỏ). */
+    toggleReaction: (messageId: number, emoji: string) =>
+      request<{ reactions: Reaction[] }>("POST", `/api/messages/${messageId}/reactions`, { emoji }),
+    /** Xem trước link (server tự tải trang, chặn địa chỉ nội bộ). */
+    unfurl: (link: string): Promise<LinkPreview> => {
+      let p = previewCache.get(link);
+      if (!p) {
+        p = request<LinkPreview>("GET", `/api/unfurl?url=${encodeURIComponent(link)}`).catch(() => {
+          previewCache.delete(link); // lỗi mạng: lần sau thử lại
+          return { url: link, kind: "none" } as LinkPreview;
+        });
+        previewCache.set(link, p);
+      }
+      return p;
+    },
+    /** Tin gốc và toàn bộ trả lời trong luồng. */
+    thread: (messageId: number) =>
+      request<{ parent: Message; replies: Message[] }>("GET", `/api/messages/${messageId}/thread`),
+
+    messages: (id: number, before?: number, limit = 50) =>
+      request<{ messages: Message[]; has_more: boolean; reads?: ReadState[] }>(
+        "GET",
+        `/api/channels/${id}/messages?limit=${limit}${before ? `&before=${before}` : ""}`,
+      ),
+  };
+}
+
+export type Api = ReturnType<typeof createApi>;

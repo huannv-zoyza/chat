@@ -63,7 +63,12 @@ func (a *API) getThread(w http.ResponseWriter, r *http.Request) {
 		internalError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, threadResponse{Parent: msg, Replies: replies})
+	all := append([]model.Message{msg}, replies...)
+	if err := a.fillMyVotes(r.Context(), currentUser(r).ID, all); err != nil {
+		internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, threadResponse{Parent: all[0], Replies: all[1:]})
 }
 
 // validateParent kiểm tra tin gốc của một trả lời: cùng kênh và chính nó không phải trả lời

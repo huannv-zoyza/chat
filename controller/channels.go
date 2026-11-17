@@ -392,6 +392,10 @@ func (a *API) listMessages(w http.ResponseWriter, r *http.Request) {
 		internalError(w, r, err)
 		return
 	}
+	if err := a.fillMyVotes(r.Context(), currentUser(r).ID, msgs); err != nil {
+		internalError(w, r, err)
+		return
+	}
 	res := messagesResponse{Messages: msgs, HasMore: hasMore}
 	if before == 0 {
 		if res.Reads, err = a.store.ReadStates(r.Context(), ch.ID); err != nil {

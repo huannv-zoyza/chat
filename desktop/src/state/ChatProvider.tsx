@@ -39,6 +39,14 @@ type ChatContextValue = {
   editMessage: (messageId: number, content: string) => Promise<void>;
   /** Xoá tin (của mình, hoặc bất kỳ tin nào nếu là chủ kênh). */
   deleteMessage: (messageId: number) => Promise<void>;
+  /** Tạo bình chọn trong kênh. Lỗi thì ném ApiError. */
+  createPoll: (
+    channelId: number,
+    p: { question: string; options: string[]; multiple: boolean; anonymous: boolean },
+  ) => Promise<void>;
+  /** Bỏ phiếu (thay toàn bộ lựa chọn của mình; [] = rút phiếu). */
+  vote: (messageId: number, optionIds: number[]) => Promise<void>;
+  closePoll: (messageId: number, closed: boolean) => Promise<void>;
   /** Mở (tạo nếu chưa có) cuộc trò chuyện riêng với userId và chuyển tới đó. */
   openDM: (userId: number) => Promise<void>;
   retryMessage: (clientId: string) => void;
@@ -142,7 +150,14 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       embed = dec.ok ? dec.payload.embed : undefined;
     }
     const body =
-      content || (embed ? embedSummary(embed) : m.attachments?.length ? `Đã gửi ${m.attachments.length} file` : "");
+      content ||
+      (m.poll
+        ? `📊 Bình chọn: ${m.poll.question}`
+        : embed
+          ? embedSummary(embed)
+          : m.attachments?.length
+            ? `Đã gửi ${m.attachments.length} file`
+            : "");
     const title = direct
       ? `${who} nhắn cho bạn`
       : mentioned
@@ -291,6 +306,7 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
 
       sock.on("message.updated", (ev) => dispatch({ type: "message.updated", message: ev.message })),
       sock.on("key.updated", (ev) => e2ee.onKeyUpdated(ev.user_id, ev.public_key)),
+      sock.on("poll.updated", (ev) => dispatch({ type: "poll.set", messageId: ev.message_id, poll: ev.poll })),
 
       sock.onSendFailed((clientId, reason) => dispatch({ type: "pending.failed", clientId, error: reason })),
 
@@ -446,6 +462,22 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       deleteMessage: async (messageId) => {
         const msg = await api.deleteMessage(messageId);
         dispatch({ type: "message.updated", message: msg });
+      },
+
+      createPoll: async (channelId, p) => {
+        const clientId = newClientId();
+        const msg = await api.createPoll(channelId, { ...p, client_id: clientId });
+        dispatch({ type: "message.new", message: msg, clientId, countUnread: false });
+      },
+
+      vote: async (messageId, optionIds) => {
+        const poll = await api.vote(messageId, optionIds);
+        dispatch({ type: "poll.set", messageId, poll, mine: true });
+      },
+
+      closePoll: async (messageId, closed) => {
+        const poll = await api.closePoll(messageId, closed);
+        dispatch({ type: "poll.set", messageId, poll, mine: true });
       },
 
       openDM: async (userId) => {

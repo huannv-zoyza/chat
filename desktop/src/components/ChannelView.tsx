@@ -20,6 +20,7 @@ import { COMPACT_QUERY, useMediaQuery } from "../lib/useMedia";
 import { ChannelSigil } from "./ChannelDialogs";
 import { ConfirmDeleteDialog, MessageEditor } from "./MessageEditor";
 import { EmbedView } from "./Embeds";
+import { PollView } from "./Polls";
 import { EncryptedAttachments } from "./EncryptedAttachments";
 import { E2EEBanner, SafetyDialog, useDMEncryption } from "./E2EEDialogs";
 import { e2ee, useE2EE } from "../lib/e2ee";
@@ -515,7 +516,7 @@ export function MessageRow(props: RowProps) {
   const ownMsg = !!message && message.user_id === state.me.id;
   const embed = view?.embed ?? pending?.embed;
   const onEdit =
-    live && ownMsg && !view!.embed && (!message!.cipher || dec?.ok)
+    live && ownMsg && !view!.embed && !message!.poll && (!message!.cipher || dec?.ok)
       ? () => dispatch({ type: "edit.start", messageId: message!.id })
       : undefined;
   const canDelete = live && (ownMsg || (!!room && !isDM(room) && room.owner_id === state.me.id));
@@ -573,6 +574,8 @@ export function MessageRow(props: RowProps) {
           </p>
         ) : editing ? (
           <MessageEditor message={view!} />
+        ) : message?.poll ? (
+          <PollView message={message} />
         ) : embed ? (
           <EmbedView embed={embed} />
         ) : (

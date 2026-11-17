@@ -18,6 +18,8 @@ import { lastOwnMessage } from "./MessageEditor";
 import { isTouchDevice } from "../lib/useMedia";
 import { EmojiPicker } from "./EmojiPicker";
 import { StickerPicker } from "./StickerPicker";
+import { CreatePollDialog } from "./Polls";
+import { createPortal } from "react-dom";
 import { FileCard, formatSize, useObjectUrls } from "./MessageParts";
 import { Avatar, Icon } from "./ui";
 
@@ -48,6 +50,26 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const draftKey = parentId ? `t${parentId}` : `c${channel.id}`;
   const { state, dispatch, sendMessage, sendEmbed, notifyTyping, loadMembers } = useChat();
   const [stickerOpen, setStickerOpen] = useState(false);
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [pollOpen, setPollOpen] = useState(false);
+  const attachRef = useRef<HTMLDivElement>(null);
+  // Bình chọn: chỉ ở dòng chính của kênh (tin nhắn riêng được mã hoá đầu cuối)
+  const canPoll = !parentId && !isDM(channel);
+  useEffect(() => {
+    if (!attachOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!attachRef.current?.contains(e.target as Node)) setAttachOpen(false);
+    };
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") setAttachOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [attachOpen]);
   const [text, setText] = useState(() => drafts.get(draftKey)?.text ?? "");
   const [files, setFiles] = useState<File[]>(() => drafts.get(draftKey)?.files ?? []);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -272,6 +294,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       )}
 
       {emojiOpen && <EmojiPicker onPick={(e) => insertAtCaret(e)} onClose={() => setEmojiOpen(false)} />}
+      {/* Hộp thoại có <form> riêng: đưa ra ngoài <form> của ô soạn (form lồng nhau thì nút
+          "Tạo" sẽ gửi nhầm form ô soạn). */}
+      {pollOpen &&
+        createPortal(<CreatePollDialog channelId={channel.id} onClose={() => setPollOpen(false)} />, document.body)}
       {stickerOpen && (
         <StickerPicker
           onPick={(embed) => {
@@ -305,15 +331,44 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         )}
 
         <div className="composer-row">
-          <button
-            type="button"
-            className="tool-btn"
-            onClick={() => fileInput.current?.click()}
-            title="Đính kèm file hoặc ảnh"
-            aria-label="Đính kèm file hoặc ảnh"
-          >
-            <Icon name="paperclip" />
-          </button>
+          <div className="attach-wrap" ref={attachRef}>
+            <button
+              type="button"
+              className={`tool-btn${attachOpen ? " is-on" : ""}`}
+              onClick={() => (canPoll ? setAttachOpen((v) => !v) : fileInput.current?.click())}
+              title={canPoll ? "Đính kèm, bình chọn…" : "Đính kèm file hoặc ảnh"}
+              aria-label={canPoll ? "Thêm: ảnh, file, bình chọn" : "Đính kèm file hoặc ảnh"}
+              aria-expanded={canPoll ? attachOpen : undefined}
+            >
+              <Icon name={canPoll ? "plus" : "paperclip"} />
+            </button>
+            {attachOpen && (
+              <div className="attach-menu" role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setAttachOpen(false);
+                    fileInput.current?.click();
+                  }}
+                >
+                  <Icon name="paperclip" size={17} />
+                  Ảnh hoặc file
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setAttachOpen(false);
+                    setPollOpen(true);
+                  }}
+                >
+                  <Icon name="poll" size={17} />
+                  Bình chọn
+                </button>
+              </div>
+            )}
+          </div>
           <input
             ref={gifInput}
             type="file"

@@ -59,6 +59,19 @@ export type Embed = {
   title?: string;
 };
 
+export type PollOption = { id: number; text: string; votes: number; voter_ids?: number[] };
+
+/** Bình chọn. my_votes chỉ có trong phản hồi riêng cho người xem (sự kiện phát chung thì không). */
+export type Poll = {
+  question: string;
+  multiple: boolean;
+  anonymous: boolean;
+  closed_at?: string;
+  options: PollOption[];
+  voters: number;
+  my_votes?: number[];
+};
+
 export type GifResult = { id: string; title: string; url: string; preview: string; width: number; height: number };
 
 export type Message = {
@@ -74,6 +87,7 @@ export type Message = {
   embed?: Embed;
   /** Tin mã hoá đầu cuối (tin nhắn riêng): nội dung thật nằm trong đây, content để trống. */
   cipher?: string;
+  poll?: Poll;
   user?: PublicUser;
   attachments?: Attachment[];
   /** Id những người được nhắc tên trong tin. */
@@ -230,6 +244,14 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
         "GET",
         `/api/gifs?q=${encodeURIComponent(q)}&offset=${offset}`,
       ),
+    createPoll: (
+      channelId: number,
+      b: { question: string; options: string[]; multiple: boolean; anonymous: boolean; client_id: string },
+    ) => request<Message>("POST", `/api/channels/${channelId}/polls`, b),
+    vote: (messageId: number, optionIds: number[]) =>
+      request<Poll>("POST", `/api/messages/${messageId}/votes`, { option_ids: optionIds }),
+    closePoll: (messageId: number, closed: boolean) =>
+      request<Poll>("POST", `/api/messages/${messageId}/poll/close`, { closed }),
     editMessage: (id: number, body: { content: string } | { cipher: string }) =>
       request<Message>("PATCH", `/api/messages/${id}`, body),
     /* Mã hoá đầu cuối */

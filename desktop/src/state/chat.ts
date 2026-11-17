@@ -1,4 +1,4 @@
-import type { Channel, Embed, Message, PublicUser, ReadState, Reaction, ThreadSummary, User } from "../lib/api";
+import type { Channel, Embed, Message, Poll, PublicUser, ReadState, Reaction, ThreadSummary, User } from "../lib/api";
 import type { SocketStatus } from "../lib/socket";
 
 /* ---------- State ---------- */
@@ -111,6 +111,8 @@ export type Action =
   | { type: "thread.loaded"; parent: Message; replies: Message[] }
   | { type: "thread.updated"; messageId: number; thread: ThreadSummary }
   | { type: "reactions.set"; messageId: number; reactions: Reaction[] }
+  /** mine: phản hồi riêng cho mình (my_votes đầy đủ); không có: sự kiện chung, giữ my_votes cũ. */
+  | { type: "poll.set"; messageId: number; poll: Poll; mine?: boolean }
   | { type: "reaction.toggleLocal"; messageId: number; emoji: string }
   | { type: "reads.set"; channelId: number; reads: ReadState[] }
   | { type: "read.updated"; channelId: number; userId: number; messageId: number };
@@ -352,6 +354,12 @@ export function reducer(s: ChatState, a: Action): ChatState {
 
     case "thread.updated":
       return updateMessage(s, a.messageId, (m) => ({ ...m, thread: a.thread }));
+
+    case "poll.set":
+      return updateMessage(s, a.messageId, (m) => ({
+        ...m,
+        poll: { ...a.poll, my_votes: a.mine ? (a.poll.my_votes ?? []) : (m.poll?.my_votes ?? a.poll.my_votes) },
+      }));
 
     case "reactions.set":
       return updateMessage(s, a.messageId, (m) => ({ ...m, reactions: a.reactions }));

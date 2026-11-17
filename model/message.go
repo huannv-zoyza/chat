@@ -32,6 +32,8 @@ type Message struct {
 	Embed *Embed `db:"embed" json:"embed,omitempty"`
 	// Tin mã hoá đầu cuối (chỉ trong tin nhắn riêng): JSON {v, s, r, n, c}, server không đọc được.
 	Cipher string `db:"cipher" json:"cipher,omitempty"`
+	// Bình chọn (bảng polls) nếu tin là một cuộc bình chọn.
+	Poll *Poll `db:"-" json:"poll,omitempty"`
 }
 
 // Embed: sticker (bộ sticker có sẵn trong app) hoặc GIF (từ GIPHY).
@@ -56,4 +58,26 @@ type ThreadSummary struct {
 	ReplyCount     int       `json:"reply_count"`
 	LastReplyAt    time.Time `json:"last_reply_at"`
 	ParticipantIDs []int64   `json:"participant_ids"` // tối đa 3, người trả lời gần nhất trước
+}
+
+// Poll: bình chọn gắn với một tin nhắn.
+type Poll struct {
+	Question  string       `json:"question"`
+	Multiple  bool         `json:"multiple"`
+	Anonymous bool         `json:"anonymous"`
+	ClosedAt  *time.Time   `json:"closed_at,omitempty"`
+	Options   []PollOption `json:"options"`
+	// Số người đã bình chọn (một người chọn nhiều đáp án vẫn tính 1).
+	Voters int `json:"voters"`
+	// Các lựa chọn của chính người đang xem. Chỉ có trong phản hồi riêng cho người đó
+	// (sự kiện phát cho cả kênh không có, vì bình chọn ẩn danh không được lộ ai chọn gì).
+	MyVotes []int64 `json:"my_votes,omitempty"`
+}
+
+type PollOption struct {
+	ID    int64  `json:"id"`
+	Text  string `json:"text"`
+	Votes int    `json:"votes"`
+	// Ai đã chọn (bỏ trống nếu bình chọn ẩn danh).
+	VoterIDs []int64 `json:"voter_ids,omitempty"`
 }

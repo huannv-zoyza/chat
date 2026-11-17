@@ -80,6 +80,9 @@ func (a *API) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("POST /api/messages/{id}/reactions", a.requireAuth(a.toggleReaction))
 	mux.HandleFunc("PATCH /api/messages/{id}", a.requireAuth(a.editMessage))
 	mux.HandleFunc("DELETE /api/messages/{id}", a.requireAuth(a.deleteMessage))
+	mux.HandleFunc("POST /api/channels/{id}/polls", a.requireAuth(a.createPoll))
+	mux.HandleFunc("POST /api/messages/{id}/votes", a.requireAuth(a.vote))
+	mux.HandleFunc("POST /api/messages/{id}/poll/close", a.requireAuth(a.closePoll))
 
 	mux.HandleFunc("GET /api/users", a.requireAuth(a.searchUsers))
 	mux.HandleFunc("GET /api/gifs", a.requireAuth(a.searchGifs))

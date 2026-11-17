@@ -694,6 +694,7 @@ func (s *Store) DeleteMessage(ctx context.Context, id int64) (model.Message, []s
 		`DELETE FROM attachments WHERE message_id = ?`,
 		`DELETE FROM message_mentions WHERE message_id = ?`,
 		`DELETE FROM message_reactions WHERE message_id = ?`,
+		`DELETE FROM polls WHERE message_id = ?`,
 		`UPDATE messages SET content = '', embed = NULL, cipher = NULL, deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND deleted_at IS NULL`,
 	} {
 		if _, err := tx.ExecContext(ctx, q, id); err != nil {
@@ -812,7 +813,212 @@ func (s *Store) loadExtras(ctx context.Context, msgs []model.Message) error {
 		msgs[idx[mid]].Reactions = list
 	}
 
+	if err := s.loadPolls(ctx, msgs, idx, in, args); err != nil {
+		return err
+	}
 	return s.loadThreadSummaries(ctx, msgs, idx, in, args)
+}
+
+/* ---------- Bình chọn ---------- */
+
+// NewPoll: dữ liệu tạo bình chọn.
+type NewPoll struct {
+	Question  string
+	Options   []string
+	Multiple  bool
+	Anonymous bool
+}
+
+// CreatePoll tạo tin nhắn chứa bình chọn (tin không có nội dung chữ).
+func (s *Store) CreatePoll(ctx context.Context, channelID, userID int64, p NewPoll) (model.Message, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.Message{}, err
+	}
+	defer tx.Rollback()
+	var id int64
+	if err := tx.QueryRowContext(ctx,
+		`INSERT INTO messages (channel_id, user_id, content) VALUES (?, ?, '') RETURNING id`,
+		channelID, userID).Scan(&id); err != nil {
+		return model.Message{}, err
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO polls (message_id, question, multiple, anonymous) VALUES (?, ?, ?, ?)`,
+		id, p.Question, p.Multiple, p.Anonymous); err != nil {
+		return model.Message{}, err
+	}
+	for i, text := range p.Options {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO poll_options (message_id, position, text) VALUES (?, ?, ?)`, id, i, text); err != nil {
+			return model.Message{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return model.Message{}, err
+	}
+	return s.GetMessage(ctx, id)
+}
+
+var (
+	ErrPollClosed     = errors.New("poll closed")
+	ErrBadPollOption  = errors.New("bad poll option")
+	ErrPollSingleVote = errors.New("poll allows one option")
+)
+
+// Vote thay toàn bộ lựa chọn của userID trong bình chọn messageID bằng optionIDs (rỗng = rút phiếu).
+func (s *Store) Vote(ctx context.Context, messageID, userID int64, optionIDs []int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var multiple bool
+	var closed sql.NullTime
+	if err := tx.QueryRowContext(ctx,
+		`SELECT multiple, closed_at FROM polls WHERE message_id = ?`, messageID).Scan(&multiple, &closed); err != nil {
+		return notFound(err)
+	}
+	if closed.Valid {
+		return ErrPollClosed
+	}
+	if !multiple && len(optionIDs) > 1 {
+		return ErrPollSingleVote
+	}
+	valid := map[int64]bool{}
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM poll_options WHERE message_id = ?`, messageID)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		valid[id] = true
+	}
+	rows.Close()
+	for _, id := range optionIDs {
+		if !valid[id] {
+			return ErrBadPollOption
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM poll_votes WHERE user_id = ?
+		  AND option_id IN (SELECT id FROM poll_options WHERE message_id = ?)`, userID, messageID); err != nil {
+		return err
+	}
+	for _, id := range optionIDs {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT OR IGNORE INTO poll_votes (option_id, user_id) VALUES (?, ?)`, id, userID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// SetPollClosed kết thúc (closed=true) hoặc mở lại bình chọn.
+func (s *Store) SetPollClosed(ctx context.Context, messageID int64, closed bool) error {
+	q := `UPDATE polls SET closed_at = CURRENT_TIMESTAMP WHERE message_id = ? AND closed_at IS NULL`
+	if !closed {
+		q = `UPDATE polls SET closed_at = NULL WHERE message_id = ?`
+	}
+	_, err := s.db.ExecContext(ctx, q, messageID)
+	return err
+}
+
+// MyPollVotes: các lựa chọn userID đã chọn trong những bình chọn messageIDs.
+func (s *Store) MyPollVotes(ctx context.Context, userID int64, messageIDs []int64) (map[int64][]int64, error) {
+	out := map[int64][]int64{}
+	if len(messageIDs) == 0 {
+		return out, nil
+	}
+	args := []any{userID}
+	for _, id := range messageIDs {
+		args = append(args, id)
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT o.message_id, v.option_id FROM poll_votes v JOIN poll_options o ON o.id = v.option_id
+		WHERE v.user_id = ? AND o.message_id IN (?`+strings.Repeat(",?", len(messageIDs)-1)+`)
+		ORDER BY o.position`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var mid, oid int64
+		if err := rows.Scan(&mid, &oid); err != nil {
+			return nil, err
+		}
+		out[mid] = append(out[mid], oid)
+	}
+	return out, rows.Err()
+}
+
+// loadPolls gắn bình chọn (lựa chọn, số phiếu, ai chọn nếu không ẩn danh) vào các tin.
+func (s *Store) loadPolls(ctx context.Context, msgs []model.Message, idx map[int64]int, in string, args []any) error {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT message_id, question, multiple, anonymous, closed_at FROM polls WHERE message_id IN `+in, args...)
+	if err != nil {
+		return err
+	}
+	found := false
+	for rows.Next() {
+		var mid int64
+		p := &model.Poll{Options: []model.PollOption{}}
+		if err := rows.Scan(&mid, &p.Question, &p.Multiple, &p.Anonymous, &p.ClosedAt); err != nil {
+			rows.Close()
+			return err
+		}
+		msgs[idx[mid]].Poll = p
+		found = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil || !found {
+		return err
+	}
+
+	rows, err = s.db.QueryContext(ctx, `
+		SELECT o.message_id, o.id, o.text, v.user_id
+		FROM poll_options o LEFT JOIN poll_votes v ON v.option_id = o.id
+		WHERE o.message_id IN `+in+` ORDER BY o.message_id, o.position, v.created_at`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	voters := map[int64]map[int64]bool{} // message -> người đã bình chọn
+	for rows.Next() {
+		var mid, oid int64
+		var text string
+		var uid sql.NullInt64
+		if err := rows.Scan(&mid, &oid, &text, &uid); err != nil {
+			return err
+		}
+		p := msgs[idx[mid]].Poll
+		if p == nil {
+			continue
+		}
+		n := len(p.Options)
+		if n == 0 || p.Options[n-1].ID != oid {
+			p.Options = append(p.Options, model.PollOption{ID: oid, Text: text})
+			n++
+		}
+		if uid.Valid {
+			o := &p.Options[n-1]
+			o.Votes++
+			if !p.Anonymous {
+				o.VoterIDs = append(o.VoterIDs, uid.Int64)
+			}
+			if voters[mid] == nil {
+				voters[mid] = map[int64]bool{}
+			}
+			voters[mid][uid.Int64] = true
+		}
+	}
+	for mid, set := range voters {
+		msgs[idx[mid]].Poll.Voters = len(set)
+	}
+	return rows.Err()
 }
 
 // reactionsFor gom reaction của nhiều tin: message_id -> [{emoji, user_ids}].

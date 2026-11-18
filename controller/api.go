@@ -87,6 +87,7 @@ func (a *API) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("POST /api/channels/{id}/messages", a.requireAuth(a.createMessageWithFiles))
 	mux.HandleFunc("GET /api/files/{key}", a.serveFile)
 	mux.HandleFunc("GET /api/messages/{id}/thread", a.requireAuth(a.getThread))
+	mux.HandleFunc("GET /api/messages/{id}/link", a.requireAuth(a.messageLink))
 	mux.HandleFunc("GET /api/unfurl", a.requireAuth(a.unfurl))
 	mux.HandleFunc("POST /api/messages/{id}/reactions", a.requireAuth(a.toggleReaction))
 	mux.HandleFunc("PATCH /api/messages/{id}", a.requireAuth(a.editMessage))

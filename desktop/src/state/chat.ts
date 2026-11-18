@@ -12,6 +12,9 @@ import type {
   User,
 } from "../lib/api";
 import type { AIInfo } from "../lib/socket";
+import type { MessageLinkInfo } from "../lib/api";
+
+export type LinkPrompt = { id: number; info?: MessageLinkInfo; error?: string };
 import type { SocketStatus } from "../lib/socket";
 
 /* ---------- State ---------- */
@@ -82,6 +85,8 @@ export type ChatState = {
   updateAvailable: boolean;
   /** Trợ lý AI của máy chủ (null: tắt). */
   ai: AIInfo | null;
+  /** Mở link tới một tin mà mình chưa xem được (chưa vào kênh / không có quyền / tin đã xoá). */
+  linkPrompt: LinkPrompt | null;
   /** channelId -> userId -> id tin đã xem tới (để hiện "đã xem"). */
   reads: Record<number, Record<number, number>>;
 };
@@ -108,6 +113,7 @@ export function initialState(me: User): ChatState {
     reminders: null,
     updateAvailable: false,
     ai: null,
+    linkPrompt: null,
     reads: {},
   };
 }
@@ -155,6 +161,7 @@ export type Action =
   /** mine: phản hồi riêng cho mình (my_votes đầy đủ); không có: sự kiện chung, giữ my_votes cũ. */
   | { type: "poll.set"; messageId: number; poll: Poll; mine?: boolean }
   | { type: "game.set"; messageId: number; game: GameView }
+  | { type: "link.prompt"; prompt: LinkPrompt | null }
   | { type: "reaction.toggleLocal"; messageId: number; emoji: string }
   | { type: "reads.set"; channelId: number; reads: ReadState[] }
   | { type: "read.updated"; channelId: number; userId: number; messageId: number };
@@ -463,6 +470,9 @@ export function reducer(s: ChatState, a: Action): ChatState {
         ...m,
         poll: { ...a.poll, my_votes: a.mine ? (a.poll.my_votes ?? []) : (m.poll?.my_votes ?? a.poll.my_votes) },
       }));
+
+    case "link.prompt":
+      return { ...s, linkPrompt: a.prompt };
 
     case "game.set":
       return updateMessage(s, a.messageId, (m) => (m.deleted_at ? m : { ...m, game: mergeGame(m.game, a.game) }));

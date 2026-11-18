@@ -284,6 +284,11 @@ export function MessageToolbar({
           <Icon name="reply" size={17} />
         </button>
       )}
+      {onForward && (
+        <button type="button" className="toolbar-btn" title="Chia sẻ" aria-label="Chia sẻ" onClick={onForward}>
+          <Icon name="forward" size={17} />
+        </button>
+      )}
       {onThread && (
         <button
           type="button"
@@ -311,7 +316,7 @@ export function MessageToolbar({
       {menu && (
         <div className="more-menu" role="menu">
           {item(pinned ? "Bỏ ghim" : "Ghim tin nhắn", "pin", onPin)}
-          {item("Chuyển tiếp", "forward", onForward)}
+          {item("Chia sẻ", "forward", onForward)}
           {item("Nhắc tôi về tin này", "clock", onRemind)}
           {message.content && item("Sao chép nội dung", "copy", () => void copyText(message.content))}
           {item("Sửa tin nhắn", "pencil", onEdit)}
@@ -525,7 +530,7 @@ export function MessageActionSheet({
                   }}
                 >
                   <Icon name="forward" />
-                  Chuyển tiếp
+                  Chia sẻ
                 </button>
               )}
               {onRemind && (

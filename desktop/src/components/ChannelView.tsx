@@ -26,7 +26,8 @@ import { GameCard } from "./Games";
 import { AIText, isAIUser } from "./AI";
 import { CallButtons } from "./CallOverlay";
 import { GroupCallBanner, GroupCallButtons } from "./GroupCall";
-import { ForwardDialog, PinsDialog, QuoteBlock, previewText } from "./MessageExtras";
+import { PinsDialog, QuoteBlock, previewText } from "./MessageExtras";
+import { ShareDialog } from "./Share";
 import { findMessage } from "../state/chat";
 import { RemindDialog } from "./Reminders";
 import { EncryptedAttachments } from "./EncryptedAttachments";
@@ -556,7 +557,8 @@ export function MessageRow(props: RowProps) {
   const [forwardOpen, setForwardOpen] = useState(false);
   const [remindOpen, setRemindOpen] = useState(false);
   const replyKey = message?.parent_id ? `t${message.parent_id}` : `c${message?.channel_id}`;
-  const canForward = live && !message!.poll && message!.embed?.type !== "game" && (!message!.cipher || !!dec?.ok);
+  // chia sẻ được mọi tin đã gửi (game, bình chọn… thì gửi dạng thẻ liên kết), trừ tin mã hoá chưa giải mã được
+  const canForward = live && (!message!.cipher || !!dec?.ok);
   const acts: MessageActionSet = {
     onThread: props.onOpenThread,
     onQuote: live ? () => setReply(replyKey, message!.id) : undefined,
@@ -723,7 +725,7 @@ export function MessageRow(props: RowProps) {
       )}
       {message && whoOpen && <ReactionsDialog message={message} initial="all" onClose={() => setWhoOpen(false)} />}
       {message && remindOpen && <RemindDialog message={view!} onClose={() => setRemindOpen(false)} />}
-      {message && forwardOpen && <ForwardDialog message={message} onClose={() => setForwardOpen(false)} />}
+      {message && forwardOpen && <ShareDialog message={message} onClose={() => setForwardOpen(false)} />}
       {message && confirmDelete && <ConfirmDeleteDialog message={view!} onClose={() => setConfirmDelete(false)} />}
     </article>
   );

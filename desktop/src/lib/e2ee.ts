@@ -82,6 +82,22 @@ function cleanPayload(raw: unknown): Payload | null {
     const e = p.embed as Embed;
     if (e.type === "sticker" && typeof e.id === "string" && /^[a-z0-9]{1,20}\/[a-z0-9-]{1,40}$/.test(e.id)) {
       out.embed = { type: "sticker", id: e.id };
+    } else if (e.type === "share" && typeof e.id === "string" && /^\d{1,15}$/.test(e.id)) {
+      // thẻ chia sẻ trong tin nhắn riêng: chỉ nhận chữ ngắn và ảnh xem trước là file trên chính máy chủ
+      const str = (v: unknown, n: number) => (typeof v === "string" ? v.slice(0, n) : undefined);
+      const kinds = ["message", "game", "poll", "image", "file", "sticker", "gif", "call"] as const;
+      const preview = str(e.preview, 200);
+      out.embed = {
+        type: "share",
+        id: e.id,
+        kind: kinds.includes(e.kind as (typeof kinds)[number]) ? e.kind : "message",
+        title: str(e.title, 100),
+        text: str(e.text, 400),
+        author: str(e.author, 80),
+        channel: str(e.channel, 80),
+        channel_id: Number(e.channel_id) || undefined,
+        preview: preview && /^\/api\/files\/[0-9a-f]{32}$/.test(preview) ? preview : undefined,
+      };
     } else if (e.type === "gif" && typeof e.url === "string") {
       try {
         const u = new URL(e.url);

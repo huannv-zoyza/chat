@@ -17,7 +17,8 @@ import {
 import { useChat } from "../state/ChatProvider";
 import type { StationState } from "../lib/station";
 import { StationSummary } from "./Station";
-import { Avatar, Dialog, FormError } from "./ui";
+import { ShareDialog } from "./Share";
+import { Avatar, Dialog, FormError, Icon } from "./ui";
 
 /* ---------- Tiện ích ---------- */
 
@@ -56,6 +57,8 @@ type Ctx = {
   act: (action: string, data?: unknown) => void;
   user: (id: number) => PublicUser;
   nameOf: (id: number) => string;
+  /** Mở hộp thoại chia sẻ phòng chơi sang kênh / tin nhắn riêng khác. */
+  invite: () => void;
 };
 
 /** Ô người chơi: avatar, tên, nhãn phụ; bấm được nếu có onClick. */
@@ -175,7 +178,8 @@ export function GameCard({ message }: { message: Message }) {
   const nameOf = (id: number) => game.players.find((p) => p.id === id)?.name ?? "?";
   const user = (id: number): PublicUser =>
     state.users[id] ?? { id, username: nameOf(id), display_name: nameOf(id), avatar: null, status_text: "" };
-  const ctx: Ctx = { game, meId, isPlayer, busy, act, user, nameOf };
+  const [sharing, setSharing] = useState(false);
+  const ctx: Ctx = { game, meId, isPlayer, busy, act, user, nameOf, invite: () => setSharing(true) };
   const info = GAME_INFO[game.kind];
   const turn = myTurn(game, meId);
   const night = game.kind === "werewolf" && (game.state as WerewolfState | undefined)?.phase === "night";
@@ -228,6 +232,7 @@ export function GameCard({ message }: { message: Message }) {
       )}
       <GameLog game={game} />
       <FormError>{error}</FormError>
+      {sharing && <ShareDialog message={message} onClose={() => setSharing(false)} />}
     </section>
   );
 }
@@ -367,6 +372,12 @@ function Lobby({ ctx }: { ctx: Ctx }) {
             title={enough ? undefined : `Cần ít nhất ${game.min_players} người`}
           >
             {enough ? "Bắt đầu" : `Cần thêm ${game.min_players - game.players.length} người`}
+          </button>
+        )}
+        {!full && (
+          <button type="button" className="btn" onClick={ctx.invite}>
+            <Icon name="userPlus" size={16} />
+            Mời bạn bè
           </button>
         )}
         {isHost && (

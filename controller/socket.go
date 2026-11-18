@@ -153,6 +153,19 @@ func (a *API) handleRequest(ctx context.Context, client *socket.Client, user mod
 				return
 			}
 			cipher, content = req.Cipher, "" // nội dung thật nằm trong cipher
+		} else if req.Embed != nil && req.Embed.Type == "share" {
+			// thẻ chia sẻ: máy chủ tự dựng bản tóm tắt từ tin gốc (không tin dữ liệu client gửi)
+			var msg string
+			var err error
+			if embed, msg, err = a.buildShareEmbed(ctx, user, req.Embed.ID); err != nil {
+				log.Printf("ws share: %v", err)
+				reply("Server gặp lỗi, thử gửi lại.")
+				return
+			} else if msg != "" {
+				reply(msg)
+				return
+			}
+			content = ""
 		} else if req.Embed != nil {
 			var msg string
 			if embed, msg = validateEmbed(req.Embed); msg != "" {

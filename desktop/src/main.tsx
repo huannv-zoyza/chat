@@ -11,10 +11,11 @@ import "@fontsource/be-vietnam-pro/latin-700.css";
 import "./styles.css";
 import App from "./App";
 import { applyTheme, getTheme } from "./lib/theme";
-import { captureInviteFromUrl } from "./lib/platform";
+import { captureInviteFromUrl, captureMessageFromUrl } from "./lib/platform";
 
 applyTheme(getTheme());
 captureInviteFromUrl();
+captureMessageFromUrl();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

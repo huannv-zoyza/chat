@@ -6745,3 +6745,174 @@ button.game-player:disabled {
 .md-table tr:last-child td {
   border-bottom: 0;
 }
+
+/* =========================================================
+   Chia sẻ tin nhắn (Share.tsx)
+   ========================================================= */
+
+.share-source {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  margin-bottom: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-left: 3px solid var(--signal);
+  border-radius: 0 8px 8px 0;
+  background: var(--canvas);
+}
+.share-source b {
+  font-size: var(--step--1);
+}
+.share-source b span {
+  color: var(--muted);
+  font-weight: 500;
+}
+.share-summary {
+  margin: 0.15rem 0 0;
+  max-height: 4.5rem;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--step--1);
+}
+.share-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+.share-quick .btn {
+  gap: 0.35rem;
+}
+.share-note {
+  margin: 0 0 0.6rem;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+.share-mode {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+  margin-bottom: 0.75rem;
+}
+.share-mode-opt {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  cursor: pointer;
+}
+.share-mode-opt.is-on {
+  border-color: var(--signal);
+  background: var(--signal-soft);
+  box-shadow: inset 0 0 0 1px var(--signal);
+}
+.share-mode-opt:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.share-mode-opt input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.share-mode-opt small {
+  color: var(--muted);
+  line-height: 1.35;
+}
+.share-targets {
+  max-height: 18rem;
+  overflow-y: auto;
+}
+
+/* thẻ chia sẻ trong tin */
+.share-card {
+  display: grid;
+  gap: 0.45rem;
+  width: min(30rem, 100%);
+  margin-top: 0.3rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--signal);
+  border-radius: 0 10px 10px 0;
+  background: var(--surface);
+}
+.link-previews .share-card {
+  margin-top: 0;
+}
+.share-card.is-gone {
+  border-left-color: var(--line);
+  opacity: 0.8;
+}
+.share-game {
+  border-left-color: var(--u2);
+}
+.share-poll {
+  border-left-color: var(--u1);
+}
+.share-from {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--step--2);
+  font-weight: 600;
+}
+.share-body {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+}
+.share-thumb {
+  flex-shrink: 0;
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 7px;
+  object-fit: cover;
+  background: var(--canvas);
+}
+.share-main {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.share-title {
+  margin: 0;
+  font-weight: 700;
+}
+.share-text {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--step--1);
+}
+.share-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--step--1);
+  font-weight: 600;
+}
+.share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+}
+.share-actions .share-note {
+  margin: 0;
+}
+.share-actions .form-error {
+  margin: 0;
+  flex-basis: 100%;
+}
+@media (max-width: 720px) {
+  .share-mode {
+    grid-template-columns: 1fr;
+  }
+}

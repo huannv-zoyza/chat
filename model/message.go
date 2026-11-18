@@ -78,6 +78,13 @@ type Embed struct {
 	Duration int  `json:"duration,omitempty"` // giây
 	// Gọi nhóm (id = group): số người đông nhất.
 	Participants int `json:"participants,omitempty"`
+	// Thẻ chia sẻ (type "share", id = id tin gốc): bản tóm tắt tin gốc lúc chia sẻ.
+	// Kind: message | game | poll | image | file | sticker | gif | call; Text: nội dung tóm tắt.
+	Kind      string `json:"kind,omitempty"`
+	Text      string `json:"text,omitempty"`
+	Author    string `json:"author,omitempty"`
+	Channel   string `json:"channel,omitempty"`
+	ChannelID int64  `json:"channel_id,omitempty"`
 }
 
 // Reaction: một emoji và những ai đã thả nó.

@@ -50,17 +50,30 @@ export type Attachment = {
 
 /** Sticker (bộ có sẵn trong app) hoặc GIF (GIPHY) gửi thay cho nội dung chữ. */
 export type Embed = {
-  type: "sticker" | "gif" | "call" | "game";
+  type: "sticker" | "gif" | "call" | "game" | "share";
   id: string;
   url?: string;
   preview?: string;
   width?: number;
   height?: number;
   title?: string;
+  /** Thẻ chia sẻ (type "share", id = id tin gốc): bản tóm tắt tin gốc lúc chia sẻ. */
+  kind?: "message" | "game" | "poll" | "image" | "file" | "sticker" | "gif" | "call";
+  text?: string;
+  author?: string;
+  channel?: string;
+  channel_id?: number;
   /** Nhật ký cuộc gọi (type "call"). */
   video?: boolean;
   duration?: number;
   participants?: number;
+};
+
+/** GET /api/messages/{id}/link: người xem có tới được tin không (member) và tin đầy đủ nếu có. */
+export type MessageLinkInfo = {
+  channel: { id: number; name: string; kind: "channel" | "dm"; is_private: boolean; member_count?: number };
+  member: boolean;
+  message?: Message;
 };
 
 export type GameKind = "station" | "werewolf" | "spy" | "caro" | "rps";
@@ -369,6 +382,27 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     joinByInvite: (code: string) => request<Channel>("POST", `/api/invites/${code}/join`),
     /** Link mời đầy đủ; mở trên trình duyệt sẽ vào bản web của chính server này. */
     inviteLink: (code: string) => `${serverUrl}/invite/${code}`,
+    /** Link mở thẳng tới một tin (…/m/<id>). */
+    messageUrl: (id: number) => `${serverUrl}/m/${id}`,
+    /** id tin nếu url là link tới tin trên máy chủ này (hoặc trang web đang mở). */
+    messageIdFromUrl: (url: string): number | null => {
+      try {
+        const u = new URL(url);
+        const m = u.pathname.match(/^\/m\/(\d{1,15})\/?$/);
+        if (!m) return null;
+        const same = [serverUrl, window.location.origin].some((o) => {
+          try {
+            return new URL(o).host === u.host;
+          } catch {
+            return false;
+          }
+        });
+        return same ? Number(m[1]) : null;
+      } catch {
+        return null;
+      }
+    },
+    messageLink: (id: number) => request<MessageLinkInfo>("GET", `/api/messages/${id}/link`),
     deleteChannel: (id: number) => request<void>("DELETE", `/api/channels/${id}`),
     joinChannel: (id: number) => request<Channel>("POST", `/api/channels/${id}/join`),
     leaveChannel: (id: number) => request<void>("POST", `/api/channels/${id}/leave`),

@@ -5,6 +5,7 @@ import { openExternal } from "../lib/notify";
 import { isTauri } from "../lib/platform";
 import { useChat } from "../state/ChatProvider";
 import { Icon } from "./ui";
+import { ShareCard } from "./Share";
 
 /**
  * Mở link: trên app desktop nhờ trình duyệt mặc định (webview không tự mở tab mới),
@@ -16,7 +17,31 @@ export function onLinkClick(e: MouseEvent<HTMLAnchorElement>) {
   void openExternal(e.currentTarget.href);
 }
 
-export function ExternalLink({ href, children, className }: { href: string; children: React.ReactNode; className?: string }) {
+export function ExternalLink({
+  href,
+  children,
+  className,
+}: {
+  href: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const { api, openMessageLink } = useChat();
+  const msgId = api.messageIdFromUrl(href);
+  if (msgId !== null) {
+    return (
+      <a
+        href={href}
+        className={className}
+        onClick={(e) => {
+          e.preventDefault();
+          void openMessageLink(msgId);
+        }}
+      >
+        {children}
+      </a>
+    );
+  }
   return (
     <a href={href} target="_blank" rel="noopener noreferrer" onClick={onLinkClick} className={className}>
       {children}
@@ -26,13 +51,15 @@ export function ExternalLink({ href, children, className }: { href: string; chil
 
 /** Thẻ xem trước cho các link trong tin (tối đa 3). */
 export function LinkPreviews({ content }: { content: string }) {
+  const { api } = useChat();
   const links = extractLinks(content);
   if (links.length === 0) return null;
   return (
     <div className="link-previews">
-      {links.map((u) => (
-        <LinkCard key={u} url={u} />
-      ))}
+      {links.map((u) => {
+        const id = api.messageIdFromUrl(u);
+        return id !== null ? <ShareCard key={u} id={id} /> : <LinkCard key={u} url={u} />;
+      })}
     </div>
   );
 }
@@ -92,7 +119,12 @@ function LinkCard({ url }: { url: string }) {
               allowFullScreen
             />
           ) : (
-            <button type="button" className="video-poster" onClick={() => setPlaying(true)} aria-label={`Phát ${p.title ?? "video"}`}>
+            <button
+              type="button"
+              className="video-poster"
+              onClick={() => setPlaying(true)}
+              aria-label={`Phát ${p.title ?? "video"}`}
+            >
               {p.image && <img src={p.image} alt="" loading="lazy" />}
               <span className="play-btn" aria-hidden>
                 <Icon name="play" size={26} />

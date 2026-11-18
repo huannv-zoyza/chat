@@ -19,6 +19,8 @@ import { RemindersDialog } from "./Reminders";
 import { CallOverlay } from "./CallOverlay";
 import { GroupCallOverlay, UpdateBanner } from "./GroupCall";
 import { StationOverlay } from "./Station";
+import { MessageLinkDialog } from "./Share";
+import { takePendingMessage } from "../lib/platform";
 import { isDM } from "../lib/channel";
 import { load, save } from "../lib/storage";
 import { COMPACT_QUERY, useMediaQuery } from "../lib/useMedia";
@@ -27,7 +29,16 @@ type DialogName =
   "create" | "browse" | "channel" | "user" | "invite" | "joinLink" | "dm" | "search" | "reminders" | null;
 
 export function Workspace() {
-  const { state, openThread } = useChat();
+  const { state, openThread, openMessageLink } = useChat();
+  // Bản web mở bằng link …/m/<id>: kết nối xong thì mở tin đó (một lần).
+  const pendingLink = useRef<number | null | undefined>(undefined);
+  if (pendingLink.current === undefined) pendingLink.current = takePendingMessage();
+  useEffect(() => {
+    const id = pendingLink.current;
+    if (!id || state.status !== "open" || Object.keys(state.channels).length === 0) return;
+    pendingLink.current = null;
+    void openMessageLink(id);
+  }, [state.status, state.channels, openMessageLink]);
   // Mở bản web bằng link mời (…/invite/<mã>): hiện luôn hộp thoại tham gia.
   const [inviteCode] = useState(peekPendingInvite);
   const [dialog, setDialog] = useState<DialogName>(inviteCode ? "joinLink" : null);
@@ -198,6 +209,7 @@ export function Workspace() {
       <CallOverlay />
       <GroupCallOverlay />
       <StationOverlay />
+      <MessageLinkDialog />
       {dialog === "reminders" && <RemindersDialog onClose={() => setDialog(null)} onJumped={openRoom} />}
       {dialog === "search" && <SearchDialog onClose={() => setDialog(null)} onJumped={openRoom} />}
       {dialog === "dm" && <NewDMDialog onClose={() => setDialog(null)} onOpened={openRoom} />}

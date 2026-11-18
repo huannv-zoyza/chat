@@ -41,3 +41,28 @@ export function clearPendingInvite() {
     /* bỏ qua */
   }
 }
+
+const MESSAGE_KEY = "pendingMessage";
+
+/** Bản web mở bằng link tới tin (…/m/<id>): ghi nhớ id (kể cả khi phải đăng nhập trước) rồi đưa địa chỉ về "/". */
+export function captureMessageFromUrl() {
+  const m = window.location.pathname.match(/^\/m\/(\d{1,15})\/?$/);
+  if (!m) return;
+  try {
+    sessionStorage.setItem(MESSAGE_KEY, m[1]);
+  } catch {
+    /* bỏ qua */
+  }
+  window.history.replaceState(null, "", "/");
+}
+
+/** Lấy (và xoá) id tin đang chờ mở. */
+export function takePendingMessage(): number | null {
+  try {
+    const v = sessionStorage.getItem(MESSAGE_KEY);
+    sessionStorage.removeItem(MESSAGE_KEY);
+    return v ? Number(v) : null;
+  } catch {
+    return null;
+  }
+}

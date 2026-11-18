@@ -1,12 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { ApiError, type Channel, type Message, type QuotedMessage } from "../lib/api";
-import { channelLabel, channelTitle, dmPeerId, isDM } from "../lib/channel";
+import { channelLabel } from "../lib/channel";
 import { e2ee, useE2EE } from "../lib/e2ee";
 import { displayName, formatDay, formatTime } from "../lib/format";
 import { useChat } from "../state/ChatProvider";
 import { embedSummary } from "./Embeds";
 import { Avatar, Dialog, FormError, Icon } from "./ui";
-import { ChannelSigil } from "./ChannelDialogs";
 
 /* ---------- Xem trước ngắn gọn một tin (dùng cho trích dẫn, ghim, tìm kiếm) ---------- */
 
@@ -282,86 +281,6 @@ export function SearchDialog({ onClose, onJumped }: { onClose: () => void; onJum
           Xem thêm kết quả
         </button>
       )}
-    </Dialog>
-  );
-}
-
-/* ---------- Chuyển tiếp ---------- */
-
-export function ForwardDialog({ message, onClose }: { message: Message; onClose: () => void }) {
-  const { state, forwardMessage } = useChat();
-  useE2EE();
-  const [query, setQuery] = useState("");
-  const [busy, setBusy] = useState<number | null>(null);
-  const [done, setDone] = useState<number[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const targets = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return Object.values(state.channels)
-      .map((c) => ({ c, title: channelTitle(c, state.users, state.me.id) }))
-      .filter(({ title }) => !q || title.toLowerCase().includes(q))
-      .sort((a, b) => Number(isDM(a.c)) - Number(isDM(b.c)) || a.title.localeCompare(b.title, "vi"));
-  }, [state.channels, state.users, state.me.id, query]);
-
-  const send = async (c: Channel) => {
-    setBusy(c.id);
-    setError(null);
-    try {
-      await forwardMessage(message, c.id);
-      setDone((d) => [...d, c.id]);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Không chuyển tiếp được.");
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  return (
-    <Dialog title="Chuyển tiếp tin nhắn" onClose={onClose}>
-      <blockquote className="delete-preview forward-preview">{msgPreview(message) || "(tin nhắn)"}</blockquote>
-      <input
-        ref={inputRef}
-        className="search"
-        autoFocus
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Tìm kênh hoặc người"
-        aria-label="Tìm nơi chuyển tới"
-      />
-      <FormError>{error}</FormError>
-      <ul className="people-list">
-        {targets.map(({ c, title }) => {
-          const sent = done.includes(c.id);
-          const peer = isDM(c) ? dmPeerId(c, state.me.id) : null;
-          return (
-            <li key={c.id}>
-              <div className="person">
-                {peer !== null ? (
-                  <Avatar user={state.users[peer]} size={32} />
-                ) : (
-                  <span className="forward-sigil">
-                    <ChannelSigil channel={c} size={16} />
-                  </span>
-                )}
-                <span className="person-text">
-                  <span className="person-name">{isDM(c) ? title : channelLabel(c, state.users, state.me.id)}</span>
-                  <span className="person-sub">{isDM(c) ? "Tin nhắn riêng" : `${c.member_count} thành viên`}</span>
-                </span>
-                <button
-                  type="button"
-                  className={`btn btn-sm${sent ? "" : " btn-primary"}`}
-                  disabled={busy !== null || sent}
-                  onClick={() => void send(c)}
-                >
-                  {sent ? "Đã gửi" : busy === c.id ? "Đang gửi…" : "Gửi"}
-                </button>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
     </Dialog>
   );
 }

@@ -71,6 +71,13 @@ type ChatContextValue = {
   jumpToMessage: (m: { id: number; channel_id: number; parent_id?: number }) => Promise<void>;
   /** Chuyển tiếp tin (chữ, sticker/GIF, file) sang kênh / tin nhắn riêng khác. */
   forwardMessage: (message: Message, toChannelId: number) => Promise<void>;
+  /**
+   * Chia sẻ tin sang kênh / tin nhắn riêng khác: "copy" = bản sao (như chuyển tiếp),
+   * "link" = thẻ liên kết tới tin gốc (game, bình chọn… hoặc bất kỳ tin nào trong kênh).
+   */
+  shareMessage: (message: Message, toChannelId: number, mode: "copy" | "link") => Promise<void>;
+  /** Mở link …/m/<id>: vào thẳng tin nếu xem được, không thì hiện lời mời tham gia / báo không có quyền. */
+  openMessageLink: (id: number) => Promise<void>;
   /** Thả/bỏ cảm xúc; cập nhật ngay trên máy mình rồi đồng bộ với server. */
   toggleReaction: (messageId: number, emoji: string) => void;
   /** Mở luồng của tin gốc (null để đóng). */
@@ -783,6 +790,30 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
           });
       },
 
+      shareMessage: async (message, toChannelId, mode) => {
+        if (mode === "copy") return actionsRef.current!.forwardMessage(message, toChannelId);
+        const s = stateRef.current;
+        actionsRef.current!.sendEmbed(toChannelId, shareSnapshot(message, s));
+      },
+
+      openMessageLink: async (id) => {
+        try {
+          const info = await api.messageLink(id);
+          if (info.member && info.message) {
+            const m = info.message;
+            if (!stateRef.current.channels[m.channel_id]) await refreshChannels();
+            await actionsRef.current!.jumpToMessage({ id: m.id, channel_id: m.channel_id, parent_id: m.parent_id });
+            return;
+          }
+          dispatch({ type: "link.prompt", prompt: { id, info } });
+        } catch (err) {
+          dispatch({
+            type: "link.prompt",
+            prompt: { id, error: err instanceof ApiError ? err.message : "Không mở được tin nhắn này." },
+          });
+        }
+      },
+
       loadMembers: async (channelId) => {
         const members = await api.members(channelId);
         dispatch({ type: "members.loaded", channelId, members });
@@ -790,7 +821,7 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
 
       reconnectNow: () => socketRef.current?.reconnectNow(),
     }),
-    [api, serverUrl, onLogout, deliver, loadThread, loadOlder, loadLatest],
+    [api, serverUrl, onLogout, deliver, loadThread, loadOlder, loadLatest, refreshChannels],
   );
 
   actionsRef.current = actions;
@@ -804,4 +835,41 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       <ServerUrlContext.Provider value={serverUrl}>{children}</ServerUrlContext.Provider>
     </ChatContext.Provider>
   );
+}
+
+/**
+ * Bản tóm tắt tin gốc cho thẻ chia sẻ. Kênh thường: máy chủ dựng lại từ DB (không tin bản này);
+ * tin nhắn riêng được mã hoá nên máy chủ không đọc được, bản này đi nguyên trong tin.
+ */
+function shareSnapshot(m: Message, s: ChatState): Embed {
+  const fromAI = m.user?.username === "ai";
+  let text = (m.content || "").trim();
+  if (fromAI) text = text.replace(/\n*_— [^\n]*_\s*$/, "").trim();
+  const e: Embed = {
+    type: "share",
+    id: String(m.embed?.type === "share" ? m.embed.id : m.id),
+    kind: "message",
+    author: fromAI ? "Trợ lý AI" : displayName(s.users[m.user_id] ?? m.user),
+    channel: s.channels[m.channel_id]?.name,
+    channel_id: m.channel_id,
+  };
+  if (m.embed?.type === "share") return { ...m.embed };
+  if (m.poll) (Object.assign(e, { kind: "poll", title: "Bình chọn" }), (text = m.poll.question));
+  else if (m.embed?.type === "game")
+    (Object.assign(e, { kind: "game", title: m.embed.title }), (text = `Phòng chơi ${m.embed.title ?? ""}`));
+  else if (m.embed?.type === "call")
+    (Object.assign(e, { kind: "call", title: "Cuộc gọi" }), (text = "Nhật ký cuộc gọi"));
+  else if (m.embed?.type === "sticker") Object.assign(e, { kind: "sticker", title: "Sticker" });
+  else if (m.embed?.type === "gif") Object.assign(e, { kind: "gif", title: "GIF" });
+  const img = m.attachments?.find((a) => /^image\/(png|jpeg|webp)$/.test(a.content_type));
+  if (img) {
+    e.preview = img.url;
+    if (e.kind === "message" && !text) e.kind = "image";
+  }
+  if (!text && m.attachments?.length) {
+    text = m.attachments.map((a) => a.file_name).join(", ");
+    if (e.kind === "message") e.kind = "file";
+  }
+  e.text = text.length > 300 ? text.slice(0, 300) + "…" : text;
+  return e;
 }

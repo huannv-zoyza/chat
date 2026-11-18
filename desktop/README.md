@@ -86,6 +86,7 @@ Lỗi trả về `{"error": "<câu hiển thị cho người dùng>"}`.
 | POST | `/api/channels/{id}/games` | `{kind: station/werewolf/spy/caro/rps, options?, client_id}` mở phòng chơi (tin có `embed.type = "game"` và `game`) |
 | WS | `game.watch` / `game.unwatch` / `game.pos` | Trò thời gian thực (Trạm Vũ Trụ): mở màn chơi để nhận `game.map` rồi `game.frame` ~15 lần/giây; gửi vị trí của mình `{message_id, data: {x, y}}` |
 | POST | `/api/messages/{id}/game` | `{action, data?}`: `join`, `leave`, `start`, `cancel` hoặc hành động của trò (`night`, `witch`, `vote`, `shoot`, `skip_day`, `clue`, `move`, `resign`, `pick`; Trạm Vũ Trụ: `use`, `task`, `fix`, `cancel_use`, `kill`, `report`, `emergency`, `sabotage`, `chat`) |
+| GET | `/api/messages/{id}/link` | Link …/m/<id>: `{channel, member, message?}`; thành viên nhận tin đầy đủ, kênh công khai chưa vào chỉ nhận tên kênh, kênh riêng tư / tin nhắn riêng: 403 / 404 |
 | POST | `/api/messages/{id}/pin` | `{pinned}` ghim / bỏ ghim |
 | GET | `/api/channels/{id}/pins` | Tin đang ghim |
 | GET | `/api/search?q=&channel_id=&before=` | Tìm toàn văn (không dấu) trong các kênh mình tham gia |

@@ -78,6 +78,7 @@ export function EmbedView({ embed, channelId, userId }: { embed: Embed; channelI
 
 /** Mô tả ngắn cho thông báo / xem trước: "đã gửi một sticker", ... */
 export function embedSummary(embed: Embed): string {
+  if (embed.type === "game") return `🎮 ${embed.title ?? "Trò chơi"}`;
   if (embed.type === "call") return embed.id === "completed" ? "📞 Cuộc gọi" : "📞 Cuộc gọi nhỡ";
   if (embed.type === "gif") return "Đã gửi một GIF";
   const s = findSticker(embed.id);

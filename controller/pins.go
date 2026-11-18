@@ -82,7 +82,7 @@ func (a *API) listPins(w http.ResponseWriter, r *http.Request) {
 		internalError(w, r, err)
 		return
 	}
-	if err := a.fillMyVotes(r.Context(), currentUser(r).ID, msgs); err != nil {
+	if err := a.fillForViewer(r.Context(), currentUser(r).ID, msgs); err != nil {
 		internalError(w, r, err)
 		return
 	}
@@ -115,7 +115,7 @@ func (a *API) search(w http.ResponseWriter, r *http.Request) {
 	if len(msgs) > searchPage {
 		res.Messages, res.HasMore = msgs[:searchPage], true
 	}
-	if err := a.fillMyVotes(r.Context(), me.ID, res.Messages); err != nil {
+	if err := a.fillForViewer(r.Context(), me.ID, res.Messages); err != nil {
 		internalError(w, r, err)
 		return
 	}

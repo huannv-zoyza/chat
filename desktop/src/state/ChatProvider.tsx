@@ -14,7 +14,18 @@ import { GroupCallController } from "../lib/groupcall";
 import { servedByServer } from "../lib/platform";
 
 declare const __BUILD_ID__: string;
-import { ApiError, type Api, type Embed, type Message, type User, socketUrl } from "../lib/api";
+import {
+  ApiError,
+  type Api,
+  type Embed,
+  type GameKind,
+  type GameView,
+  type Message,
+  type User,
+  socketUrl,
+} from "../lib/api";
+import { myTurn } from "../lib/games";
+import { stationStore } from "../lib/station";
 import { embedSummary } from "../components/Embeds";
 import { previewText } from "../components/MessageExtras";
 import { ChatSocket } from "../lib/socket";
@@ -80,6 +91,10 @@ type ChatContextValue = {
       allow_add?: boolean;
     },
   ) => Promise<void>;
+  /** Mở phòng chơi trong kênh (mình là chủ phòng). Lỗi thì ném ApiError. */
+  createGame: (channelId: number, kind: GameKind, options?: Record<string, unknown>) => Promise<void>;
+  /** Hành động trong ván (join, start, move...). Lỗi thì ném ApiError. */
+  gameAction: (messageId: number, action: string, data?: unknown) => Promise<void>;
   /** Bỏ phiếu (thay toàn bộ lựa chọn của mình; [] = rút phiếu). */
   vote: (messageId: number, optionIds: number[]) => Promise<void>;
   closePoll: (messageId: number, closed: boolean) => Promise<void>;
@@ -204,11 +219,13 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       content ||
       (m.poll
         ? `📊 Bình chọn: ${m.poll.question}`
-        : embed
-          ? embedSummary(embed)
-          : m.attachments?.length
-            ? `Đã gửi ${m.attachments.length} file`
-            : "");
+        : m.game
+          ? `🎮 Mở phòng ${m.game.title}, vào chơi không?`
+          : embed
+            ? embedSummary(embed)
+            : m.attachments?.length
+              ? `Đã gửi ${m.attachments.length} file`
+              : "");
     const title = direct
       ? `${who} nhắn cho bạn`
       : mentioned
@@ -336,6 +353,7 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
 
   useEffect(() => {
     const sock = new ChatSocket(socketUrl(serverUrl, token));
+    stationStore.setSender((req) => sock.sendGame(req));
     socketRef.current = sock;
     let everReady = false;
     const calls = new CallController(
@@ -373,6 +391,7 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
 
       sock.on("ready", (ev) => {
         dispatch({ type: "ready", me: ev.user, online: ev.online_user_ids });
+        stationStore.resubscribe();
         groups.setRooms(ev.group_calls ?? []);
         // bản web đang chạy cũ hơn bản máy chủ phục vụ: nhắc tải lại (app desktop có bản riêng)
         if (servedByServer && ev.ui_build && ev.ui_build !== __BUILD_ID__) dispatch({ type: "update.available" });
@@ -404,6 +423,31 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       sock.on("message.updated", (ev) => dispatch({ type: "message.updated", message: ev.message })),
       sock.on("key.updated", (ev) => e2ee.onKeyUpdated(ev.user_id, ev.public_key)),
       sock.on("poll.updated", (ev) => dispatch({ type: "poll.set", messageId: ev.message_id, poll: ev.poll })),
+      sock.on("game.map", (ev) => stationStore.onMap(ev.message_id, ev.map)),
+      sock.on("game.frame", (ev) => stationStore.onFrame(ev.message_id, ev.frame)),
+      sock.on("game.updated", (ev) => {
+        const s = stateRef.current;
+        const prev = findMessage(s, ev.message_id)?.game;
+        dispatch({ type: "game.set", messageId: ev.message_id, game: ev.game });
+        // Trạm Vũ Trụ vừa bắt đầu mà mình có chơi: mở luôn màn hình chơi
+        if (
+          ev.game.kind === "station" &&
+          ev.game.status === "playing" &&
+          prev?.status === "lobby" &&
+          ev.game.players.some((p) => p.id === s.me.id)
+        ) {
+          stationStore.open(ev.message_id);
+        }
+        // báo khi vừa tới lượt mình mà mình đang không nhìn vào kênh đó
+        if (ev.game.me === undefined) return;
+        const turn = myTurn(ev.game, s.me.id);
+        if (turn && turn !== myTurn(prev, s.me.id) && (!document.hasFocus() || !isViewing(ev.channel_id))) {
+          void showNotification(`🎮 ${ev.game.title}`, turn, () => {
+            window.focus();
+            void actionsRef.current?.jumpToMessage({ id: ev.message_id, channel_id: ev.channel_id });
+          });
+        }
+      }),
       sock.on("groupcall.state", (ev) => void groups.onEvent(ev)),
       sock.on("groupcall.started", (ev) => void groups.onEvent(ev)),
       sock.on("groupcall.welcome", (ev) => void groups.onEvent(ev)),
@@ -470,6 +514,8 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       groups.leave();
       setCalls(null);
       setGroupCalls(null);
+      stationStore.close();
+      stationStore.setSender(null);
       sock.close();
       socketRef.current = null;
     };
@@ -600,6 +646,17 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
         const clientId = newClientId();
         const msg = await api.createPoll(channelId, { ...p, client_id: clientId });
         dispatch({ type: "message.new", message: msg, clientId, countUnread: false });
+      },
+
+      createGame: async (channelId, kind, options) => {
+        const clientId = newClientId();
+        const msg = await api.createGame(channelId, { kind, options, client_id: clientId });
+        dispatch({ type: "message.new", message: msg, clientId, countUnread: false });
+      },
+
+      gameAction: async (messageId, action, data) => {
+        const game: GameView = await api.gameAction(messageId, action, data);
+        dispatch({ type: "game.set", messageId, game });
       },
 
       vote: async (messageId, optionIds) => {

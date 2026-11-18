@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS idx_games_active;
+DROP TABLE IF EXISTS games;

@@ -168,6 +168,12 @@ const paths: Record<string, ReactNode> = {
     </>
   ),
   poll: <path d="M5 20V10M12 20V4M19 20v-7M3 20h18" />,
+  game: (
+    <>
+      <path d="M7.5 7h9a5 5 0 0 1 4.9 6l-.8 3.6a2.4 2.4 0 0 1-4.1 1.1L14 15.5h-4l-2.5 2.2a2.4 2.4 0 0 1-4.1-1.1L2.6 13a5 5 0 0 1 4.9-6Z" />
+      <path d="M7.5 10v3M6 11.5h3M15.5 11h.01M17.5 12.5h.01" />
+    </>
+  ),
   check: <path d="m5 12.5 4.5 4.5L19 7" strokeWidth="2.4" />,
   reply: <path d="M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />,
   forward: <path d="m15 14 5-5-5-5M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />,

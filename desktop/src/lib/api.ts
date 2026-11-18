@@ -50,7 +50,7 @@ export type Attachment = {
 
 /** Sticker (bộ có sẵn trong app) hoặc GIF (GIPHY) gửi thay cho nội dung chữ. */
 export type Embed = {
-  type: "sticker" | "gif" | "call";
+  type: "sticker" | "gif" | "call" | "game";
   id: string;
   url?: string;
   preview?: string;
@@ -61,6 +61,27 @@ export type Embed = {
   video?: boolean;
   duration?: number;
   participants?: number;
+};
+
+export type GameKind = "station" | "werewolf" | "spy" | "caro" | "rps";
+export type GamePlayer = { id: number; name: string };
+
+/** Ván chơi trong kênh, theo góc nhìn của mình (me: phần bí mật của riêng mình nếu mình đang chơi). */
+export type GameView<S = Record<string, unknown>, M = Record<string, unknown>> = {
+  kind: GameKind;
+  title: string;
+  status: "lobby" | "playing" | "ended";
+  host_id: number;
+  players: GamePlayer[];
+  min_players: number;
+  max_players: number;
+  deadline?: string;
+  log: string[];
+  result?: string;
+  winners?: number[];
+  version: number;
+  state?: S;
+  me?: M;
 };
 
 export type PollOption = { id: number; text: string; votes: number; voter_ids?: number[] };
@@ -132,6 +153,8 @@ export type Message = {
   /** Tin mã hoá đầu cuối (tin nhắn riêng): nội dung thật nằm trong đây, content để trống. */
   cipher?: string;
   poll?: Poll;
+  /** Ván chơi (tin có embed type "game"). */
+  game?: GameView;
   pinned_at?: string;
   pinned_by?: number;
   reply_to_id?: number;
@@ -312,6 +335,10 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
         allow_add?: boolean;
       },
     ) => request<Message>("POST", `/api/channels/${channelId}/polls`, b),
+    createGame: (channelId: number, b: { kind: GameKind; options?: Record<string, unknown>; client_id: string }) =>
+      request<Message>("POST", `/api/channels/${channelId}/games`, b),
+    gameAction: (messageId: number, action: string, data?: unknown) =>
+      request<GameView>("POST", `/api/messages/${messageId}/game`, data === undefined ? { action } : { action, data }),
     vote: (messageId: number, optionIds: number[]) =>
       request<Poll>("POST", `/api/messages/${messageId}/votes`, { option_ids: optionIds }),
     addPollOption: (messageId: number, text: string) =>

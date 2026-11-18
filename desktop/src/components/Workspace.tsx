@@ -18,6 +18,7 @@ import { SearchDialog } from "./MessageExtras";
 import { RemindersDialog } from "./Reminders";
 import { CallOverlay } from "./CallOverlay";
 import { GroupCallOverlay, UpdateBanner } from "./GroupCall";
+import { StationOverlay } from "./Station";
 import { isDM } from "../lib/channel";
 import { load, save } from "../lib/storage";
 import { COMPACT_QUERY, useMediaQuery } from "../lib/useMedia";
@@ -196,6 +197,7 @@ export function Workspace() {
       {dialog === "invite" && channel && <InviteDialog channel={channel} onClose={() => setDialog(null)} />}
       <CallOverlay />
       <GroupCallOverlay />
+      <StationOverlay />
       {dialog === "reminders" && <RemindersDialog onClose={() => setDialog(null)} onJumped={openRoom} />}
       {dialog === "search" && <SearchDialog onClose={() => setDialog(null)} onJumped={openRoom} />}
       {dialog === "dm" && <NewDMDialog onClose={() => setDialog(null)} onOpened={openRoom} />}

@@ -98,6 +98,8 @@ func main() {
 
 	// nhắc việc tới giờ, bình chọn hết hạn
 	go api.RunScheduler(ctx, 15*time.Second)
+	// trò chơi: chạy tiếp ván đang dở, chuyển pha khi hết giờ
+	go api.RunGames(ctx)
 
 	srv := &http.Server{
 		Addr:              *addr,

@@ -128,6 +128,7 @@ func (a *API) deleteMessage(w http.ResponseWriter, r *http.Request) {
 	for _, k := range keys {
 		a.removeUpload(k)
 	}
+	a.games.drop(msg.ID)
 	a.hub.ToChannel(msg.ChannelID, mustJSON(messageUpdatedEvent{Type: "message.updated", Message: deleted}), nil)
 	writeJSON(w, http.StatusOK, deleted)
 }

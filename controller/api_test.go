@@ -129,7 +129,29 @@ func (c *wsClient) send(v any) {
 // waitFor đọc sự kiện tới khi gặp type mong muốn, bỏ qua các sự kiện khác.
 func (c *wsClient) waitFor(typ string) map[string]any {
 	c.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	return c.waitForTimeout(typ, 3*time.Second)
+}
+
+// tryWait như waitFor nhưng hết giờ thì trả về false thay vì làm test thất bại.
+func (c *wsClient) tryWait(typ string, d time.Duration) (map[string]any, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	defer cancel()
+	for {
+		_, b, err := c.conn.Read(ctx)
+		if err != nil {
+			return nil, false
+		}
+		var ev map[string]any
+		json.Unmarshal(b, &ev)
+		if ev["type"] == typ {
+			return ev, true
+		}
+	}
+}
+
+func (c *wsClient) waitForTimeout(typ string, d time.Duration) map[string]any {
+	c.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), d)
 	defer cancel()
 	for {
 		_, b, err := c.conn.Read(ctx)

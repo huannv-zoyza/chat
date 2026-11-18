@@ -64,7 +64,7 @@ func (a *API) getThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	all := append([]model.Message{msg}, replies...)
-	if err := a.fillMyVotes(r.Context(), currentUser(r).ID, all); err != nil {
+	if err := a.fillForViewer(r.Context(), currentUser(r).ID, all); err != nil {
 		internalError(w, r, err)
 		return
 	}

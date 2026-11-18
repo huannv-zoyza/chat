@@ -701,6 +701,7 @@ func (s *Store) DeleteMessage(ctx context.Context, id int64) (model.Message, []s
 		`DELETE FROM message_mentions WHERE message_id = ?`,
 		`DELETE FROM message_reactions WHERE message_id = ?`,
 		`DELETE FROM polls WHERE message_id = ?`,
+		`DELETE FROM games WHERE message_id = ?`,
 		`UPDATE messages SET content = '', embed = NULL, cipher = NULL, pinned_at = NULL, pinned_by = NULL, deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND deleted_at IS NULL`,
 	} {
 		if _, err := tx.ExecContext(ctx, q, id); err != nil {

@@ -237,6 +237,9 @@ func (a *API) handleRequest(ctx context.Context, client *socket.Client, user mod
 	case "groupcall.join", "groupcall.leave", "groupcall.signal":
 		a.handleGroupCall(ctx, client, user, req)
 
+	case "game.watch", "game.unwatch", "game.pos":
+		a.handleGameSocket(ctx, client, user, req)
+
 	case "typing":
 		if a.hub.IsSubscribed(client, req.ChannelID) {
 			a.hub.ToChannel(req.ChannelID, mustJSON(typingEvent{Type: "typing", ChannelID: req.ChannelID, UserID: user.ID}), client)

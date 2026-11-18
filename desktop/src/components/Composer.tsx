@@ -20,6 +20,7 @@ import { isTouchDevice } from "../lib/useMedia";
 import { EmojiPicker } from "./EmojiPicker";
 import { StickerPicker } from "./StickerPicker";
 import { CreatePollDialog } from "./Polls";
+import { CreateGameDialog } from "./Games";
 import { createPortal } from "react-dom";
 import { FileCard, formatSize, useObjectUrls } from "./MessageParts";
 import { Avatar, Icon } from "./ui";
@@ -59,9 +60,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   }, [replyId]);
   const [attachOpen, setAttachOpen] = useState(false);
   const [pollOpen, setPollOpen] = useState(false);
+  const [gameOpen, setGameOpen] = useState(false);
   const attachRef = useRef<HTMLDivElement>(null);
   // Bình chọn: chỉ ở dòng chính của kênh (tin nhắn riêng được mã hoá đầu cuối)
   const canPoll = !parentId && !isDM(channel);
+  // Trò chơi: dòng chính; tin nhắn riêng chỉ có trò 2 người
+  const canGame = !parentId;
+  const hasMenu = canPoll || canGame;
   useEffect(() => {
     if (!attachOpen) return;
     const onDown = (e: MouseEvent) => {
@@ -317,6 +322,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           "Tạo" sẽ gửi nhầm form ô soạn). */}
       {pollOpen &&
         createPortal(<CreatePollDialog channelId={channel.id} onClose={() => setPollOpen(false)} />, document.body)}
+      {gameOpen &&
+        createPortal(
+          <CreateGameDialog channelId={channel.id} dm={isDM(channel)} onClose={() => setGameOpen(false)} />,
+          document.body,
+        )}
       {stickerOpen && (
         <StickerPicker
           onPick={(embed) => {
@@ -356,12 +366,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             <button
               type="button"
               className={`tool-btn${attachOpen ? " is-on" : ""}`}
-              onClick={() => (canPoll ? setAttachOpen((v) => !v) : fileInput.current?.click())}
-              title={canPoll ? "Đính kèm, bình chọn…" : "Đính kèm file hoặc ảnh"}
-              aria-label={canPoll ? "Thêm: ảnh, file, bình chọn" : "Đính kèm file hoặc ảnh"}
-              aria-expanded={canPoll ? attachOpen : undefined}
+              onClick={() => (hasMenu ? setAttachOpen((v) => !v) : fileInput.current?.click())}
+              title={hasMenu ? "Đính kèm, bình chọn, trò chơi…" : "Đính kèm file hoặc ảnh"}
+              aria-label={hasMenu ? "Thêm: ảnh, file, bình chọn, trò chơi" : "Đính kèm file hoặc ảnh"}
+              aria-expanded={hasMenu ? attachOpen : undefined}
             >
-              <Icon name={canPoll ? "plus" : "paperclip"} />
+              <Icon name={hasMenu ? "plus" : "paperclip"} />
             </button>
             {attachOpen && (
               <div className="attach-menu" role="menu">
@@ -376,17 +386,32 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                   <Icon name="paperclip" size={17} />
                   Ảnh hoặc file
                 </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setAttachOpen(false);
-                    setPollOpen(true);
-                  }}
-                >
-                  <Icon name="poll" size={17} />
-                  Bình chọn
-                </button>
+                {canPoll && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setAttachOpen(false);
+                      setPollOpen(true);
+                    }}
+                  >
+                    <Icon name="poll" size={17} />
+                    Bình chọn
+                  </button>
+                )}
+                {canGame && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setAttachOpen(false);
+                      setGameOpen(true);
+                    }}
+                  >
+                    <Icon name="game" size={17} />
+                    Chơi game
+                  </button>
+                )}
               </div>
             )}
           </div>

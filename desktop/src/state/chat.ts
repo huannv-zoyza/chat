@@ -1,6 +1,7 @@
 import type {
   Channel,
   Embed,
+  GameView,
   Message,
   Poll,
   Reminder,
@@ -149,6 +150,7 @@ export type Action =
   | { type: "reactions.set"; messageId: number; reactions: Reaction[] }
   /** mine: phản hồi riêng cho mình (my_votes đầy đủ); không có: sự kiện chung, giữ my_votes cũ. */
   | { type: "poll.set"; messageId: number; poll: Poll; mine?: boolean }
+  | { type: "game.set"; messageId: number; game: GameView }
   | { type: "reaction.toggleLocal"; messageId: number; emoji: string }
   | { type: "reads.set"; channelId: number; reads: ReadState[] }
   | { type: "read.updated"; channelId: number; userId: number; messageId: number };
@@ -162,10 +164,25 @@ function advanceRead(s: ChatState, channelId: number, userId: number, messageId:
   return { ...s.reads, [channelId]: { ...cur, [userId]: messageId } };
 }
 
+/**
+ * Ván chơi mới nhất. Sự kiện phát chung cho cả kênh không có "me" (phần bí mật của mình),
+ * bản riêng tới ngay sau: giữ "me" cũ trong lúc chờ. Bản cũ hơn (version nhỏ hơn) thì bỏ.
+ */
+export function mergeGame(old: GameView | undefined, next: GameView | undefined): GameView | undefined {
+  if (!next) return old;
+  if (!old) return next;
+  if (next.version < old.version) return old;
+  if (next.me === undefined && old.me !== undefined) return { ...next, me: old.me };
+  return next;
+}
+
 function mergeMessages(a: Message[], b: Message[]): Message[] {
   const byId = new Map<number, Message>();
   for (const m of a) byId.set(m.id, m);
-  for (const m of b) byId.set(m.id, m);
+  for (const m of b) {
+    const prev = byId.get(m.id);
+    byId.set(m.id, prev?.game && !m.deleted_at ? { ...m, game: mergeGame(prev.game, m.game) } : m);
+  }
   return [...byId.values()].sort((x, y) => x.id - y.id);
 }
 
@@ -372,6 +389,8 @@ export function reducer(s: ChatState, a: Action): ChatState {
         ...m,
         thread: m.thread ?? old.thread,
         poll: m.poll && old.poll ? { ...m.poll, my_votes: old.poll.my_votes } : m.poll,
+        // sự kiện sửa/ghim không kèm ván chơi
+        game: m.deleted_at ? undefined : mergeGame(old.game, m.game),
       }));
       // danh sách tin ghim của kênh (nếu đã tải): thêm / bỏ / cập nhật
       const list = s.pins[m.channel_id];
@@ -440,6 +459,9 @@ export function reducer(s: ChatState, a: Action): ChatState {
         ...m,
         poll: { ...a.poll, my_votes: a.mine ? (a.poll.my_votes ?? []) : (m.poll?.my_votes ?? a.poll.my_votes) },
       }));
+
+    case "game.set":
+      return updateMessage(s, a.messageId, (m) => (m.deleted_at ? m : { ...m, game: mergeGame(m.game, a.game) }));
 
     case "reactions.set":
       return updateMessage(s, a.messageId, (m) => ({ ...m, reactions: a.reactions }));

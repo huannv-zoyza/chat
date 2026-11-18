@@ -237,6 +237,14 @@ func (h *Hub) IsOnline(userID int64) bool {
 	return len(h.byUser[userID]) > 0
 }
 
+// Connected: kết nối c vẫn còn mở.
+func (h *Hub) Connected(c *Client) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	_, ok := h.byUser[c.UserID][c]
+	return ok
+}
+
 // ToClient gửi msg tới đúng một kết nối.
 func (h *Hub) ToClient(c *Client, msg []byte) {
 	h.mu.RLock()

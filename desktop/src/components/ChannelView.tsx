@@ -22,6 +22,7 @@ import { ChannelSigil } from "./ChannelDialogs";
 import { ConfirmDeleteDialog, MessageEditor } from "./MessageEditor";
 import { EmbedView } from "./Embeds";
 import { PollView } from "./Polls";
+import { GameCard } from "./Games";
 import { CallButtons } from "./CallOverlay";
 import { GroupCallBanner, GroupCallButtons } from "./GroupCall";
 import { ForwardDialog, PinsDialog, QuoteBlock, previewText } from "./MessageExtras";
@@ -554,7 +555,7 @@ export function MessageRow(props: RowProps) {
   const [forwardOpen, setForwardOpen] = useState(false);
   const [remindOpen, setRemindOpen] = useState(false);
   const replyKey = message?.parent_id ? `t${message.parent_id}` : `c${message?.channel_id}`;
-  const canForward = live && !message!.poll && (!message!.cipher || !!dec?.ok);
+  const canForward = live && !message!.poll && message!.embed?.type !== "game" && (!message!.cipher || !!dec?.ok);
   const acts: MessageActionSet = {
     onThread: props.onOpenThread,
     onQuote: live ? () => setReply(replyKey, message!.id) : undefined,
@@ -649,6 +650,8 @@ export function MessageRow(props: RowProps) {
           <MessageEditor message={view!} />
         ) : message?.poll ? (
           <PollView message={message} />
+        ) : message?.game ? (
+          <GameCard message={message} />
         ) : embed ? (
           <EmbedView embed={embed} channelId={message?.channel_id} userId={message?.user_id} />
         ) : (

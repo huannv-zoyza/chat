@@ -35,6 +35,7 @@ type API struct {
 	gifs           gifCache
 	calls          callRegistry
 	groups         groupRegistry
+	games          gameRegistry
 	iceServers     []ICEServer
 	uiBuild        string
 	turn           TURNProvider
@@ -94,6 +95,8 @@ func (a *API) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("GET /api/channels/{id}/pins", a.requireAuth(a.listPins))
 	mux.HandleFunc("GET /api/search", a.requireAuth(a.search))
 	mux.HandleFunc("POST /api/messages/{id}/votes", a.requireAuth(a.vote))
+	mux.HandleFunc("POST /api/channels/{id}/games", a.requireAuth(a.createGame))
+	mux.HandleFunc("POST /api/messages/{id}/game", a.requireAuth(a.gameAction))
 	mux.HandleFunc("POST /api/messages/{id}/poll/close", a.requireAuth(a.closePoll))
 	mux.HandleFunc("POST /api/messages/{id}/poll/options", a.requireAuth(a.addPollOption))
 	mux.HandleFunc("POST /api/messages/{id}/remind", a.requireAuth(a.createReminder))

@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // Message ánh xạ bảng messages.
 type Message struct {
@@ -34,6 +37,9 @@ type Message struct {
 	Cipher string `db:"cipher" json:"cipher,omitempty"`
 	// Bình chọn (bảng polls) nếu tin là một cuộc bình chọn.
 	Poll *Poll `db:"-" json:"poll,omitempty"`
+	// Ván chơi (embed type "game"): những gì người xem được thấy, do controller điền
+	// (mỗi người một khác: vai, từ khoá... của riêng mình).
+	Game json.RawMessage `db:"-" json:"game,omitempty"`
 
 	// Ghim: thời điểm và người ghim (nil nếu không ghim).
 	PinnedAt *time.Time `db:"pinned_at" json:"pinned_at,omitempty"`
@@ -60,8 +66,8 @@ type QuotedMessage struct {
 
 // Embed: sticker (bộ sticker có sẵn trong app) hoặc GIF (từ GIPHY).
 type Embed struct {
-	Type    string `json:"type"`              // "sticker" | "gif"
-	ID      string `json:"id"`                // sticker: "<bộ>/<tên>"; gif: id trên GIPHY
+	Type    string `json:"type"`              // "sticker" | "gif" | "call" | "game"
+	ID      string `json:"id"`                // sticker: "<bộ>/<tên>"; gif: id trên GIPHY; game: loại trò chơi
 	URL     string `json:"url,omitempty"`     // gif: ảnh động hiển thị trong tin
 	Preview string `json:"preview,omitempty"` // gif: ảnh nhỏ (không bắt buộc)
 	Width   int    `json:"width,omitempty"`

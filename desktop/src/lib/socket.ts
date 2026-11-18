@@ -1,5 +1,17 @@
 import type { GroupParticipant, GroupRoom } from "./groupcall";
-import type { Embed, Poll, Reminder, Message, Channel, PublicUser, Reaction, ThreadSummary, User } from "./api";
+import type { StationMap, StFrame } from "./station";
+import type {
+  Embed,
+  GameView,
+  Poll,
+  Reminder,
+  Message,
+  Channel,
+  PublicUser,
+  Reaction,
+  ThreadSummary,
+  User,
+} from "./api";
 
 /* ---------- Giao thức (khớp controller/events.go và controller/socket.go) ---------- */
 
@@ -27,6 +39,9 @@ export type ServerEvent =
   | { type: "message.updated"; message: Message }
   | { type: "key.updated"; user_id: number; public_key: string }
   | { type: "poll.updated"; channel_id: number; message_id: number; poll: Poll }
+  | { type: "game.updated"; channel_id: number; message_id: number; game: GameView }
+  | { type: "game.map"; message_id: number; map: StationMap }
+  | { type: "game.frame"; message_id: number; frame: StFrame }
   | { type: "reminder.due"; reminder: Reminder }
   | { type: "call.incoming"; call_id: string; channel_id: number; from: PublicUser; video: boolean }
   | { type: "call.accepted"; call_id: string }
@@ -234,6 +249,11 @@ export class ChatSocket {
 
   /** Tín hiệu gọi nhóm (không xếp hàng). */
   sendGroup(req: Record<string, unknown>): boolean {
+    return this.status === "open" && this.rawSend(req as unknown as ClientRequest);
+  }
+
+  /** Trò chơi thời gian thực: game.watch / game.unwatch / game.pos (mất kết nối thì bỏ). */
+  sendGame(req: Record<string, unknown>): boolean {
     return this.status === "open" && this.rawSend(req as unknown as ClientRequest);
   }
 

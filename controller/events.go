@@ -40,6 +40,8 @@ type readyEvent struct {
 	UIBuild string `json:"ui_build,omitempty"`
 	// Các cuộc gọi nhóm đang diễn ra trong những kênh mình tham gia.
 	GroupCalls []groupCallState `json:"group_calls"`
+	// Trợ lý AI (nil: máy chủ tắt AI).
+	AI *aiInfo `json:"ai,omitempty"`
 }
 
 type messageNewEvent struct {

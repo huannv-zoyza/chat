@@ -23,6 +23,7 @@ import { ConfirmDeleteDialog, MessageEditor } from "./MessageEditor";
 import { EmbedView } from "./Embeds";
 import { PollView } from "./Polls";
 import { GameCard } from "./Games";
+import { AIText, isAIUser } from "./AI";
 import { CallButtons } from "./CallOverlay";
 import { GroupCallBanner, GroupCallButtons } from "./GroupCall";
 import { ForwardDialog, PinsDialog, QuoteBlock, previewText } from "./MessageExtras";
@@ -607,6 +608,7 @@ export function MessageRow(props: RowProps) {
           <header className="msg-head">
             <span className="msg-user" style={{ color: avatarUser ? `var(--u${(avatarUser.id % 6) + 1})` : undefined }}>
               {name}
+              {isAIUser(avatarUser) && <span className="bot-tag">AI</span>}
             </span>
             <time className="msg-time" dateTime={time} title={formatFull(time)}>
               {formatTime(time)}
@@ -655,7 +657,12 @@ export function MessageRow(props: RowProps) {
         ) : embed ? (
           <EmbedView embed={embed} channelId={message?.channel_id} userId={message?.user_id} />
         ) : (
-          text && <MessageText content={text} meId={state.me.id} edited={message?.edited_at} />
+          text &&
+          (isAIUser(avatarUser) ? (
+            <AIText content={text} />
+          ) : (
+            <MessageText content={text} meId={state.me.id} edited={message?.edited_at} />
+          ))
         )}
         {/* Tin mã hoá không xem trước link: server sẽ phải tải link nên biết link đó */}
         {text && message && !message.cipher && !deleted && !editing && <LinkPreviews content={text} />}

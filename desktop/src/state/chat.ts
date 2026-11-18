@@ -11,6 +11,7 @@ import type {
   ThreadSummary,
   User,
 } from "../lib/api";
+import type { AIInfo } from "../lib/socket";
 import type { SocketStatus } from "../lib/socket";
 
 /* ---------- State ---------- */
@@ -79,6 +80,8 @@ export type ChatState = {
   reminders: Reminder[] | null;
   /** Máy chủ đang phục vụ bản giao diện mới hơn bản đang chạy. */
   updateAvailable: boolean;
+  /** Trợ lý AI của máy chủ (null: tắt). */
+  ai: AIInfo | null;
   /** channelId -> userId -> id tin đã xem tới (để hiện "đã xem"). */
   reads: Record<number, Record<number, number>>;
 };
@@ -104,6 +107,7 @@ export function initialState(me: User): ChatState {
     pins: {},
     reminders: null,
     updateAvailable: false,
+    ai: null,
     reads: {},
   };
 }
@@ -112,7 +116,7 @@ export function initialState(me: User): ChatState {
 
 export type Action =
   | { type: "status"; status: SocketStatus }
-  | { type: "ready"; me: User; online: number[] }
+  | { type: "ready"; me: User; online: number[]; ai: AIInfo | null }
   | { type: "me.updated"; me: User }
   | { type: "channels.loaded"; channels: Channel[] }
   | { type: "channel.upsert"; channel: Channel; keepUnread?: boolean }
@@ -251,7 +255,7 @@ export function reducer(s: ChatState, a: Action): ChatState {
     case "ready": {
       const online: Record<number, true> = {};
       for (const id of a.online) online[id] = true;
-      return { ...s, me: a.me, online, users: withUsers(s.users, [a.me]) };
+      return { ...s, me: a.me, online, users: withUsers(s.users, [a.me]), ai: a.ai };
     }
 
     case "me.updated":

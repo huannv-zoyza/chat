@@ -1389,3 +1389,24 @@ func (s *Store) AttachmentKeysForChannel(ctx context.Context, channelID int64) (
 	}
 	return keys, rows.Err()
 }
+
+/* ---------- Trợ lý AI ---------- */
+
+// SetContent thay nội dung tin (không đánh dấu "đã sửa"): bot cập nhật câu trả lời đang viết dở.
+func (s *Store) SetContent(ctx context.Context, id int64, content string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE messages SET content = ? WHERE id = ? AND deleted_at IS NULL`, content, id)
+	return err
+}
+
+// AddAttachments gắn thêm file vào tin đã có (ảnh do AI vẽ xong).
+func (s *Store) AddAttachments(ctx context.Context, messageID int64, atts []model.Attachment) error {
+	for _, a := range atts {
+		if _, err := s.db.ExecContext(ctx, `
+			INSERT INTO attachments (message_id, storage_key, file_name, content_type, size, width, height)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			messageID, a.StorageKey, a.FileName, a.ContentType, a.Size, a.Width, a.Height); err != nil {
+			return err
+		}
+	}
+	return nil
+}

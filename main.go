@@ -1,6 +1,7 @@
 package main
 
 import (
+	"chat/ai"
 	"chat/controller"
 	"chat/database"
 	"chat/rtc"
@@ -94,6 +95,26 @@ func main() {
 			api.SetTURN(t)
 			log.Printf("TURN chạy tại %s:%s (relay UDP %d-%d)", ip, strings.TrimPrefix(*turnAddr, ":"), rtc.RelayMinPort, rtc.RelayMaxPort)
 		}
+	}
+
+	// Trợ lý AI: nhà cung cấp nào có key thì dùng (xem ai/config.go), Pollinations miễn phí làm dự phòng.
+	aiChat, aiImages := ai.FromEnv(os.Getenv)
+	aiSearch := ai.SearchFromEnv(os.Getenv)
+	if err := api.SetAI(ctx, aiChat, aiImages, aiSearch); err != nil {
+		log.Printf("AI tắt: %v", err)
+	} else if aiChat != nil || aiImages != nil {
+		var chatNames, imageNames []string
+		if aiChat != nil {
+			chatNames = aiChat.Names()
+		}
+		if aiImages != nil {
+			imageNames = aiImages.Names()
+		}
+		var searchNames []string
+		if aiSearch != nil {
+			searchNames = aiSearch.Names()
+		}
+		log.Printf("Trợ lý AI (@ai): chat %v, vẽ ảnh %v, tìm web %v", chatNames, imageNames, searchNames)
 	}
 
 	// nhắc việc tới giờ, bình chọn hết hạn

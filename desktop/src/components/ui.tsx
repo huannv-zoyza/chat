@@ -19,6 +19,25 @@ export function Avatar({ user, size = 36, online }: { user: PublicUser | undefin
 
   useEffect(() => setBroken(false), [user?.avatar]);
 
+  if (user?.username === "ai") {
+    // Trợ lý AI: ngôi sao lấp lánh trên nền chuyển màu
+    return (
+      <span className="avatar avatar-ai" style={{ width: size, height: size }} aria-hidden>
+        <svg viewBox="0 0 24 24" width={size * 0.62} height={size * 0.62}>
+          <path
+            d="M12 2.5c.6 4.7 2.4 6.6 7 7.3-4.6.7-6.4 2.6-7 7.3-.6-4.7-2.4-6.6-7-7.3 4.6-.7 6.4-2.6 7-7.3Z"
+            fill="currentColor"
+          />
+          <path
+            d="M18.5 14.5c.3 2 1 2.8 3 3.1-2 .3-2.7 1.1-3 3.1-.3-2-1-2.8-3-3.1 2-.3 2.7-1.1 3-3.1Z"
+            fill="currentColor"
+          />
+        </svg>
+        {online !== undefined && <span className="presence-dot is-online" />}
+      </span>
+    );
+  }
+
   return (
     <span className="avatar" style={{ width: size, height: size, fontSize: size * 0.38 }} aria-hidden>
       {src ? (
@@ -168,6 +187,12 @@ const paths: Record<string, ReactNode> = {
     </>
   ),
   poll: <path d="M5 20V10M12 20V4M19 20v-7M3 20h18" />,
+  sparkle: (
+    <>
+      <path d="M11 3c.5 4.2 2.2 5.9 6.4 6.4-4.2.5-5.9 2.2-6.4 6.4-.5-4.2-2.2-5.9-6.4-6.4C8.8 8.9 10.5 7.2 11 3Z" />
+      <path d="M18 15c.3 1.9 1 2.6 2.9 2.9-1.9.3-2.6 1-2.9 2.9-.3-1.9-1-2.6-2.9-2.9 1.9-.3 2.6-1 2.9-2.9Z" />
+    </>
+  ),
   game: (
     <>
       <path d="M7.5 7h9a5 5 0 0 1 4.9 6l-.8 3.6a2.4 2.4 0 0 1-4.1 1.1L14 15.5h-4l-2.5 2.2a2.4 2.4 0 0 1-4.1-1.1L2.6 13a5 5 0 0 1 4.9-6Z" />

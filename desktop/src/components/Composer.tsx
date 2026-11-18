@@ -21,6 +21,7 @@ import { EmojiPicker } from "./EmojiPicker";
 import { StickerPicker } from "./StickerPicker";
 import { CreatePollDialog } from "./Polls";
 import { CreateGameDialog } from "./Games";
+import { AIImageDialog } from "./AI";
 import { createPortal } from "react-dom";
 import { FileCard, formatSize, useObjectUrls } from "./MessageParts";
 import { Avatar, Icon } from "./ui";
@@ -38,7 +39,7 @@ const MENTION_QUERY_RE = /(?:^|[^\p{L}\p{N}_.@])@([\p{L}\p{N}_.]{0,32})$/u;
 const fold = (s: string) =>
   s.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
 
-type Suggestion = { kind: "all" } | { kind: "user"; user: PublicUser };
+type Suggestion = { kind: "all" } | { kind: "ai" } | { kind: "user"; user: PublicUser };
 
 export type ComposerHandle = { addFiles: (files: File[]) => void };
 
@@ -61,11 +62,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const [attachOpen, setAttachOpen] = useState(false);
   const [pollOpen, setPollOpen] = useState(false);
   const [gameOpen, setGameOpen] = useState(false);
+  const [drawOpen, setDrawOpen] = useState(false);
   const attachRef = useRef<HTMLDivElement>(null);
   // Bình chọn: chỉ ở dòng chính của kênh (tin nhắn riêng được mã hoá đầu cuối)
   const canPoll = !parentId && !isDM(channel);
   // Trò chơi: dòng chính; tin nhắn riêng chỉ có trò 2 người
   const canGame = !parentId;
+  // AI chỉ trong kênh (tin nhắn riêng mã hoá đầu cuối, máy chủ không đọc được)
+  const aiOn = !isDM(channel) && !!state.ai;
+  const canDraw = aiOn && !!state.ai?.image && !parentId;
   const hasMenu = canPoll || canGame;
   useEffect(() => {
     if (!attachOpen) return;
@@ -178,8 +183,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       .slice(0, 6)
       .map(({ u }) => ({ kind: "user", user: u }) as Suggestion);
     if ("all".startsWith(q)) scored.push({ kind: "all" });
+    if (aiOn && state.ai?.chat && ("ai".startsWith(q) || fold("tro ly").startsWith(q))) scored.unshift({ kind: "ai" });
     return scored;
-  }, [mention, state.members, state.users, state.me.id, channel.id]);
+  }, [mention, state.members, state.users, state.me.id, channel.id, aiOn, state.ai]);
 
   const updateMention = (value: string, caret: number) => {
     const m = value.slice(0, caret).match(MENTION_QUERY_RE);
@@ -201,7 +207,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
   const pickSuggestion = (s: Suggestion) => {
     if (!mention) return;
-    insertAtCaret(`@${s.kind === "all" ? "all" : s.user.username} `, mention.start);
+    insertAtCaret(`@${s.kind === "all" ? "all" : s.kind === "ai" ? "ai" : s.user.username} `, mention.start);
     setMention(null);
   };
 
@@ -287,7 +293,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         <ul className="mention-menu" role="listbox" aria-label="Nhắc tên">
           {suggestions.map((s, i) => (
             <li
-              key={s.kind === "all" ? "all" : s.user.id}
+              key={s.kind === "user" ? s.user.id : s.kind}
               role="option"
               aria-selected={i === active}
               className="mention-option"
@@ -297,7 +303,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               }}
               onMouseEnter={() => setActive(i)}
             >
-              {s.kind === "all" ? (
+              {s.kind === "ai" ? (
+                <>
+                  <Avatar
+                    user={{ id: 0, username: "ai", display_name: "Trợ lý AI", avatar: null, status_text: "" }}
+                    size={24}
+                  />
+                  <span className="mention-option-name">Trợ lý AI</span>
+                  <span className="mention-option-sub">
+                    Hỏi gì cũng được{state.ai?.image ? ", hoặc “vẽ …” để tạo ảnh" : ""}
+                  </span>
+                </>
+              ) : s.kind === "all" ? (
                 <>
                   <span className="mention-all-icon" aria-hidden>
                     @
@@ -322,6 +339,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           "Tạo" sẽ gửi nhầm form ô soạn). */}
       {pollOpen &&
         createPortal(<CreatePollDialog channelId={channel.id} onClose={() => setPollOpen(false)} />, document.body)}
+      {drawOpen &&
+        createPortal(
+          <AIImageDialog channelId={channel.id} canEdit={!!state.ai?.edit} onClose={() => setDrawOpen(false)} />,
+          document.body,
+        )}
       {gameOpen &&
         createPortal(
           <CreateGameDialog channelId={channel.id} dm={isDM(channel)} onClose={() => setGameOpen(false)} />,
@@ -397,6 +419,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                   >
                     <Icon name="poll" size={17} />
                     Bình chọn
+                  </button>
+                )}
+                {canDraw && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setAttachOpen(false);
+                      setDrawOpen(true);
+                    }}
+                  >
+                    <Icon name="sparkle" size={17} />
+                    Tạo ảnh AI
                   </button>
                 )}
                 {canGame && (

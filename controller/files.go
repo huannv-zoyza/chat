@@ -222,6 +222,7 @@ func (a *API) createAndBroadcast(ctx context.Context, me model.User, channelID i
 	if parentID != nil {
 		a.broadcastThread(ctx, channelID, *parentID)
 	}
+	a.maybeAI(msg, me)
 	return msg, nil
 }
 

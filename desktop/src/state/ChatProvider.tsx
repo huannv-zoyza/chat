@@ -390,7 +390,7 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       }),
 
       sock.on("ready", (ev) => {
-        dispatch({ type: "ready", me: ev.user, online: ev.online_user_ids });
+        dispatch({ type: "ready", me: ev.user, online: ev.online_user_ids, ai: ev.ai ?? null });
         stationStore.resubscribe();
         groups.setRooms(ev.group_calls ?? []);
         // bản web đang chạy cũ hơn bản máy chủ phục vụ: nhắc tải lại (app desktop có bản riêng)

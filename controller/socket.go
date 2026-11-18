@@ -101,7 +101,7 @@ func (a *API) serveSocket(w http.ResponseWriter, r *http.Request) {
 
 	a.hub.ToClient(client, mustJSON(readyEvent{
 		Type: "ready", User: user, OnlineUserIDs: a.hub.OnlineUserIDs(), UIBuild: a.uiBuild,
-		GroupCalls: a.groups.statesFor(channelIDs),
+		GroupCalls: a.groups.statesFor(channelIDs), AI: a.aiInfo(),
 	}))
 	if firstConn {
 		a.hub.ToAll(mustJSON(presenceEvent{Type: "presence", UserID: user.ID, Online: true}))

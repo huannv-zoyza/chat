@@ -36,6 +36,7 @@ type API struct {
 	calls          callRegistry
 	groups         groupRegistry
 	games          gameRegistry
+	ai             *aiService // nil: tắt trợ lý AI
 	iceServers     []ICEServer
 	uiBuild        string
 	turn           TURNProvider

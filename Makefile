@@ -7,7 +7,7 @@
 
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 
-.PHONY: all web server desktop run test icons clean giphy-key install-service install-tunnel route-dns deploy logs status start stop stop-tunnel disable enable
+.PHONY: all web server desktop run test icons clean giphy-key ai-key install-service install-tunnel route-dns deploy logs status start stop stop-tunnel disable enable
 
 all: server desktop
 
@@ -48,6 +48,36 @@ giphy-key:
 	@echo 'GIPHY_API_KEY=$(KEY)' >> $(ENV_FILE).tmp && mv $(ENV_FILE).tmp $(ENV_FILE) && chmod 600 $(ENV_FILE)
 	systemctl --user restart go-chat.service
 	@echo "Đã bật tìm GIF."
+
+# Trợ lý AI (@ai): không cần làm gì vẫn chạy được (Pollinations miễn phí). Có key thì tốt hơn:
+#   make ai-key PROVIDER=gemini KEY=...        chat, lấy key miễn phí: https://aistudio.google.com/apikey
+#   make ai-key PROVIDER=groq KEY=...          chat nhanh, miễn phí: https://console.groq.com/keys
+#   make ai-key PROVIDER=openrouter KEY=...    chat bằng model free: https://openrouter.ai/keys
+#   make ai-key PROVIDER=together KEY=...      vẽ ảnh FLUX miễn phí: https://api.together.ai/settings/api-keys
+#   make ai-key PROVIDER=cloudflare KEY=<api token> ACCOUNT=<account id>   vẽ ảnh, Workers AI
+#   make ai-key PROVIDER=pollinations KEY=...  model mạnh, ngữ cảnh dài, đọc ảnh, vẽ lại từ ảnh gốc: https://enter.pollinations.ai
+#   make ai-key PROVIDER=tavily KEY=...        tìm web tốt hơn (1000 lần/tháng miễn phí): https://app.tavily.com
+#   make ai-key PROVIDER=brave KEY=...         tìm web (2000 lần/tháng miễn phí): https://brave.com/search/api
+# Bên nào có key thì dùng trước, lỗi thì tự chuyển sang bên khác. Key lưu ở ENV_FILE như trên.
+AI_VAR_gemini := GEMINI_API_KEY
+AI_VAR_groq := GROQ_API_KEY
+AI_VAR_openrouter := OPENROUTER_API_KEY
+AI_VAR_together := TOGETHER_API_KEY
+AI_VAR_cloudflare := CF_API_TOKEN
+AI_VAR_pollinations := POLLINATIONS_API_KEY
+AI_VAR_tavily := TAVILY_API_KEY
+AI_VAR_brave := BRAVE_API_KEY
+ai-key:
+	@test -n "$(AI_VAR_$(PROVIDER))" -a -n "$(KEY)" || { echo "Dùng: make ai-key PROVIDER=gemini|groq|openrouter|together|cloudflare|pollinations|tavily|brave KEY=<key> [ACCOUNT=<cloudflare account id>]"; exit 1; }
+	@test "$(PROVIDER)" != cloudflare -o -n "$(ACCOUNT)" || { echo "Cloudflare cần thêm ACCOUNT=<account id>"; exit 1; }
+	@mkdir -p $(dir $(ENV_FILE))
+	@touch $(ENV_FILE) && chmod 600 $(ENV_FILE)
+	@grep -v -e '^$(AI_VAR_$(PROVIDER))=' $(if $(ACCOUNT),-e '^CF_ACCOUNT_ID=') $(ENV_FILE) > $(ENV_FILE).tmp || true
+	@echo '$(AI_VAR_$(PROVIDER))=$(KEY)' >> $(ENV_FILE).tmp
+	@$(if $(ACCOUNT),echo 'CF_ACCOUNT_ID=$(ACCOUNT)' >> $(ENV_FILE).tmp,true)
+	@mv $(ENV_FILE).tmp $(ENV_FILE) && chmod 600 $(ENV_FILE)
+	systemctl --user restart go-chat.service
+	@echo "Đã lưu key $(PROVIDER) cho Trợ lý AI."
 
 # Đưa chat ra internet qua Cloudflare Tunnel. Tunnel phải được tạo và route DNS trước:
 #   cloudflared tunnel create <tên-tunnel>

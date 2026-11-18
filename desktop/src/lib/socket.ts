@@ -1,5 +1,8 @@
 import type { GroupParticipant, GroupRoom } from "./groupcall";
 import type { StationMap, StFrame } from "./station";
+
+/** edit: vẽ lại được từ ảnh gốc. */
+export type AIInfo = { bot_id: number; chat: boolean; image: boolean; edit?: boolean };
 import type {
   Embed,
   GameView,
@@ -23,6 +26,8 @@ export type ServerEvent =
       /** Mã bản build giao diện máy chủ đang phục vụ. */
       ui_build?: string;
       group_calls?: GroupRoom[];
+      /** Trợ lý AI (không có: máy chủ tắt AI). */
+      ai?: AIInfo;
     }
   | { type: "groupcall.state"; channel_id: number; started_at?: string; participants?: GroupParticipant[] }
   | { type: "groupcall.started"; channel_id: number; by: PublicUser; video?: boolean }

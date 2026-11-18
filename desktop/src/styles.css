@@ -802,6 +802,9 @@ button {
   flex: 1;
   overflow-y: auto;
   padding: 0.5rem 0 1rem;
+  /* Tải tin cũ chèn lên đầu: MessageList tự bù scrollTop để giữ chỗ đang đọc.
+     Tắt scroll anchoring của trình duyệt, nếu không nó bù thêm lần nữa và đẩy màn hình xuống. */
+  overflow-anchor: none;
 }
 
 .messages-loading {

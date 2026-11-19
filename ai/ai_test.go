@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -500,5 +501,35 @@ func TestStreamTools(t *testing.T) {
 	// không có tools: bên NoTools vẫn dùng được như cũ
 	if _, _, err := NewChat(noTools).StreamTools(context.Background(), msgs, nil, func(string) {}); err == nil || !strings.Contains(err.Error(), "free") {
 		t.Fatalf("no tools -> free provider tried, got %v", err)
+	}
+}
+
+func TestDailyQuotaPausesProvider(t *testing.T) {
+	err := readError(&http.Response{StatusCode: 429, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(
+		`{"error":{"message":"Rate limit reached for model on tokens per day (TPD): Limit 200000. Please try again in 10m29.424s. Need more tokens?"}}`))})
+	if d := quotaWait(err); d != 10*time.Minute+29*time.Second {
+		t.Fatalf("quota wait: %v (%v)", d, err)
+	}
+	if quotaWait(&HTTPError{Status: 429, RetryAfter: 7 * time.Second}) != 0 {
+		t.Fatal("short waits are retried, not paused")
+	}
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(429)
+		fmt.Fprint(w, `{"error":{"message":"tokens per day. Please try again in 9m5s."}}`)
+	}))
+	defer srv.Close()
+	ok := fakeOpenAI(t, nil, []string{"chào"}, 200)
+	defer ok.Close()
+	c := NewChat(&Provider{Name: "big", BaseURL: srv.URL, Model: "x"}, &Provider{Name: "small", BaseURL: ok.URL, Model: "y"})
+	for i := 0; i < 2; i++ {
+		res, err := c.Stream(context.Background(), []Message{{Role: "user", Content: "hi"}}, func(string) {})
+		if err != nil || res.Provider != "small" {
+			t.Fatalf("round %d: %+v %v", i, res, err)
+		}
+	}
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("exhausted provider called %d times, want 1", n)
 	}
 }

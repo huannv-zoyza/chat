@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"regexp"
 	"sort"
@@ -140,8 +141,8 @@ type Provider struct {
 	mu     sync.Mutex
 	picked string
 	pickAt time.Time
-	// broke: lúc báo hết tiền gần nhất; trong creditPause sau đó thì bỏ qua bên này
-	broke time.Time
+	// pausedUntil: hết tiền / hết hạn mức ngày thì bỏ qua bên này tới lúc đó
+	pausedUntil time.Time
 }
 
 // creditPause: bên báo hết tiền thì tạm bỏ qua chừng này (đỡ tốn một lượt gọi chắc chắn lỗi).
@@ -150,12 +151,18 @@ const creditPause = 30 * time.Minute
 func (p *Provider) paused() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return !p.broke.IsZero() && time.Since(p.broke) < creditPause
+	return time.Now().Before(p.pausedUntil)
 }
 
 func (p *Provider) markBroke() {
+	p.pauseFor(creditPause)
+}
+
+func (p *Provider) pauseFor(d time.Duration) {
 	p.mu.Lock()
-	p.broke = time.Now()
+	if until := time.Now().Add(d); until.After(p.pausedUntil) {
+		p.pausedUntil = until
+	}
 	p.mu.Unlock()
 }
 
@@ -255,6 +262,7 @@ func (c *Chat) StreamTools(ctx context.Context, msgs []Message, tools []Tool, on
 	for i, p := range usable {
 		// ngữ cảnh quá lớn cho bên này (vẫn thử nếu là bên cuối cùng)
 		if p.MaxInput > 0 && need > p.MaxInput && i < len(usable)-1 {
+			errs = append(errs, fmt.Sprintf("%s/%s: ngữ cảnh %d token > %d", p.Name, p.Model, need, p.MaxInput))
 			continue
 		}
 		got := false
@@ -268,6 +276,9 @@ func (c *Chat) StreamTools(ctx context.Context, msgs []Message, tools []Tool, on
 			model, calls, err = c.streamOne(ctx, p, msgs, tools, emit)
 		}
 		if err == nil {
+			if len(errs) > 0 {
+				log.Printf("ai: bỏ qua %s", strings.Join(errs, "; "))
+			}
 			return Result{Provider: p.Name, Model: model}, calls, nil
 		}
 		if got || ctx.Err() != nil {
@@ -275,8 +286,13 @@ func (c *Chat) StreamTools(ctx context.Context, msgs []Message, tools []Tool, on
 		}
 		if OutOfCredit(err) {
 			p.markBroke()
+		} else if d := quotaWait(err); d > 0 {
+			p.pauseFor(d) // hết hạn mức ngày (Groq: "tokens per day"): khỏi gửi thử mỗi lần
 		}
-		errs = append(errs, p.Name+": "+err.Error())
+		errs = append(errs, p.Name+"/"+p.Model+": "+err.Error())
+	}
+	if len(errs) == 0 && len(usable) == 0 && len(c.Providers) > 0 {
+		return Result{}, nil, errors.New("các dịch vụ AI đều đang hết hạn mức, thử lại sau")
 	}
 	if len(errs) == 0 {
 		return Result{}, nil, errors.New("chưa cấu hình nhà cung cấp AI nào")
@@ -499,6 +515,11 @@ func readError(res *http.Response) error {
 	if len(e.Msg) > 300 {
 		e.Msg = e.Msg[:300]
 	}
+	if m := tryAgainIn.FindStringSubmatch(e.Msg); m != nil && m[1] != "" && e.RetryAfter == 0 {
+		if d, err := time.ParseDuration(m[1]); err == nil {
+			e.RetryAfter = d.Round(time.Second)
+		}
+	}
 	// "Retry after 10s" trong nội dung (Pollinations)
 	if m := retryInText.FindStringSubmatch(e.Msg); m != nil && e.RetryAfter == 0 {
 		if s, err := strconv.Atoi(m[1]); err == nil {
@@ -509,6 +530,9 @@ func readError(res *http.Response) error {
 }
 
 var retryInText = regexp.MustCompile(`(?i)retry after (\d+)\s*s`)
+
+// "Please try again in 10m29.424s" (Groq, khi hết hạn mức token/ngày)
+var tryAgainIn = regexp.MustCompile(`(?i)try again in ((?:\d+h)?(?:\d+m)?(?:[\d.]+s)?)`)
 
 // retryWait: lỗi có nên thử lại không, và đợi bao lâu (không quá limit).
 func retryWait(err error, limit time.Duration) (time.Duration, bool) {
@@ -527,6 +551,15 @@ func retryWait(err error, limit time.Duration) (time.Duration, bool) {
 		return 0, false
 	}
 	return d + 500*time.Millisecond, true
+}
+
+// quotaWait: bên này bảo đợi lâu (hơn 1 phút, tối đa 1 giờ) mới thử lại được.
+func quotaWait(err error) time.Duration {
+	var he *HTTPError
+	if !errors.As(err, &he) || he.Status != http.StatusTooManyRequests || he.RetryAfter <= time.Minute {
+		return 0
+	}
+	return min(he.RetryAfter, time.Hour)
 }
 
 // sleepCtx đợi d hoặc tới khi ctx bị huỷ.
@@ -635,7 +668,7 @@ func (c *Chat) Describe(ctx context.Context, prompt string, refs []Ref) (string,
 		if model == "" {
 			m, err := c.model(ctx, p)
 			if err != nil {
-				errs = append(errs, p.Name+": "+err.Error())
+				errs = append(errs, p.Name+"/"+p.Model+": "+err.Error())
 				continue
 			}
 			model = m
@@ -652,7 +685,7 @@ func (c *Chat) Describe(ctx context.Context, prompt string, refs []Ref) (string,
 		if ctx.Err() != nil {
 			return "", Result{}, ctx.Err()
 		}
-		errs = append(errs, p.Name+": "+err.Error())
+		errs = append(errs, p.Name+"/"+p.Model+": "+err.Error())
 	}
 	if len(errs) == 0 {
 		return "", Result{}, errors.New("không có model nào đọc được ảnh")

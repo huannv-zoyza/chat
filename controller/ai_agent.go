@@ -39,6 +39,7 @@ Phần trên có trí nhớ tóm tắt của kênh (nếu có) và các tin gầ
 - Tin có "[luồng: N trả lời]": read_thread. Tin ghim: pinned_messages.
 - Thông tin mới hoặc bên ngoài (tin tức, giá cả, thời tiết, tài liệu…): web_search, rồi open_url để đọc kỹ một trang. Người dùng đưa link: open_url.
 - Ảnh trong kênh: look_at_images. Nhờ vẽ / tạo / sửa ảnh: draw_image (ảnh tự gửi vào kênh, bạn chỉ cần nói ngắn gọn).
+- Nhờ tìm / gửi ảnh có sẵn trên mạng: search_images (nhờ gửi ảnh: send=true, ảnh tự gửi vào kênh; chỉ xin link: send=false rồi đưa link).
 - Nhờ nhắc việc: set_reminder (chỉ nhắc người đang hỏi). Nhờ tạo bình chọn: create_poll. Rủ chơi / mở game: start_game. Ghim tin: pin_message.
 Câu chào hỏi, nói chuyện phiếm, hay câu đã đủ thông tin ở trên: trả lời luôn, không gọi công cụ.
 Gọi được nhiều công cụ trong nhiều lượt. Đủ thông tin thì trả lời ngay. Trong câu trả lời không nhắc tên công cụ hay mã #id.
@@ -81,6 +82,12 @@ func (a *API) agentTools() []ai.Tool {
 		tools = append(tools,
 			ai.Tool{Name: "web_search", Description: "Search the web for current or external information (news, prices, weather, docs). Returns titles, links, snippets and some page text.",
 				Params: obj(map[string]any{"query": str("Concise search query in the best language for the topic.")}, "query")},
+			ai.Tool{Name: "search_images", Description: "Find existing pictures on the web like a person would: search the web, open the result pages and collect their photos. send=true downloads them and posts them in the channel as images (when the user asks to send/show pictures). send=false only returns image links (when the user asks for links).",
+				Params: obj(map[string]any{
+					"query": str("What the pictures should show; Vietnamese or English, whichever finds better pictures."),
+					"count": num("How many pictures (1-4, default 3)."),
+					"send":  map[string]any{"type": "boolean", "description": "true: post the pictures in the channel; false: only return links."},
+				}, "query", "send")},
 			ai.Tool{Name: "open_url", Description: "Open a web page and read its main text.",
 				Params: obj(map[string]any{"url": str("http(s) URL.")}, "url")})
 	}
@@ -130,7 +137,7 @@ type agentRun struct {
 	reply  func(string) (model.Message, error)
 	got    *aiGathered
 
-	draws, reminders, polls, games int
+	draws, reminders, polls, games, imageSends int
 }
 
 // runAgent: trả lời bằng agent, stream chữ qua live. ok=false: agent không chạy được (chưa có chữ nào),
@@ -249,6 +256,16 @@ func (r *agentRun) exec(ctx context.Context, c ai.ToolCall) string {
 		return r.pinned(ctx)
 	case "web_search":
 		return r.webSearch(ctx, args.str("query"))
+	case "search_images":
+		send := true
+		if _, ok := args["send"]; ok {
+			send = args.boolean("send")
+		}
+		n := int(args.num("count"))
+		if n == 0 {
+			n = 3
+		}
+		return r.searchImages(ctx, args.str("query"), n, send)
 	case "open_url":
 		return r.openURL(ctx, args.str("url"))
 	case "look_at_images":

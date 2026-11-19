@@ -79,6 +79,26 @@ export type MessageLinkInfo = {
 export type GameKind = "station" | "werewolf" | "spy" | "caro" | "rps";
 export type GamePlayer = { id: number; name: string };
 
+export type GameMemberStats = {
+  user_id: number;
+  username: string;
+  display_name: string;
+  avatar: string | null;
+  wins: number;
+  losses: number;
+  draws: number;
+  total_games: number;
+  win_rate: number;
+};
+
+export type GameLeaderboard = {
+  kind: string;
+  top_wins: GameMemberStats[];
+  top_losses: GameMemberStats[];
+  members: GameMemberStats[];
+  total_ended: number;
+};
+
 /** Ván chơi trong kênh, theo góc nhìn của mình (me: phần bí mật của riêng mình nếu mình đang chơi). */
 export type GameView<S = Record<string, unknown>, M = Record<string, unknown>> = {
   kind: GameKind;
@@ -350,6 +370,8 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     ) => request<Message>("POST", `/api/channels/${channelId}/polls`, b),
     createGame: (channelId: number, b: { kind: GameKind; options?: Record<string, unknown>; client_id: string }) =>
       request<Message>("POST", `/api/channels/${channelId}/games`, b),
+    gameLeaderboard: (kind?: string) =>
+      request<GameLeaderboard>("GET", `/api/games/leaderboard${kind ? `?kind=${encodeURIComponent(kind)}` : ""}`),
     gameAction: (messageId: number, action: string, data?: unknown) =>
       request<GameView>("POST", `/api/messages/${messageId}/game`, data === undefined ? { action } : { action, data }),
     vote: (messageId: number, optionIds: number[]) =>

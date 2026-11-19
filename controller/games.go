@@ -241,6 +241,16 @@ func (a *API) gameAction(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, json.RawMessage(viewJSON(s.g, me.ID)))
 }
 
+func (a *API) gameLeaderboard(w http.ResponseWriter, r *http.Request) {
+	kind := r.URL.Query().Get("kind")
+	lb, err := a.store.GetGameLeaderboard(r.Context(), kind)
+	if err != nil {
+		internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, lb)
+}
+
 func writeGameError(w http.ResponseWriter, r *http.Request, err error) {
 	var ge game.Error
 	if errors.As(err, &ge) {

@@ -107,6 +107,47 @@ func TestGamesCaro(t *testing.T) {
 	}
 }
 
+func TestGameLeaderboard(t *testing.T) {
+	e := newEnv(t)
+	alice := e.register("alice", "Alice")
+	bob := e.register("bob", "Bob")
+	var ch channel
+	e.do("POST", "/api/channels", alice.Token, map[string]any{"name": "game-room"}, &ch)
+	e.do("POST", "/api/channels/"+itoa(ch.ID)+"/join", bob.Token, nil, nil)
+
+	var m gameMsg
+	e.do("POST", "/api/channels/"+itoa(ch.ID)+"/games", alice.Token, map[string]any{"kind": "caro"}, &m)
+
+	var g gameResp
+	e.do("POST", "/api/messages/"+itoa(m.ID)+"/game", bob.Token, map[string]any{"action": "join"}, &g)
+
+	e.do("POST", "/api/messages/"+itoa(m.ID)+"/game", alice.Token, map[string]any{"action": "resign"}, nil)
+
+	var lb struct {
+		Kind      string `json:"kind"`
+		TopWins   []any  `json:"top_wins"`
+		TopLosses []any  `json:"top_losses"`
+		Members   []struct {
+			UserID     int64   `json:"user_id"`
+			Wins       int     `json:"wins"`
+			Losses     int     `json:"losses"`
+			TotalGames int     `json:"total_games"`
+			WinRate    float64 `json:"win_rate"`
+		} `json:"members"`
+		TotalEnded int `json:"total_ended"`
+	}
+	code := e.do("GET", "/api/games/leaderboard?kind=caro", alice.Token, nil, &lb)
+	if code != 200 {
+		t.Fatalf("leaderboard status: %d", code)
+	}
+	if lb.TotalEnded != 1 {
+		t.Fatalf("total ended want 1, got %d", lb.TotalEnded)
+	}
+	if len(lb.Members) != 2 {
+		t.Fatalf("members count want 2, got %d", len(lb.Members))
+	}
+}
+
 func TestGamesSecretsStayPrivate(t *testing.T) {
 	e := newEnv(t)
 	names := []string{"anh", "binh", "chi", "dung", "emm"}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ApiError, type GameKind, type GameView, type Message, type PublicUser } from "../lib/api";
+import { ApiError, type GameKind, type GameLeaderboard, type GameView, type Message, type PublicUser } from "../lib/api";
 import {
   GAME_INFO,
   ROLE_INFO,
@@ -860,6 +860,7 @@ function Caro({ ctx }: { ctx: Ctx }) {
   const [dragging, setDragging] = useState(false);
   const [hover, setHover] = useState<{ r: number; c: number } | null>(null);
   const initializedRef = useRef(false);
+  const [lbOpen, setLbOpen] = useState(false);
 
   const centerAt = useCallback((row: number, col: number, cs = cellSize) => {
     const c = containerRef.current;
@@ -1194,16 +1195,22 @@ function Caro({ ctx }: { ctx: Ctx }) {
         </div>
         <span className="caro-pan-hint">🖱️ Kéo để di chuyển</span>
       </div>
-      {game.status === "playing" && ctx.isPlayer && (
-        <div className="game-actions">
+      <div className="game-actions">
+        {game.status === "playing" && (
           <span className="game-hint">
             {myMove ? "Tới lượt bạn." : `Chờ ${ctx.nameOf(s.turn ?? 0)} đánh…`} Nước thứ {s.moves + 1}.
           </span>
+        )}
+        <button type="button" className="link-btn" onClick={() => setLbOpen(true)}>
+          🏆 Bảng xếp hạng
+        </button>
+        {game.status === "playing" && ctx.isPlayer && (
           <button type="button" className="link-btn game-cancel" disabled={busy} onClick={() => act("resign")}>
             Chịu thua
           </button>
-        </div>
-      )}
+        )}
+      </div>
+      {lbOpen && <GameLeaderboardDialog initialKind="caro" onClose={() => setLbOpen(false)} />}
     </div>
   );
 }
@@ -1305,6 +1312,7 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
   const setOpt = (k: keyof typeof st, v: number | boolean) => setSt((o) => ({ ...o, [k]: v }));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [leaderboardOpen, setLeaderboardOpen] = useState(false);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -1485,6 +1493,14 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
 
         <FormError>{error}</FormError>
         <div className="dialog-actions">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => setLeaderboardOpen(true)}
+            style={{ marginRight: "auto" }}
+          >
+            🏆 Bảng xếp hạng
+          </button>
           <button type="button" className="btn" onClick={onClose} disabled={busy}>
             Huỷ
           </button>
@@ -1493,6 +1509,226 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
           </button>
         </div>
       </form>
+      {leaderboardOpen && <GameLeaderboardDialog initialKind={kind} onClose={() => setLeaderboardOpen(false)} />}
+    </Dialog>
+  );
+}
+
+/* ---------- Bảng xếp hạng trò chơi ---------- */
+
+export function GameLeaderboardDialog({
+  initialKind = "caro",
+  onClose,
+}: {
+  initialKind?: string;
+  onClose: () => void;
+}) {
+  const { api } = useChat();
+  const [kind, setKind] = useState<string>(initialKind);
+  const [data, setData] = useState<GameLeaderboard | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api
+      ?.gameLeaderboard(kind)
+      .then((res) => {
+        if (!cancelled) {
+          setData(res);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Không tải được bảng xếp hạng.");
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, kind]);
+
+  const tabs: { id: string; label: string }[] = [
+    { id: "caro", label: "Cờ caro" },
+    { id: "all", label: "Tất cả game" },
+    { id: "rps", label: "Oẳn tù tì" },
+    { id: "werewolf", label: "Ma Sói" },
+    { id: "spy", label: "Gián điệp" },
+    { id: "station", label: "Trạm vũ trụ" },
+  ];
+
+  return (
+    <Dialog title="🏆 Bảng xếp hạng trò chơi" onClose={onClose} wide>
+      <div className="lb-container">
+        <div className="lb-tabs" role="tablist">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={`lb-tab${kind === t.id ? " is-active" : ""}`}
+              onClick={() => setKind(t.id)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {loading ? (
+          <div className="lb-loading">Đang tải bảng xếp hạng…</div>
+        ) : error ? (
+          <div className="lb-error">{error}</div>
+        ) : !data || data.total_ended === 0 ? (
+          <div className="lb-empty">
+            <p>Chưa có ván chơi nào hoàn thành cho mục này.</p>
+            <small>Hãy rủ bạn bè vào phòng cùng chơi để vinh danh trên bảng xếp hạng nhé!</small>
+          </div>
+        ) : (
+          <div className="lb-body">
+            {/* Top 10 Thắng & Top 10 Thua */}
+            <div className="lb-top-grid">
+              {/* Top 10 Thắng */}
+              <div className="lb-top-card lb-top-wins">
+                <div className="lb-card-header">
+                  <h3>🥇 Top 10 Số Bàn Thắng</h3>
+                  <span>{data.top_wins.length} thành viên</span>
+                </div>
+                <div className="lb-top-list">
+                  {data.top_wins.length === 0 ? (
+                    <p className="lb-subtle">Chưa có ai thắng trận nào.</p>
+                  ) : (
+                    data.top_wins.map((m, idx) => (
+                      <div key={m.user_id} className={`lb-item rank-${idx + 1}`}>
+                        <span className="lb-rank">
+                          {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : `#${idx + 1}`}
+                        </span>
+                        <Avatar
+                          user={
+                            {
+                              id: m.user_id,
+                              username: m.username,
+                              display_name: m.display_name,
+                              avatar: m.avatar,
+                            } as PublicUser
+                          }
+                          size={28}
+                        />
+                        <div className="lb-user-info">
+                          <span className="lb-name">{m.display_name || m.username}</span>
+                          <span className="lb-sub">Tỉ lệ thắng: {m.win_rate}%</span>
+                        </div>
+                        <div className="lb-stat-badge win-badge">
+                          <b>{m.wins}</b> thắng
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Top 10 Thua */}
+              <div className="lb-top-card lb-top-losses">
+                <div className="lb-card-header">
+                  <h3>💀 Top 10 Số Bàn Thua</h3>
+                  <span>{data.top_losses.length} thành viên</span>
+                </div>
+                <div className="lb-top-list">
+                  {data.top_losses.length === 0 ? (
+                    <p className="lb-subtle">Chưa có ai thua trận nào.</p>
+                  ) : (
+                    data.top_losses.map((m, idx) => (
+                      <div key={m.user_id} className={`lb-item rank-${idx + 1}`}>
+                        <span className="lb-rank">#{idx + 1}</span>
+                        <Avatar
+                          user={
+                            {
+                              id: m.user_id,
+                              username: m.username,
+                              display_name: m.display_name,
+                              avatar: m.avatar,
+                            } as PublicUser
+                          }
+                          size={28}
+                        />
+                        <div className="lb-user-info">
+                          <span className="lb-name">{m.display_name || m.username}</span>
+                          <span className="lb-sub">Tổng: {m.total_games} ván</span>
+                        </div>
+                        <div className="lb-stat-badge loss-badge">
+                          <b>{m.losses}</b> thua
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Bảng xếp hạng chi tiết tất cả thành viên */}
+            <div className="lb-table-wrap">
+              <div className="lb-card-header">
+                <h3>📋 Bảng Xếp Hạng Chi Tiết ({data.members.length} người chơi)</h3>
+                <span>Tổng cộng {data.total_ended} ván đã hoàn thành</span>
+              </div>
+              <div className="lb-table-scroll">
+                <table className="lb-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: "3.5rem" }}>Hạng</th>
+                      <th>Thành viên</th>
+                      <th style={{ textAlign: "center" }}>Tổng ván</th>
+                      <th style={{ textAlign: "center" }}>Thắng</th>
+                      <th style={{ textAlign: "center" }}>Thua</th>
+                      <th style={{ textAlign: "center" }}>Hoà</th>
+                      <th style={{ textAlign: "right" }}>Tỉ lệ thắng</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.members.map((m, idx) => (
+                      <tr key={m.user_id}>
+                        <td className="lb-td-rank">
+                          {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : idx + 1}
+                        </td>
+                        <td className="lb-td-user">
+                          <div className="lb-td-user-inner">
+                            <Avatar
+                              user={
+                                {
+                                  id: m.user_id,
+                                  username: m.username,
+                                  display_name: m.display_name,
+                                  avatar: m.avatar,
+                                } as PublicUser
+                              }
+                              size={24}
+                            />
+                            <span className="lb-td-name">{m.display_name || m.username}</span>
+                            {m.username && <span className="lb-td-handle">@{m.username}</span>}
+                          </div>
+                        </td>
+                        <td style={{ textAlign: "center" }}>
+                          <b>{m.total_games}</b>
+                        </td>
+                        <td style={{ textAlign: "center", color: "var(--u1)", fontWeight: 700 }}>
+                          {m.wins}
+                        </td>
+                        <td style={{ textAlign: "center", color: "var(--u4)", fontWeight: 700 }}>
+                          {m.losses}
+                        </td>
+                        <td style={{ textAlign: "center", color: "var(--text-soft)" }}>{m.draws}</td>
+                        <td style={{ textAlign: "right", fontWeight: 700 }}>{m.win_rate}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </Dialog>
   );
 }

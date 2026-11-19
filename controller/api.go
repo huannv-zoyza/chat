@@ -98,6 +98,7 @@ func (a *API) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("GET /api/search", a.requireAuth(a.search))
 	mux.HandleFunc("POST /api/messages/{id}/votes", a.requireAuth(a.vote))
 	mux.HandleFunc("POST /api/channels/{id}/games", a.requireAuth(a.createGame))
+	mux.HandleFunc("GET /api/games/leaderboard", a.requireAuth(a.gameLeaderboard))
 	mux.HandleFunc("POST /api/messages/{id}/game", a.requireAuth(a.gameAction))
 	mux.HandleFunc("POST /api/messages/{id}/poll/close", a.requireAuth(a.closePoll))
 	mux.HandleFunc("POST /api/messages/{id}/poll/options", a.requireAuth(a.addPollOption))

@@ -145,44 +145,49 @@ func (a *API) createGame(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	title := game.Title(req.Kind)
-	if title == "" {
-		writeError(w, http.StatusBadRequest, "Không có trò chơi này.")
-		return
-	}
-	if ch.IsDM() && req.Kind != "caro" && req.Kind != "rps" {
-		writeError(w, http.StatusBadRequest, "Trò này cần nhiều người, hãy mở trong kênh.")
-		return
-	}
-	me := currentUser(r)
-	now := time.Now()
-	g, err := game.New(req.Kind, asPlayer(me), req.Options, now)
+	m, err := a.startGame(r.Context(), ch, currentUser(r), req.Kind, req.Options, req.ClientID)
 	if err != nil {
 		writeGameError(w, r, err)
 		return
 	}
+	writeJSON(w, http.StatusCreated, m)
+}
+
+// startGame mở phòng chơi kind trong kênh, host là chủ phòng (cũng là người gửi tin chứa ván).
+// Lỗi người dùng trả về dạng game.Error. Dùng cho cả nút mở game lẫn Trợ lý AI.
+func (a *API) startGame(ctx context.Context, ch model.Channel, host model.User, kind string, opts json.RawMessage, clientID string) (model.Message, error) {
+	title := game.Title(kind)
+	if title == "" {
+		return model.Message{}, game.Error("Không có trò chơi này.")
+	}
+	if ch.IsDM() && kind != "caro" && kind != "rps" {
+		return model.Message{}, game.Error("Trò này cần nhiều người, hãy mở trong kênh.")
+	}
+	now := time.Now()
+	g, err := game.New(kind, asPlayer(host), opts, now)
+	if err != nil {
+		return model.Message{}, err
+	}
 	state, err := g.Marshal()
 	if err != nil {
-		internalError(w, r, err)
-		return
+		return model.Message{}, err
 	}
-	m, err := a.store.CreateGame(r.Context(), ch.ID, me.ID, model.Embed{Type: "game", ID: req.Kind, Title: title}, string(g.Status()), state)
+	m, err := a.store.CreateGame(ctx, ch.ID, host.ID, model.Embed{Type: "game", ID: kind, Title: title}, string(g.Status()), state)
 	if err != nil {
-		internalError(w, r, err)
-		return
+		return model.Message{}, err
 	}
 	s := a.games.put(&gameSession{messageID: m.ID, channelID: ch.ID, g: g})
-	_, _, _ = a.store.MarkRead(r.Context(), ch.ID, me.ID, m.ID)
-	if len(req.ClientID) > 64 {
-		req.ClientID = req.ClientID[:64]
+	_, _, _ = a.store.MarkRead(ctx, ch.ID, host.ID, m.ID)
+	if len(clientID) > 64 {
+		clientID = clientID[:64]
 	}
 	s.mu.Lock()
 	m.Game = viewJSON(g, 0)
-	a.hub.ToChannel(ch.ID, mustJSON(messageNewEvent{Type: "message.new", Message: m, ClientID: req.ClientID}), nil)
-	m.Game = viewJSON(g, me.ID)
+	a.hub.ToChannel(ch.ID, mustJSON(messageNewEvent{Type: "message.new", Message: m, ClientID: clientID}), nil)
+	m.Game = viewJSON(g, host.ID)
 	s.mu.Unlock()
-	log.Printf("game: %s mở %s ở kênh %d", me.Username, req.Kind, ch.ID)
-	writeJSON(w, http.StatusCreated, m)
+	log.Printf("game: %s mở %s ở kênh %d", host.Username, kind, ch.ID)
+	return m, nil
 }
 
 /* ---------- POST /api/messages/{id}/game ---------- */

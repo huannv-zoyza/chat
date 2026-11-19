@@ -179,6 +179,7 @@ func (a *API) aiContext(ctx context.Context, ch model.Channel, q model.Message, 
 	var got aiGathered
 	qImages, qFiles := a.questionAttachments(ctx, q)
 	var plan aiPlan
+	mem := a.loadMemory(ctx, ch.ID)
 	recent := 40
 	if agent {
 		recent = aiAgentRecent
@@ -210,7 +211,9 @@ func (a *API) aiContext(ctx context.Context, ch model.Channel, q model.Message, 
 			history, dropped = mergeByID(history, list), d
 		}
 	} else if q.ParentID == nil {
-		if list, _, err := a.store.ListMessages(ctx, ch.ID, q.ID, recent); err == nil {
+		if mem.UptoID > 0 {
+			history = a.recentWithMemory(ctx, ch, q.ID, mem.UptoID) // mọi tin sau phần đã nhớ
+		} else if list, _, err := a.store.ListMessages(ctx, ch.ID, q.ID, recent); err == nil {
 			history = list
 		}
 	}
@@ -322,7 +325,8 @@ func (a *API) aiContext(ctx context.Context, ch model.Channel, q model.Message, 
 - Dùng kết quả web thì ghi nguồn bằng link Markdown, ví dụ [tên trang](url). Không bịa thông tin; không chắc thì nói rõ.
 - QUAN TRỌNG với giá cả, tỷ giá, tỷ số, số liệu, ngày giờ sự kiện: chỉ nêu con số xuất hiện NGUYÊN VĂN trong phần "Kết quả tìm web" và ghi nguồn ngay cạnh. Tuyệt đối không dùng số nhớ từ trước (thường đã cũ). Nếu kết quả web không có số liệu, nói thẳng là chưa đọc được số liệu (trang có thể tải bằng JavaScript) và đưa link để người hỏi tự xem.
 - Mô tả ảnh do một model khác viết; nói về ảnh thì dựa vào đó.
-- Bây giờ là %s. Tính thứ / ngày cẩn thận theo mốc này.`, where, now.Format("15:04 Monday 02/01/2006"))
+- Bây giờ là %s. Tính thứ / ngày cẩn thận theo mốc này.`, where, now.Format("15:04")+" "+vnDate(now))
+	sb.WriteString(memorySection(mem))
 	if len(lines) > 0 {
 		head := fmt.Sprintf("\n\n## Tin nhắn trong %s", where)
 		if !got.Since.IsZero() {
@@ -424,7 +428,7 @@ func transcript(msgs []model.Message, botID int64, captions map[string]string, o
 		if l == "" {
 			continue
 		}
-		if d := m.CreatedAt.Local().Format("Monday 02/01/2006"); d != day {
+		if d := vnDate(m.CreatedAt.Local()); d != day {
 			day = d
 			out = append(out, "--- "+d+" ---")
 		}

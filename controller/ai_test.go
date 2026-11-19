@@ -30,6 +30,7 @@ type fakeAI struct {
 	described  int
 	toolRounds int
 	toolNames  []string
+	compacts   []string
 	srv        *httptest.Server
 }
 
@@ -49,6 +50,11 @@ func (f *fakeAI) toolsFor(ask string) [][2]string {
 		return [][2]string{{"create_poll", `{"question":"Trưa ăn gì?","options":["Phở","Bún chả"]}`}}
 	case strings.Contains(ask, "minh hoạ"):
 		return [][2]string{{"draw_image", `{"prompt":"a cat astronaut, watercolor","orientation":"portrait"}`}}
+	case strings.Contains(ask, "chơi"):
+		return [][2]string{{"start_game", `{"game":"werewolf"}`}}
+	case strings.Contains(ask, "ghim"):
+		id := ask[strings.LastIndex(ask, "#")+1:]
+		return [][2]string{{"pin_message", `{"message_id":` + id + `}`}}
 	case strings.Contains(ask, "luồng"):
 		id := ask[strings.LastIndex(ask, "#")+1:]
 		return [][2]string{{"read_thread", `{"message_id":"#` + id + `"}`}, {"no_such_tool", `{}`}}
@@ -118,6 +124,13 @@ func newFakeAI(t *testing.T) *fakeAI {
 			} else {
 				stream(`{"history_hours": 0, "search_chat": "", "web_search": "", "look_at_images": false}`)
 			}
+			return
+		}
+		if strings.Contains(sys, "trí nhớ dài hạn") { // gộp tin cũ vào trí nhớ của kênh
+			f.mu.Lock()
+			f.compacts = append(f.compacts, ask)
+			f.mu.Unlock()
+			stream("**Đã chốt**: ", fmt.Sprintf("đi ăn lẩu (lần gộp %d)", len(f.compacts)))
 			return
 		}
 		if strings.HasPrefix(sys, "Mô tả bức ảnh") { // model đọc ảnh (chỉ có 1 tin user kèm ảnh)
@@ -362,12 +375,15 @@ func TestAISummaryReadsWholeRange(t *testing.T) {
 	for i := 1; i <= 80; i++ {
 		wa.send(map[string]any{"type": "message.send", "channel_id": ch.ID, "content": fmt.Sprintf("tin số %d", i), "client_id": fmt.Sprint("m", i)})
 	}
+	// tin qua websocket lưu bất đồng bộ: đợi tin cuối rồi mới gửi ảnh, để ảnh mới hơn mọi tin chữ
+	nextMsg(t, wa, "message.new", func(m wsMsg) bool { return m.Content == "tin số 80" })
 	code, img := e.upload(ch.ID, alice.Token, "ảnh team building", "img", upFile{"team.png", pngBytes(8, 8)})
 	if code != 201 {
 		t.Fatal(code)
 	}
 	wa.send(map[string]any{"type": "message.send", "channel_id": ch.ID, "content": "trả lời trong luồng nè", "client_id": "th", "parent_id": int64(img["id"].(float64))})
-	time.Sleep(300 * time.Millisecond)
+	// đợi tin cuối được lưu (tin gửi qua websocket xử lý song song): câu hỏi phải đến sau tất cả
+	nextMsg(t, wa, "message.new", func(m wsMsg) bool { return m.Content == "trả lời trong luồng nè" })
 
 	for round := 0; round < 2; round++ {
 		wa.send(map[string]any{"type": "message.send", "channel_id": ch.ID, "content": "@ai tóm tắt 1 ngày qua", "client_id": fmt.Sprint("q", round)})
@@ -378,7 +394,7 @@ func TestAISummaryReadsWholeRange(t *testing.T) {
 	sys := f.systems[len(f.systems)-1]
 	for _, want := range []string{"tin số 1\n", "tin số 80", "↳ ", "trả lời trong luồng nè", "[ảnh team.png: Một hình chữ nhật đỏ nhỏ"} {
 		if !strings.Contains(sys, want) {
-			t.Fatalf("summary context missing %q:\n%s", want, sys)
+			t.Fatalf("summary context missing %q (described=%d tools=%v systems=%d):\n%s", want, f.described, f.toolNames, len(f.systems), sys[len(sys)-min(len(sys), 600):])
 		}
 	}
 	if f.described != 1 {
@@ -452,6 +468,33 @@ func TestAIAgentTools(t *testing.T) {
 	if got := ask("minh hoạ con mèo"); !strings.Contains(got, "Đã vẽ xong") {
 		t.Fatalf("draw_image: %q", got)
 	}
+	// mở game: phòng Ma Sói do người hỏi làm chủ phòng
+	if got := ask("rủ mọi người chơi ma sói"); !strings.Contains(got, "Đã mở phòng Ma Sói") || !strings.Contains(got, "Alice là chủ phòng") {
+		t.Fatalf("start_game: %q", got)
+	}
+	var page struct {
+		Messages []map[string]any `json:"messages"`
+	}
+	e.do("GET", "/api/channels/"+itoa(ch.ID)+"/messages", alice.Token, nil, &page)
+	var gameMsg map[string]any
+	for _, m := range page.Messages {
+		if em, _ := m["embed"].(map[string]any); em != nil && em["type"] == "game" {
+			gameMsg = m
+		}
+	}
+	if gameMsg == nil || int64(gameMsg["user_id"].(float64)) != alice.User.ID || gameMsg["game"] == nil {
+		t.Fatalf("game message: %v", gameMsg)
+	}
+	// ghim tin thay người hỏi
+	if got := ask(fmt.Sprintf("ghim tin #%d", root.ID)); !strings.Contains(got, "Đã ghim tin") {
+		t.Fatalf("pin_message: %q", got)
+	}
+	var pins []map[string]any
+	e.do("GET", "/api/channels/"+itoa(ch.ID)+"/pins", bob.Token, nil, &pins)
+	if len(pins) != 1 || int64(pins[0]["id"].(float64)) != root.ID {
+		t.Fatalf("pins: %v", pins)
+	}
+
 	f.mu.Lock()
 	imgReq := f.imagePro[len(f.imagePro)-1]
 	tools := strings.Join(f.toolNames, ",")
@@ -459,7 +502,7 @@ func TestAIAgentTools(t *testing.T) {
 	if !strings.HasPrefix(imgReq, "a cat astronaut, watercolor?") || !strings.Contains(imgReq, "height=1216") {
 		t.Fatalf("image request: %s", imgReq)
 	}
-	if tools != "list_members,search_messages,read_thread,no_such_tool,set_reminder,create_poll,draw_image" {
+	if tools != "list_members,search_messages,read_thread,no_such_tool,set_reminder,create_poll,draw_image,start_game,pin_message" {
 		t.Fatalf("tools called: %s", tools)
 	}
 }
@@ -483,5 +526,82 @@ func TestAIAgentFallsBackWithoutTools(t *testing.T) {
 	defer f.mu.Unlock()
 	if f.plans != 1 || f.toolRounds != 0 {
 		t.Fatalf("plans=%d toolRounds=%d", f.plans, f.toolRounds)
+	}
+}
+
+// Trí nhớ theo kênh: kênh dài ra thì tin cũ được gộp vào bản tóm tắt; câu hỏi sau đọc trí nhớ
+// + mọi tin sau phần đã nhớ.
+func TestAIChannelMemory(t *testing.T) {
+	e := newEnv(t)
+	f := newFakeAI(t)
+	chat := ai.NewChat(&ai.Provider{Name: "fake", BaseURL: f.srv.URL, Model: "fake-1"})
+	if err := e.api.SetAI(context.Background(), chat, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	alice := e.register("alice", "Alice")
+	var ch channel
+	e.do("POST", "/api/channels", alice.Token, map[string]any{"name": "nho"}, &ch)
+	wa := e.dial(alice.Token)
+	botID := int64(wa.waitFor("ready")["ai"].(map[string]any)["bot_id"].(float64))
+	ask := func(q string) {
+		t.Helper()
+		wa.send(map[string]any{"type": "message.send", "channel_id": ch.ID, "content": "@ai " + q, "client_id": q})
+		nextMsg(t, wa, "message.updated", func(m wsMsg) bool { return m.UserID == botID && strings.Contains(m.Content, "fake-1") })
+	}
+	send := func(from, to int) {
+		for i := from; i <= to; i++ {
+			wa.send(map[string]any{"type": "message.send", "channel_id": ch.ID, "content": fmt.Sprintf("chuyện số %d", i), "client_id": fmt.Sprint("m", i)})
+		}
+		last := fmt.Sprintf("chuyện số %d", to)
+		nextMsg(t, wa, "message.new", func(m wsMsg) bool { return m.Content == last })
+	}
+	waitCompacts := func(n int) {
+		t.Helper()
+		for i := 0; i < 100; i++ {
+			f.mu.Lock()
+			got := len(f.compacts)
+			f.mu.Unlock()
+			if got >= n {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		t.Fatalf("expected %d compactions", n)
+	}
+
+	// kênh ngắn: chưa gộp
+	send(1, 10)
+	ask("chào")
+	time.Sleep(300 * time.Millisecond)
+	f.mu.Lock()
+	if len(f.compacts) != 0 {
+		t.Fatalf("short channel compacted: %d", len(f.compacts))
+	}
+	f.mu.Unlock()
+
+	// dài ra: gộp các tin cũ ngoài 25 tin gần nhất
+	send(11, 60)
+	ask("hỏi lần hai")
+	waitCompacts(1)
+	f.mu.Lock()
+	first := f.compacts[0]
+	f.mu.Unlock()
+	if !strings.Contains(first, "(chưa có)") || !strings.Contains(first, "chuyện số 1\n") || strings.Contains(first, "chuyện số 60") {
+		t.Fatalf("compaction input:\n%s", first)
+	}
+
+	// câu hỏi sau: có trí nhớ + đọc nguyên văn mọi tin sau phần đã nhớ
+	time.Sleep(200 * time.Millisecond)
+	ask("hỏi lần ba")
+	f.mu.Lock()
+	sys := f.systems[len(f.systems)-1]
+	f.mu.Unlock()
+	for _, want := range []string{"## Trí nhớ của kênh", "**Đã chốt**: đi ăn lẩu (lần gộp 1)", "chuyện số 60"} {
+		if !strings.Contains(sys, want) {
+			t.Fatalf("context missing %q:\n%s", want, sys)
+		}
+	}
+	if strings.Contains(sys, "chuyện số 2\n") {
+		t.Fatalf("remembered messages should not be repeated verbatim:\n%s", sys)
 	}
 }

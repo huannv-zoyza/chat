@@ -46,3 +46,40 @@ func (s *Store) SaveCaption(ctx context.Context, storageKey, caption string) err
 		ON CONFLICT(storage_key) DO UPDATE SET caption = excluded.caption, created_at = CURRENT_TIMESTAMP`, storageKey, caption)
 	return err
 }
+
+// AIMemory: trí nhớ của AI cho kênh (tóm tắt các tin có id <= UptoID). Chưa có thì trả giá trị rỗng.
+type AIMemory struct {
+	Summary   string
+	UptoID    int64
+	UpdatedAt time.Time
+}
+
+func (s *Store) AIMemory(ctx context.Context, channelID int64) (AIMemory, error) {
+	var m AIMemory
+	var updated string
+	err := s.db.QueryRowContext(ctx, `SELECT summary, upto_id, updated_at FROM ai_memory WHERE channel_id = ?`, channelID).
+		Scan(&m.Summary, &m.UptoID, &updated)
+	if errors.Is(err, sql.ErrNoRows) {
+		return AIMemory{}, nil
+	}
+	if err != nil {
+		return AIMemory{}, err
+	}
+	m.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", updated)
+	return m, nil
+}
+
+func (s *Store) SaveAIMemory(ctx context.Context, channelID int64, summary string, uptoID int64) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO ai_memory (channel_id, summary, upto_id, updated_at) VALUES (?, ?, ?, ?)
+		ON CONFLICT(channel_id) DO UPDATE SET summary = excluded.summary, upto_id = excluded.upto_id, updated_at = excluded.updated_at`,
+		channelID, summary, uptoID, DBTime(time.Now()))
+	return err
+}
+
+// MessagesRange: tin của kênh (cả trả lời trong luồng) có afterID < id < beforeID và gửi từ since,
+// cũ -> mới, lấy tối đa limit tin cũ nhất.
+func (s *Store) MessagesRange(ctx context.Context, channelID, afterID, beforeID int64, since time.Time, limit int) ([]model.Message, error) {
+	return s.queryMessages(ctx, `SELECT `+messageColumns+messageFrom+`
+		WHERE msg.channel_id = ? AND msg.id > ? AND msg.id < ? AND msg.created_at >= ? AND msg.deleted_at IS NULL
+		ORDER BY msg.id ASC LIMIT ?`, channelID, afterID, beforeID, DBTime(since), limit)
+}

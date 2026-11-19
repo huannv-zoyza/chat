@@ -227,6 +227,7 @@ func (a *API) answerAI(q model.Message, asker model.User) {
 		log.Printf("ai: trả lời %s ở kênh %d bằng %s/%s (%s, agent=%v)", asker.Username, ch.ID, res.Provider, res.Model, got, ok)
 	}
 	a.finishAI(ctx, m, clip(answer))
+	go a.compactMemory(ch) // kênh dài ra: gộp tin cũ vào trí nhớ (chạy nền, không bắt người hỏi đợi)
 }
 
 // liveText: chữ đang stream vào tin của bot, đẩy cho cả kênh mỗi aiFlushEvery.

@@ -7,6 +7,7 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -16,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"chat/ai"
+	"chat/game"
 	"chat/model"
 )
 
@@ -31,13 +33,14 @@ const (
 const aiAgentGuide = `
 
 ## Công cụ
-Phần trên chỉ có vài tin gần nhất. Cần thêm thông tin thì TỰ GỌI CÔNG CỤ, đừng đoán và đừng hỏi lại người dùng điều bạn tự tra được:
+Phần trên có trí nhớ tóm tắt của kênh (nếu có) và các tin gần nhất. Cần chi tiết hơn thì TỰ GỌI CÔNG CỤ, đừng đoán và đừng hỏi lại người dùng điều bạn tự tra được:
 - Chuyện đã bàn / tóm tắt / ai nói gì, làm gì: read_messages (theo số giờ, lọc được theo người) hoặc search_messages (theo từ khoá).
 - Hỏi về một người ("X là ai", "X đâu rồi"): list_members, rồi read_messages lọc theo người đó nếu cần.
 - Tin có "[luồng: N trả lời]": read_thread. Tin ghim: pinned_messages.
 - Thông tin mới hoặc bên ngoài (tin tức, giá cả, thời tiết, tài liệu…): web_search, rồi open_url để đọc kỹ một trang. Người dùng đưa link: open_url.
 - Ảnh trong kênh: look_at_images. Nhờ vẽ / tạo / sửa ảnh: draw_image (ảnh tự gửi vào kênh, bạn chỉ cần nói ngắn gọn).
-- Nhờ nhắc việc: set_reminder (chỉ nhắc người đang hỏi). Nhờ tạo bình chọn: create_poll.
+- Nhờ nhắc việc: set_reminder (chỉ nhắc người đang hỏi). Nhờ tạo bình chọn: create_poll. Rủ chơi / mở game: start_game. Ghim tin: pin_message.
+Câu chào hỏi, nói chuyện phiếm, hay câu đã đủ thông tin ở trên: trả lời luôn, không gọi công cụ.
 Gọi được nhiều công cụ trong nhiều lượt. Đủ thông tin thì trả lời ngay. Trong câu trả lời không nhắc tên công cụ hay mã #id.
 Kết quả web_search / open_url được tính là "Kết quả tìm web".`
 
@@ -89,6 +92,14 @@ func (a *API) agentTools() []ai.Tool {
 			}, "prompt")})
 	}
 	tools = append(tools,
+		ai.Tool{Name: "start_game", Description: "Open a game room in this channel with the person asking as host; others join by clicking it. " +
+			"station = Trạm Vũ Trụ (impostor game like Among Us), werewolf = Ma Sói, spy = Ai là gián điệp (spy word game), caro = Cờ caro (gomoku, 2 players), rps = Oẳn tù tì (rock paper scissors).",
+			Params: obj(map[string]any{"game": map[string]any{"type": "string", "enum": []string{"station", "werewolf", "spy", "caro", "rps"}}}, "game")},
+		ai.Tool{Name: "pin_message", Description: "Pin (or unpin) a message of this channel on behalf of the person asking.",
+			Params: obj(map[string]any{
+				"message_id": num("The message id (the number after #)."),
+				"pinned":     map[string]any{"type": "boolean", "description": "false to unpin. Default true."},
+			}, "message_id")},
 		ai.Tool{Name: "set_reminder", Description: "Remind the person asking (only them) about this conversation at a given local time.",
 			Params: obj(map[string]any{
 				"at":   str("Local time as YYYY-MM-DD HH:MM."),
@@ -114,7 +125,7 @@ type agentRun struct {
 	reply  func(string) (model.Message, error)
 	got    *aiGathered
 
-	draws, reminders, polls int
+	draws, reminders, polls, games int
 }
 
 // runAgent: trả lời bằng agent, stream chữ qua live. ok=false: agent không chạy được (chưa có chữ nào),
@@ -239,6 +250,14 @@ func (r *agentRun) exec(ctx context.Context, c ai.ToolCall) string {
 		return r.lookAtImages(ctx, int64(args.num("message_id")))
 	case "draw_image":
 		return r.draw(ctx, args.str("prompt"), args.str("orientation"), args.boolean("use_attached_images"))
+	case "start_game":
+		return r.startGame(ctx, args.str("game"))
+	case "pin_message":
+		pin := true
+		if _, ok := args["pinned"]; ok {
+			pin = args.boolean("pinned")
+		}
+		return r.pin(ctx, int64(args.num("message_id")), pin)
 	case "set_reminder":
 		return r.setReminder(ctx, args.str("at"), args.str("note"))
 	case "create_poll":
@@ -518,6 +537,46 @@ func (r *agentRun) draw(ctx context.Context, prompt, orientation string, useRefs
 		return "Chưa vẽ được: " + why + " (người dùng đã thấy thông báo này)."
 	}
 	return "Đã vẽ xong và gửi ảnh vào kênh."
+}
+
+func (r *agentRun) startGame(ctx context.Context, kind string) string {
+	if r.games >= 1 {
+		return "Đã mở một phòng chơi cho câu hỏi này rồi."
+	}
+	m, err := r.a.startGame(ctx, r.ch, r.asker, kind, nil, "")
+	if err != nil {
+		var ge game.Error
+		if errors.As(err, &ge) {
+			return "Lỗi: " + ge.Error()
+		}
+		return "Lỗi khi mở phòng chơi."
+	}
+	r.games++
+	return fmt.Sprintf("Đã mở phòng %s (tin #%d) trong kênh, %s là chủ phòng. Mọi người bấm vào ván trong kênh để tham gia, chủ phòng bấm bắt đầu khi đủ người.",
+		game.Title(kind), m.ID, displayNameOf(r.asker))
+}
+
+func (r *agentRun) pin(ctx context.Context, id int64, pinned bool) string {
+	m, err := r.a.store.GetMessage(ctx, id)
+	if err != nil || m.ChannelID != r.ch.ID || m.DeletedAt != nil {
+		return "Không tìm thấy tin #" + strconv.FormatInt(id, 10) + " trong kênh này."
+	}
+	by := int64(0)
+	if pinned {
+		by = r.asker.ID
+	}
+	if err := r.a.store.SetPinned(ctx, m.ID, by); err != nil {
+		return "Lỗi khi ghim tin."
+	}
+	if updated, err := r.a.store.GetMessage(ctx, m.ID); err == nil {
+		list := []model.Message{updated}
+		r.a.fillGames(ctx, 0, list) // tin ghim là một ván chơi: giữ nguyên bàn chơi khi cập nhật
+		r.a.hub.ToChannel(r.ch.ID, mustJSON(messageUpdatedEvent{Type: "message.updated", Message: list[0]}), nil)
+	}
+	if pinned {
+		return fmt.Sprintf("Đã ghim tin #%d (thay %s).", m.ID, displayNameOf(r.asker))
+	}
+	return fmt.Sprintf("Đã bỏ ghim tin #%d.", m.ID)
 }
 
 func (r *agentRun) setReminder(ctx context.Context, at, note string) string {

@@ -142,9 +142,22 @@ Cập nhật trí nhớ hiện có bằng các tin nhắn mới. Viết tiếng 
 **Việc còn dở**: việc gì, ai làm, hạn.
 **Thông tin hữu ích**: link, môi trường, quy ước, số liệu hay được hỏi lại.
 Giữ thông tin còn giá trị từ trí nhớ cũ, thông tin mới mâu thuẫn thì theo cái mới, bỏ việc đã xong lâu và chuyện phiếm.
+Thành viên: tin nhắn ghi theo tên hiển thị, còn @username là cách nhắc tên; ghi mỗi người một dòng dạng "Tên hiển thị (@username)"
+theo danh sách thành viên bên dưới, không tách một người thành hai.
+Nhóm hay đùa: BỎ QUA chuyện đùa, trêu chọc, tình huống giả vờ để thử AI, chuyện riêng tư / cảm xúc cá nhân, và mọi biệt danh,
+nhãn, lời chê bai mà người này gán cho người khác (không bao giờ ghi lại). Không ghi lời Trợ lý AI tự nói về bản thân hay model.
 Ngày giờ: mỗi ngày tin nhắn có dòng "--- thứ, ngày ---". Đổi mốc tương đối ("mai", "thứ 6 này", "tuần sau") ra ngày cụ thể
 tính từ ngày của chính tin đó, ghi dạng "thứ Sáu 20/11". Hôm nay là %s.
-Chỉ ghi điều có trong tin nhắn, không bịa. Chỉ trả về nội dung trí nhớ.`, ch.Name, aiMemoryChars, vnDate(time.Now()))
+Không dùng bảng, không chép dòng "--- ngày ---". Chỉ ghi điều có trong tin nhắn, không bịa. Chỉ trả về nội dung trí nhớ.`, ch.Name, aiMemoryChars, vnDate(time.Now()))
+	if members, err := a.store.ListMembers(ctx, ch.ID); err == nil && len(members) > 0 {
+		names := make([]string, 0, len(members))
+		for _, u := range members {
+			if u.ID != a.ai.bot.ID {
+				names = append(names, fmt.Sprintf("%s (@%s)", publicName(&u), u.Username))
+			}
+		}
+		sys += "\n\nThành viên kênh: " + strings.Join(names, ", ")
+	}
 	user := "## Trí nhớ hiện có:\n"
 	if old == "" {
 		user += "(chưa có)"

@@ -43,12 +43,17 @@ export type SpyState = {
 };
 export type SpyMe = { word?: string; out?: boolean };
 
+export type CaroCoord = { r: number; c: number };
+
 export type CaroState = {
   size: number;
   board?: string;
+  pieces?: Record<string, "x" | "o">;
   turn?: number;
-  last: number;
+  last?: number;
+  last_coord?: CaroCoord;
   win?: number[];
+  win_coords?: CaroCoord[];
   moves: number;
   free_style: boolean;
 };

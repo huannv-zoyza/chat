@@ -137,6 +137,21 @@ func TestCaroRandomFirstPlayer(t *testing.T) {
 	}
 }
 
+func TestCaroBeyondBoundaries(t *testing.T) {
+	g, _ := newGame(t, "caro", 2, "")
+	x, o := g.Players()[0], g.Players()[1]
+	coordsX := [][2]int{{13, 13}, {14, 14}, {15, 15}, {16, 16}, {17, 17}}
+	coordsO := [][2]int{{-1, -1}, {-2, -2}, {-3, -3}, {-4, -4}}
+	for i := range 4 {
+		act(t, g, x, "move", map[string]int{"r": coordsX[i][0], "c": coordsX[i][1]})
+		act(t, g, o, "move", map[string]int{"r": coordsO[i][0], "c": coordsO[i][1]})
+	}
+	act(t, g, x, "move", map[string]int{"r": coordsX[4][0], "c": coordsX[4][1]})
+	if g.Status() != Ended || len(g.Winners()) != 1 || g.Winners()[0] != x.ID {
+		t.Fatalf("X should win across boundary, status=%s winners=%v", g.Status(), g.Winners())
+	}
+}
+
 func TestRPS(t *testing.T) {
 	g, ps := newGame(t, "rps", 2, `{"best_of":3}`)
 	a, b := ps[0], ps[1]

@@ -32,6 +32,7 @@ import { ChatSocket } from "../lib/socket";
 import { ServerUrlContext } from "../components/ui";
 import { displayName, newClientId } from "../lib/format";
 import { showNotification } from "../lib/notify";
+import { playMentionSound, playMessageSound } from "../lib/sound";
 import { channelLabel, dmPeerId, isDM } from "../lib/channel";
 import { e2ee } from "../lib/e2ee";
 import { load, save } from "../lib/storage";
@@ -244,6 +245,21 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
     });
   }, []);
 
+  const playSoundForMessage = useCallback((m: Message) => {
+    const s = stateRef.current;
+    if (m.user_id === s.me.id) return;
+    const channel = s.channels[m.channel_id];
+    const direct = isDM(channel);
+    const mentioned = !!m.mentions?.includes(s.me.id);
+    const repliedToMe = !!m.parent_id && m.parent_user_id === s.me.id;
+
+    if (direct || mentioned || repliedToMe) {
+      playMentionSound();
+    } else {
+      playMessageSound();
+    }
+  }, []);
+
   const loadThread = useCallback(
     async (parentId: number) => {
       try {
@@ -425,6 +441,7 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
           sock.markRead(ev.message.channel_id, ev.message.id);
         }
         notifyIfMentioned(ev.message, viewing);
+        playSoundForMessage(ev.message);
       }),
 
       sock.on("message.updated", (ev) => dispatch({ type: "message.updated", message: ev.message })),
@@ -526,7 +543,7 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       sock.close();
       socketRef.current = null;
     };
-  }, [serverUrl, token, onUnauthorized, refreshChannels, loadLatest, isViewing, notifyIfMentioned, loadThread]);
+  }, [serverUrl, token, onUnauthorized, refreshChannels, loadLatest, isViewing, notifyIfMentioned, playSoundForMessage, loadThread]);
 
   // Số tin chưa đọc trên tiêu đề tab (bản web), ví dụ "(3) Go Chat".
   useEffect(() => {

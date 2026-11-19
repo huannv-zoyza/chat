@@ -9,6 +9,14 @@ import {
   setNotifyPref,
   showNotification,
 } from "../lib/notify";
+import {
+  getSoundMentionsPref,
+  setSoundMentionsPref,
+  getSoundMessagesPref,
+  setSoundMessagesPref,
+  playMentionSound,
+  playMessageSound,
+} from "../lib/sound";
 import { useChat } from "../state/ChatProvider";
 import { AVATAR_ACCEPT, prepareAvatar } from "../lib/image";
 import { Avatar, Dialog, FormError, Icon } from "./ui";
@@ -313,6 +321,8 @@ function AppTab() {
   const [theme, setTheme] = useState<ThemePref>(getTheme);
   const [notify, setNotify] = useState(getNotifyPref);
   const [notifyMsg, setNotifyMsg] = useState<string | null>(null);
+  const [soundMentions, setSoundMentions] = useState(getSoundMentionsPref);
+  const [soundMessages, setSoundMessages] = useState(getSoundMessagesPref);
   const supported = notificationsSupported();
 
   const toggleNotify = async (on: boolean) => {
@@ -348,17 +358,17 @@ function AppTab() {
       </fieldset>
 
       <fieldset className="field">
-        <legend>Thông báo</legend>
+        <legend>Thông báo & Âm thanh</legend>
         {supported ? (
           <>
             <label className="check">
               <input type="checkbox" checked={notify} onChange={(e) => void toggleNotify(e.target.checked)} />
-              Báo khi có người nhắc tên tôi (@tên hoặc @all)
+              Hiện thông báo hệ thống khi có người nhắc tên tôi (@tên hoặc @all)
             </label>
             <div>
               <button
                 type="button"
-                className="btn"
+                className="btn btn-sm"
                 disabled={!notify}
                 onClick={() => void showNotification("Go Chat", "Thông báo đang hoạt động.")}
               >
@@ -373,6 +383,49 @@ function AppTab() {
             tô sáng và đếm riêng ở danh sách kênh; muốn có thông báo hệ thống, hãy dùng app desktop.
           </small>
         )}
+
+        <label className="check" style={{ marginTop: "0.5rem" }}>
+          <input
+            type="checkbox"
+            checked={soundMentions}
+            onChange={(e) => {
+              setSoundMentions(e.target.checked);
+              setSoundMentionsPref(e.target.checked);
+            }}
+          />
+          Phát âm thanh khi được nhắc tên & tin nhắn riêng (@mention, DM)
+        </label>
+
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={soundMessages}
+            onChange={(e) => {
+              setSoundMessages(e.target.checked);
+              setSoundMessagesPref(e.target.checked);
+            }}
+          />
+          Phát âm thanh khi có tin nhắn mới
+        </label>
+
+        <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.25rem", flexWrap: "wrap" }}>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => playMentionSound(true)}
+            title="Nghe thử âm thanh khi có người nhắc tên hoặc gửi tin nhắn riêng"
+          >
+            🔔 Nghe thử chuông nhắc tên
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => playMessageSound(true)}
+            title="Nghe thử âm thanh khi có tin nhắn mới"
+          >
+            💬 Nghe thử tiếng tin nhắn
+          </button>
+        </div>
       </fieldset>
 
       <dl className="info-list">

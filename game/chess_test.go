@@ -242,3 +242,19 @@ func TestChess_View(t *testing.T) {
 		t.Fatalf("expected board length 64, got %d", len(pub.Board))
 	}
 }
+
+func TestChess_FirstOption(t *testing.T) {
+	// Host first
+	g, ps := newGame(t, "chess", 2, `{"first":"host"}`)
+	host := ps[0]
+	if g.Players()[0].ID != host.ID {
+		t.Fatalf("expected host %d to be White (Players[0]), got %d", host.ID, g.Players()[0].ID)
+	}
+
+	// Guest first
+	g2, ps2 := newGame(t, "chess", 2, `{"first":"guest"}`)
+	guest := ps2[1]
+	if g2.Players()[0].ID != guest.ID {
+		t.Fatalf("expected guest %d to be White (Players[0]), got %d", guest.ID, g2.Players()[0].ID)
+	}
+}

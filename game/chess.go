@@ -27,6 +27,8 @@ const (
 type chessOptions struct {
 	// Thời gian cho mỗi nước đi (phút, mặc định 3).
 	TurnMinutes int `json:"turn_minutes"`
+	// Người đi trước (cầm Trắng): "random" (mặc định), "host", "guest".
+	First string `json:"first"`
 }
 
 type chessMove struct {
@@ -59,6 +61,9 @@ func (c *chess) normalize() {
 	if c.Opts.TurnMinutes <= 0 {
 		c.Opts.TurnMinutes = 3
 	}
+	if c.Opts.First != "host" && c.Opts.First != "guest" {
+		c.Opts.First = "random"
+	}
 }
 
 // Bàn cờ ban đầu:
@@ -89,8 +94,18 @@ func initialBoard() [64]byte {
 func (c *chess) start(now time.Time) error {
 	c.normalize()
 	c.Board = initialBoard()
-	// Ngẫu nhiên 50/50 ai là Trắng (Players[0] đi trước), ai là Đen (Players[1])
-	shuffle(c.Players)
+	// Xác định ai là Trắng (Players[0] đi trước), ai là Đen (Players[1])
+	if c.Opts.First == "host" {
+		if c.Players[0].ID != c.HostID {
+			c.Players[0], c.Players[1] = c.Players[1], c.Players[0]
+		}
+	} else if c.Opts.First == "guest" {
+		if c.Players[0].ID == c.HostID {
+			c.Players[0], c.Players[1] = c.Players[1], c.Players[0]
+		}
+	} else {
+		shuffle(c.Players)
+	}
 	c.TurnColor = 'w'
 	c.Castling = castlingWhiteKingside | castlingWhiteQueenside | castlingBlackKingside | castlingBlackQueenside
 	c.EnPassant = -1
@@ -905,6 +920,7 @@ func (c *chess) tick(now time.Time) bool {
 }
 
 type chessPublic struct {
+	Opts          chessOptions        `json:"opts"`
 	FEN           string              `json:"fen"`
 	Board         string              `json:"board"`
 	TurnColor     string              `json:"turn_color"`
@@ -923,6 +939,7 @@ type chessPublic struct {
 func (c *chess) view(viewer int64) (any, any) {
 	c.normalize()
 	pub := chessPublic{
+		Opts:          c.Opts,
 		FEN:           c.fen(),
 		Board:         string(c.Board[:]),
 		TurnColor:     string(c.TurnColor),

@@ -77,6 +77,7 @@ export type ChessMove = {
 };
 
 export type ChessState = {
+  opts?: { turn_minutes: number; first: string };
   fen: string;
   board: string;
   turn_color: "w" | "b";

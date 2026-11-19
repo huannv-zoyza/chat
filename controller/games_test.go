@@ -274,6 +274,9 @@ func TestGamesChess(t *testing.T) {
 	alice := e.register("alice", "Alice")
 	bob := e.register("bob", "Bob")
 
+	wsAlice := e.dial(alice.Token)
+	wsAlice.waitFor("ready")
+
 	// Test DM creation for chess
 	var dm channel
 	if code := e.do("POST", "/api/dms", alice.Token, map[string]any{"user_id": bob.User.ID}, &dm); code != 201 {
@@ -281,7 +284,13 @@ func TestGamesChess(t *testing.T) {
 	}
 
 	var m gameMsg
-	if code := e.do("POST", "/api/channels/"+itoa(dm.ID)+"/games", alice.Token, map[string]any{"kind": "chess"}, &m); code != 201 {
+	if code := e.do("POST", "/api/channels/"+itoa(dm.ID)+"/games", alice.Token, map[string]any{
+		"kind": "chess",
+		"options": map[string]any{
+			"turn_minutes": 3,
+			"first":        "host",
+		},
+	}, &m); code != 201 {
 		t.Fatalf("create chess in dm: %d", code)
 	}
 
@@ -294,27 +303,31 @@ func TestGamesChess(t *testing.T) {
 		t.Fatalf("expected playing status, got %s", g.Status)
 	}
 
-	// State contains FEN, Board, TurnPlayerID
+	// Alice (host) specified first: "host", so Alice must be White
 	turnPID := int64(g.State["turn_player_id"].(float64))
-	var whiteTok, blackTok string
-	if turnPID == alice.User.ID {
-		whiteTok = alice.Token
-		blackTok = bob.Token
-	} else {
-		whiteTok = bob.Token
-		blackTok = alice.Token
+	if turnPID != alice.User.ID {
+		t.Fatalf("expected alice (host) to have first turn, got %d", turnPID)
 	}
 
-	// White moves e2 -> e4
-	if code := e.do("POST", "/api/messages/"+itoa(m.ID)+"/game", whiteTok, map[string]any{
+	// WebSocket receives game.updated on join
+	ev := wsAlice.waitFor("game.updated")
+	if ev["message_id"].(float64) != float64(m.ID) {
+		t.Fatalf("ws game.updated mismatch: %v", ev)
+	}
+
+	// White (Alice) moves e2 -> e4
+	if code := e.do("POST", "/api/messages/"+itoa(m.ID)+"/game", alice.Token, map[string]any{
 		"action": "move",
 		"data":   map[string]string{"from": "e2", "to": "e4"},
 	}, &g); code != 200 {
 		t.Fatalf("white move e2-e4: %d", code)
 	}
 
-	// Black resigns
-	if code := e.do("POST", "/api/messages/"+itoa(m.ID)+"/game", blackTok, map[string]any{
+	// WebSocket receives game.updated on move
+	wsAlice.waitFor("game.updated")
+
+	// Black (Bob) resigns
+	if code := e.do("POST", "/api/messages/"+itoa(m.ID)+"/game", bob.Token, map[string]any{
 		"action": "resign",
 	}, &g); code != 200 {
 		t.Fatalf("black resign: %d", code)
@@ -322,5 +335,8 @@ func TestGamesChess(t *testing.T) {
 	if g.Status != "ended" {
 		t.Fatalf("expected ended status, got %s", g.Status)
 	}
+
+	// WebSocket receives game.updated on end
+	wsAlice.waitFor("game.updated")
 }
 

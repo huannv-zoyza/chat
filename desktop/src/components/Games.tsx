@@ -335,9 +335,17 @@ function Lobby({ ctx }: { ctx: Ctx }) {
       </p>
     );
   } else if (game.kind === "chess") {
+    const s = game.state as ChessState;
+    const mins = s?.opts?.turn_minutes || 3;
+    const firstStr =
+      s?.opts?.first === "host"
+        ? "chủ phòng cầm Trắng"
+        : s?.opts?.first === "guest"
+        ? "khách cầm Trắng"
+        : "ngẫu nhiên màu quân";
     setup = (
       <p className="game-setup">
-        Bàn cờ 8×8 tiêu chuẩn · Luật quốc tế FIDE
+        Bàn cờ 8×8 tiêu chuẩn · Luật FIDE · {mins} phút/nước · {firstStr}
       </p>
     );
   } else {
@@ -1428,6 +1436,28 @@ function Chess({ ctx }: { ctx: Ctx }) {
                     isSelected ? " is-selected" : ""
                   }${isLastMove ? " is-last-move" : ""}${isInCheck ? " is-in-check" : ""}`}
                   onClick={() => onSquareClick(sq, pieceChar)}
+                  onDragOver={(e) => {
+                    if (isTarget) {
+                      e.preventDefault();
+                    }
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const from = e.dataTransfer.getData("text/plain");
+                    if (from && isTarget) {
+                      const selIdx = (from.charCodeAt(1) - 49) * 8 + (from.charCodeAt(0) - 97);
+                      const movingPiece = s.board ? s.board[selIdx] : "";
+                      const isPromo =
+                        (movingPiece === "P" && sq[1] === "8") ||
+                        (movingPiece === "p" && sq[1] === "1");
+                      if (isPromo) {
+                        setPendingPromotion({ from, to: sq });
+                      } else {
+                        act("move", { from, to: sq });
+                        setSelectedSquare(null);
+                      }
+                    }
+                  }}
                   aria-label={`${sq}: ${pieceChar !== "." ? pieceChar : "ô trống"}`}
                 >
                   {/* Toạ độ hàng/cột */}
@@ -1435,7 +1465,25 @@ function Chess({ ctx }: { ctx: Ctx }) {
                   {rIdx === 7 && <span className="chess-coord-file">{String.fromCharCode(97 + f)}</span>}
 
                   {/* Quân cờ */}
-                  {pieceChar !== "." && <ChessPiece piece={pieceChar} />}
+                  {pieceChar !== "." && (
+                    <span
+                      draggable={isMyTurn && isMyPiece(pieceChar)}
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("text/plain", sq);
+                        setSelectedSquare(sq);
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: "100%",
+                        height: "100%",
+                        cursor: isMyTurn && isMyPiece(pieceChar) ? "grab" : "default",
+                      }}
+                    >
+                      <ChessPiece piece={pieceChar} />
+                    </span>
+                  )}
 
                   {/* Chấm gợi ý nước đi */}
                   {isTarget && (
@@ -1671,6 +1719,7 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
   const [spies, setSpies] = useState(0);
   const [blockRule, setBlockRule] = useState(true);
   const [chessMinutes, setChessMinutes] = useState(3);
+  const [chessFirst, setChessFirst] = useState<"random" | "host" | "guest">("random");
   const [bestOf, setBestOf] = useState(3);
   const [st, setSt] = useState({
     traitors: 0,
@@ -1695,7 +1744,7 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
       werewolf: { day_seconds: day, night_seconds: night, hide_roles: hideRoles },
       spy: { spies },
       caro: { free_style: !blockRule },
-      chess: { turn_minutes: chessMinutes },
+      chess: { turn_minutes: chessMinutes, first: chessFirst },
       rps: { best_of: bestOf },
     };
     try {
@@ -1854,15 +1903,25 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
           </label>
         )}
         {kind === "chess" && (
-          <label className="field">
-            <span>Thời gian mỗi nước đi</span>
-            <select value={chessMinutes} onChange={(e) => setChessMinutes(Number(e.target.value))}>
-              <option value={1}>1 phút (Chớp - Blitz)</option>
-              <option value={3}>3 phút (Tiêu chuẩn)</option>
-              <option value={5}>5 phút (Nhanh - Rapid)</option>
-              <option value={10}>10 phút (Dài)</option>
-            </select>
-          </label>
+          <>
+            <label className="field">
+              <span>Thời gian mỗi nước đi</span>
+              <select value={chessMinutes} onChange={(e) => setChessMinutes(Number(e.target.value))}>
+                <option value={1}>1 phút (Chớp - Blitz)</option>
+                <option value={3}>3 phút (Tiêu chuẩn)</option>
+                <option value={5}>5 phút (Nhanh - Rapid)</option>
+                <option value={10}>10 phút (Dài)</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Cầm quân Trắng (đi trước)</span>
+              <select value={chessFirst} onChange={(e) => setChessFirst(e.target.value as any)}>
+                <option value="random">Ngẫu nhiên (50/50)</option>
+                <option value="host">Chủ phòng cầm Trắng</option>
+                <option value="guest">Khách cầm Trắng</option>
+              </select>
+            </label>
+          </>
         )}
         {kind === "rps" && (
           <label className="field">
@@ -1938,6 +1997,7 @@ export function GameLeaderboardDialog({
 
   const tabs: { id: string; label: string }[] = [
     { id: "caro", label: "Cờ caro" },
+    { id: "chess", label: "Cờ vua" },
     { id: "all", label: "Tất cả game" },
     { id: "rps", label: "Oẳn tù tì" },
     { id: "werewolf", label: "Ma Sói" },

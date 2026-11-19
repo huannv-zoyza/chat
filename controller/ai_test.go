@@ -21,14 +21,39 @@ import (
 
 // fakeAI: dịch vụ chat dạng OpenAI + dịch vụ ảnh kiểu Pollinations, ghi lại yêu cầu nhận được.
 type fakeAI struct {
-	mu        sync.Mutex
-	systems   []string
-	asks      []string
-	imagePro  []string
-	edits     []string
-	plans     int
-	described int
-	srv       *httptest.Server
+	mu         sync.Mutex
+	systems    []string
+	asks       []string
+	imagePro   []string
+	edits      []string
+	plans      int
+	described  int
+	toolRounds int
+	toolNames  []string
+	srv        *httptest.Server
+}
+
+// toolsFor: model giả gọi công cụ nào cho câu hỏi này ({tên, tham số JSON}).
+func (f *fakeAI) toolsFor(ask string) [][2]string {
+	switch {
+	case strings.Contains(ask, "tóm tắt"):
+		return [][2]string{{"read_messages", `{"hours":24}`}, {"look_at_images", `{}`}}
+	case strings.Contains(ask, "là ai"):
+		return [][2]string{{"list_members", `{"query":"nguyen"}`}}
+	case strings.Contains(ask, "ai nói"):
+		return [][2]string{{"search_messages", `{"query":"phở","from_user":"bob"}`}}
+	case strings.Contains(ask, "nhắc"):
+		at := time.Now().Add(26 * time.Hour).Format("2006-01-02 15:04")
+		return [][2]string{{"set_reminder", `{"at":"` + at + `","note":"gửi báo cáo"}`}}
+	case strings.Contains(ask, "bình chọn"):
+		return [][2]string{{"create_poll", `{"question":"Trưa ăn gì?","options":["Phở","Bún chả"]}`}}
+	case strings.Contains(ask, "minh hoạ"):
+		return [][2]string{{"draw_image", `{"prompt":"a cat astronaut, watercolor","orientation":"portrait"}`}}
+	case strings.Contains(ask, "luồng"):
+		id := ask[strings.LastIndex(ask, "#")+1:]
+		return [][2]string{{"read_thread", `{"message_id":"#` + id + `"}`}, {"no_such_tool", `{}`}}
+	}
+	return nil
 }
 
 func newFakeAI(t *testing.T) *fakeAI {
@@ -62,10 +87,20 @@ func newFakeAI(t *testing.T) *fakeAI {
 			return
 		}
 		var req struct {
-			Messages []ai.Message `json:"messages"`
+			Messages []ai.Message     `json:"messages"`
+			Tools    []map[string]any `json:"tools"`
 		}
 		json.NewDecoder(r.Body).Decode(&req)
 		sys, ask := req.Messages[0].Content, req.Messages[len(req.Messages)-1].Content
+		// agent: ask là tin user cuối; ngữ cảnh gồm cả kết quả công cụ
+		var all []string
+		for _, m := range req.Messages {
+			if m.Role == "user" {
+				ask = m.Content
+			}
+			all = append(all, m.Content)
+		}
+		last := req.Messages[len(req.Messages)-1]
 		stream := func(parts ...string) {
 			w.Header().Set("Content-Type", "text/event-stream")
 			for _, s := range parts {
@@ -92,11 +127,34 @@ func newFakeAI(t *testing.T) *fakeAI {
 			stream("Một hình chữ nhật đỏ nhỏ trên nền trong suốt")
 			return
 		}
+		// có công cụ và chưa gọi lần nào: gọi công cụ theo từ khoá trong câu hỏi
+		if len(req.Tools) > 0 && last.Role == "user" {
+			if calls := f.toolsFor(ask); len(calls) > 0 {
+				f.mu.Lock()
+				f.toolRounds++
+				for _, c := range calls {
+					f.toolNames = append(f.toolNames, c[0])
+				}
+				f.mu.Unlock()
+				w.Header().Set("Content-Type", "text/event-stream")
+				for i, c := range calls {
+					b, _ := json.Marshal(map[string]any{"model": "fake-1", "choices": []any{map[string]any{"delta": map[string]any{
+						"tool_calls": []any{map[string]any{"index": i, "id": fmt.Sprint("call", i), "type": "function",
+							"function": map[string]string{"name": c[0], "arguments": c[1]}}}}}}})
+					fmt.Fprintf(w, "data: %s\n\n", b)
+				}
+				fmt.Fprint(w, "data: [DONE]\n\n")
+				return
+			}
+		}
 		f.mu.Lock()
-		f.systems = append(f.systems, sys)
+		f.systems = append(f.systems, strings.Join(all, "\n"))
 		f.asks = append(f.asks, ask)
 		f.mu.Unlock()
 		reply := []string{"Tóm tắt: ", "mọi người ", "đang bàn ", "chuyện **phở**."}
+		if last.Role == "tool" && !strings.Contains(ask, "tóm tắt") {
+			reply = []string{"Kết quả: " + last.Content}
+		}
 		if strings.Contains(sys, "text-to-image") {
 			reply = []string{"a cute cat astronaut, watercolor"}
 		}
@@ -195,8 +253,8 @@ func TestAIAssistant(t *testing.T) {
 	if !strings.Contains(sys, "Bob: Trưa nay ăn phở Thìn nhé") || !strings.Contains(sys, "#an-trua") || !strings.Contains(sys, "từ ") {
 		t.Fatalf("context missing history: %s", sys)
 	}
-	if ask != "Alice hỏi: tóm tắt giúp mình" || plans != 1 {
-		t.Fatalf("ask = %q, plans = %d", ask, plans)
+	if ask != "Alice hỏi: tóm tắt giúp mình" || plans != 0 {
+		t.Fatalf("ask = %q, plans = %d (agent reads history itself, no planning step)", ask, plans)
 	}
 	if !strings.Contains(final.Content, "đọc ") {
 		t.Fatalf("footer should say what was read: %q", final.Content)
@@ -228,7 +286,7 @@ func TestAIAssistant(t *testing.T) {
 	f.mu.Lock()
 	n := len(f.asks)
 	f.mu.Unlock()
-	if n != 2 { // câu trả lời + 1 lần viết lại mô tả ảnh (bước lập kế hoạch đếm riêng)
+	if n != 2 { // câu trả lời + 1 lần viết lại mô tả ảnh (lượt gọi công cụ đếm riêng)
 		t.Fatalf("unexpected AI calls: %d", n)
 	}
 }
@@ -325,5 +383,105 @@ func TestAISummaryReadsWholeRange(t *testing.T) {
 	}
 	if f.described != 1 {
 		t.Fatalf("image should be described once and cached, got %d", f.described)
+	}
+}
+
+// Agent: model gọi công cụ, server chạy rồi gửi kết quả lại cho model trả lời.
+func TestAIAgentTools(t *testing.T) {
+	e := newEnv(t)
+	f := newFakeAI(t)
+	chat := ai.NewChat(&ai.Provider{Name: "fake", BaseURL: f.srv.URL, Model: "fake-1", Vision: true})
+	images := &ai.Images{Providers: []ai.ImageProvider{ai.PollinationsImage{BaseURL: f.srv.URL}}}
+	if err := e.api.SetAI(context.Background(), chat, images, nil); err != nil {
+		t.Fatal(err)
+	}
+	alice := e.register("alice", "Alice")
+	bob := e.register("bob", "Bob Nguyễn")
+	var ch channel
+	e.do("POST", "/api/channels", alice.Token, map[string]any{"name": "agent"}, &ch)
+	e.do("POST", "/api/channels/"+itoa(ch.ID)+"/join", bob.Token, nil, nil)
+	wa := e.dial(alice.Token)
+	botID := int64(wa.waitFor("ready")["ai"].(map[string]any)["bot_id"].(float64))
+	wb := e.dial(bob.Token)
+	wb.waitFor("ready")
+	wb.send(map[string]any{"type": "message.send", "channel_id": ch.ID, "content": "mai ăn phở nhé", "client_id": "b1"})
+	root := nextMsg(t, wa, "message.new", func(m wsMsg) bool { return m.UserID == bob.User.ID })
+	wb.send(map[string]any{"type": "message.send", "channel_id": ch.ID, "content": "đồng ý phở gà", "client_id": "b2", "parent_id": root.ID})
+	time.Sleep(200 * time.Millisecond)
+
+	ask := func(q string) string {
+		t.Helper()
+		wa.send(map[string]any{"type": "message.send", "channel_id": ch.ID, "content": "@ai " + q, "client_id": q})
+		return nextMsg(t, wa, "message.updated", func(m wsMsg) bool {
+			return m.UserID == botID && strings.Contains(m.Content, "fake-1") && strings.Contains(m.Content, "Kết quả")
+		}).Content
+	}
+
+	// tìm người: không dấu vẫn khớp "Bob Nguyễn"
+	if got := ask("nguyen là ai"); !strings.Contains(got, "Bob Nguyễn (@bob)") {
+		t.Fatalf("list_members: %q", got)
+	}
+	// tìm tin theo người
+	if got := ask("ai nói phở"); !strings.Contains(got, "Bob Nguyễn: mai ăn phở nhé") {
+		t.Fatalf("search_messages: %q", got)
+	}
+	// đọc luồng (công cụ lạ thì báo lỗi, không làm hỏng lượt)
+	if got := ask(fmt.Sprintf("đọc luồng #%d", root.ID)); !strings.Contains(got, "không có công cụ no_such_tool") {
+		t.Fatalf("unknown tool: %q", got)
+	}
+	f.mu.Lock()
+	ctxText := f.systems[len(f.systems)-1]
+	f.mu.Unlock()
+	if !strings.Contains(ctxText, "Luồng của tin #") || !strings.Contains(ctxText, "↳ [#") || !strings.Contains(ctxText, "đồng ý phở gà") {
+		t.Fatalf("read_thread result missing:\n%s", ctxText)
+	}
+	// nhắc việc: chỉ cho người hỏi
+	if got := ask("nhắc mình gửi báo cáo"); !strings.Contains(got, "Đã đặt nhắc Alice") {
+		t.Fatalf("set_reminder: %q", got)
+	}
+	var rems []map[string]any
+	e.do("GET", "/api/reminders", alice.Token, nil, &rems)
+	if len(rems) != 1 || rems[0]["note"] != "gửi báo cáo" {
+		t.Fatalf("reminders: %v", rems)
+	}
+	// bình chọn do bot tạo trong kênh
+	if got := ask("tạo bình chọn ăn trưa"); !strings.Contains(got, "Đã tạo bình chọn «Trưa ăn gì?»") {
+		t.Fatalf("create_poll: %q", got)
+	}
+	// vẽ: mô tả tiếng Anh của agent dùng thẳng, khung dọc
+	if got := ask("minh hoạ con mèo"); !strings.Contains(got, "Đã vẽ xong") {
+		t.Fatalf("draw_image: %q", got)
+	}
+	f.mu.Lock()
+	imgReq := f.imagePro[len(f.imagePro)-1]
+	tools := strings.Join(f.toolNames, ",")
+	f.mu.Unlock()
+	if !strings.HasPrefix(imgReq, "a cat astronaut, watercolor?") || !strings.Contains(imgReq, "height=1216") {
+		t.Fatalf("image request: %s", imgReq)
+	}
+	if tools != "list_members,search_messages,read_thread,no_such_tool,set_reminder,create_poll,draw_image" {
+		t.Fatalf("tools called: %s", tools)
+	}
+}
+
+// Không bên nào gọi công cụ được: dùng cách cũ (lập kế hoạch rồi trả lời một lần).
+func TestAIAgentFallsBackWithoutTools(t *testing.T) {
+	e := newEnv(t)
+	f := newFakeAI(t)
+	chat := ai.NewChat(&ai.Provider{Name: "fake", BaseURL: f.srv.URL, Model: "fake-1", NoTools: true})
+	if err := e.api.SetAI(context.Background(), chat, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	alice := e.register("alice", "Alice")
+	var ch channel
+	e.do("POST", "/api/channels", alice.Token, map[string]any{"name": "cu"}, &ch)
+	wa := e.dial(alice.Token)
+	botID := int64(wa.waitFor("ready")["ai"].(map[string]any)["bot_id"].(float64))
+	wa.send(map[string]any{"type": "message.send", "channel_id": ch.ID, "content": "@ai tóm tắt hôm nay", "client_id": "q"})
+	nextMsg(t, wa, "message.updated", func(m wsMsg) bool { return m.UserID == botID && strings.Contains(m.Content, "fake-1") })
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.plans != 1 || f.toolRounds != 0 {
+		t.Fatalf("plans=%d toolRounds=%d", f.plans, f.toolRounds)
 	}
 }

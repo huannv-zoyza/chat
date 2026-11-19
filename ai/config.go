@@ -5,7 +5,8 @@ import "strings"
 // FromEnv dựng chuỗi nhà cung cấp từ biến môi trường. Bên nào có key thì dùng, theo thứ tự
 // chất lượng; Pollinations (miễn phí, không cần key) luôn đứng cuối làm dự phòng.
 //
-//	Chat:  GEMINI_API_KEY, GROQ_API_KEY, OPENROUTER_API_KEY (+ GEMINI_MODEL, GROQ_MODEL, OPENROUTER_MODEL)
+//	Chat:  GEMINI_API_KEY, GROQ_API_KEY, OPENROUTER_API_KEY (+ GEMINI_MODEL, GROQ_MODEL, OPENROUTER_MODEL;
+//	       GROQ_BACKUP_MODEL mặc định gpt-oss-20b, "-" để tắt)
 //	Ảnh:   TOGETHER_API_KEY (+ TOGETHER_IMAGE_MODEL),
 //	       CF_ACCOUNT_ID + CF_API_TOKEN (quyền Workers AI; CF_IMAGE_MODEL mặc định flux-2-dev, vẽ lại được từ ảnh gốc),
 //	       OPENROUTER_IMAGE_MODEL (model ảnh trả phí, cần OPENROUTER_API_KEY)
@@ -22,6 +23,13 @@ func FromEnv(get func(string) string) (*Chat, *Images) {
 	}
 	if k := get("GROQ_API_KEY"); k != "" {
 		chat = append(chat, Groq(k, get("GROQ_MODEL")))
+		// mỗi model của Groq có hạn mức token/phút riêng: model nhỏ làm dự phòng khi model chính hết lượt
+		if m := get("GROQ_BACKUP_MODEL"); m != "-" {
+			if m == "" {
+				m = "openai/gpt-oss-20b"
+			}
+			chat = append(chat, Groq(k, m))
+		}
 	}
 	noFree := on(get("AI_NO_POLLINATIONS"))
 	polKey := get("POLLINATIONS_API_KEY")

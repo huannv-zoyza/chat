@@ -173,11 +173,18 @@ func guessPlan(text string, now time.Time) aiPlan {
 /* ---------- Gom ngữ cảnh ---------- */
 
 // aiContext dựng hội thoại gửi cho AI: lời dặn + các khối ngữ cảnh + câu hỏi.
+// agent: không chạy bước lập kế hoạch (model tự gọi công cụ để đọc thêm), chỉ nạp ít tin gần nhất.
 func (a *API) aiContext(ctx context.Context, ch model.Channel, q model.Message, asker model.User, text string,
-	status func(string)) ([]ai.Message, aiGathered) {
+	status func(string), agent bool) ([]ai.Message, aiGathered) {
 	var got aiGathered
 	qImages, qFiles := a.questionAttachments(ctx, q)
-	plan := a.planAI(ctx, ch, text, len(qImages) > 0)
+	var plan aiPlan
+	recent := 40
+	if agent {
+		recent = aiAgentRecent
+	} else {
+		plan = a.planAI(ctx, ch, text, len(qImages) > 0)
+	}
 	now := time.Now()
 
 	// 1. lịch sử
@@ -203,7 +210,7 @@ func (a *API) aiContext(ctx context.Context, ch model.Channel, q model.Message, 
 			history, dropped = mergeByID(history, list), d
 		}
 	} else if q.ParentID == nil {
-		if list, _, err := a.store.ListMessages(ctx, ch.ID, q.ID, 40); err == nil {
+		if list, _, err := a.store.ListMessages(ctx, ch.ID, q.ID, recent); err == nil {
 			history = list
 		}
 	}
@@ -245,7 +252,11 @@ func (a *API) aiContext(ctx context.Context, ch model.Channel, q model.Message, 
 	got.Images = len(captions)
 
 	// 3. lịch sử thành văn bản (giữ phần mới nhất trong giới hạn)
-	lines := transcript(history, a.ai.bot.ID, captions)
+	opt := lineOpt(0)
+	if agent {
+		opt = lineID
+	}
+	lines := transcript(history, a.ai.bot.ID, captions, opt)
 	total := 0
 	start := len(lines)
 	for start > 0 && total+len(lines[start-1]) < aiHistoryBudget {
@@ -262,7 +273,7 @@ func (a *API) aiContext(ctx context.Context, ch model.Channel, q model.Message, 
 		status("Đang tìm tin cũ: «" + plan.SearchChat + "»…")
 		if hits, err := a.store.SearchMessages(ctx, asker.ID, plan.SearchChat, ch.ID, q.ID, 15); err == nil {
 			for i := len(hits) - 1; i >= 0; i-- {
-				if l := transcriptLine(hits[i], a.ai.bot.ID, captions, true); l != "" {
+				if l := transcriptLine(hits[i], a.ai.bot.ID, captions, lineDate); l != "" {
 					chatHits = append(chatHits, l)
 				}
 			}
@@ -336,8 +347,12 @@ func (a *API) aiContext(ctx context.Context, ch model.Channel, q model.Message, 
 	if len(files) > 0 {
 		sb.WriteString("\n\n## File người hỏi gửi kèm / trích dẫn:\n" + strings.Join(files, "\n\n"))
 	}
-	sb.WriteString(fmt.Sprintf("\n\n(Tính năng của bạn: đọc tin nhắn theo khoảng thời gian, xem ảnh, đọc file chữ, tìm web%s. Người dùng có thể gõ \"@ai vẽ …\" để tạo ảnh hoặc gửi kèm ảnh để vẽ lại.)",
-		map[bool]string{true: "", false: " (đang tắt)"}[a.ai.search != nil]))
+	if agent {
+		sb.WriteString(aiAgentGuide)
+	} else {
+		sb.WriteString(fmt.Sprintf("\n\n(Tính năng của bạn: đọc tin nhắn theo khoảng thời gian, xem ảnh, đọc file chữ, tìm web%s. Người dùng có thể gõ \"@ai vẽ …\" để tạo ảnh hoặc gửi kèm ảnh để vẽ lại.)",
+			map[bool]string{true: "", false: " (đang tắt)"}[a.ai.search != nil]))
+	}
 
 	ask := displayNameOf(asker) + " hỏi: " + text
 	var attached []string
@@ -393,11 +408,19 @@ func mergeByID(a, b []model.Message) []model.Message {
 }
 
 // transcript: các dòng lịch sử, chèn dòng ngày khi sang ngày mới. Dòng ngày không tính là tin.
-func transcript(msgs []model.Message, botID int64, captions map[string]string) []string {
+// lineOpt: cách ghi một dòng tin trong bản chép.
+type lineOpt uint8
+
+const (
+	lineDate lineOpt = 1 << iota // ghi cả ngày, không chỉ giờ
+	lineID                       // ghi #id tin và số trả lời trong luồng (agent cần để gọi công cụ)
+)
+
+func transcript(msgs []model.Message, botID int64, captions map[string]string, opt lineOpt) []string {
 	var out []string
 	day := ""
 	for _, m := range msgs {
-		l := transcriptLine(m, botID, captions, false)
+		l := transcriptLine(m, botID, captions, opt&^lineDate)
 		if l == "" {
 			continue
 		}
@@ -421,7 +444,7 @@ func countMessages(lines []string) int {
 }
 
 // transcriptLine: "[15:04] Tên: nội dung [ảnh …] [file …]"; trả lời trong luồng thụt vào.
-func transcriptLine(m model.Message, botID int64, captions map[string]string, withDate bool) string {
+func transcriptLine(m model.Message, botID int64, captions map[string]string, opt lineOpt) string {
 	if m.DeletedAt != nil || m.Cipher != "" {
 		return ""
 	}
@@ -470,12 +493,18 @@ func transcriptLine(m model.Message, botID int64, captions map[string]string, wi
 		return ""
 	}
 	when := m.CreatedAt.Local().Format("15:04")
-	if withDate {
+	if opt&lineDate != 0 {
 		when = m.CreatedAt.Local().Format("15:04 02/01")
 	}
 	indent := ""
 	if m.ParentID != nil {
 		indent = "  ↳ "
+	}
+	if opt&lineID != 0 {
+		when = fmt.Sprintf("#%d %s", m.ID, when)
+		if m.Thread != nil && m.Thread.ReplyCount > 0 {
+			parts = append(parts, fmt.Sprintf("[luồng: %d trả lời]", m.Thread.ReplyCount))
+		}
 	}
 	return fmt.Sprintf("%s[%s] %s: %s", indent, when, name, strings.Join(parts, " "))
 }

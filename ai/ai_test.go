@@ -159,7 +159,7 @@ func TestFromEnv(t *testing.T) {
 	env = map[string]string{"GEMINI_API_KEY": "g", "GROQ_API_KEY": "q", "OPENROUTER_API_KEY": "o", "TOGETHER_API_KEY": "t",
 		"CF_ACCOUNT_ID": "a", "CF_API_TOKEN": "b", "OPENROUTER_IMAGE_MODEL": "m"}
 	c, im = FromEnv(get)
-	if got := strings.Join(c.Names(), ","); got != "gemini,groq,openrouter,pollinations" {
+	if got := strings.Join(c.Names(), ","); got != "gemini,groq,groq,openrouter,pollinations" {
 		t.Fatalf("chat order = %s", got)
 	}
 	if got := strings.Join(im.Names(), ","); got != "together,cloudflare,openrouter,pollinations" {
@@ -413,5 +413,92 @@ func TestCloudflareFlux2(t *testing.T) {
 	env["CF_IMAGE_MODEL"] = "@cf/black-forest-labs/flux-1-schnell"
 	if _, im = FromEnv(func(k string) string { return env[k] }); im.CanEdit() {
 		t.Fatal("schnell cannot edit")
+	}
+}
+
+func TestStreamSkipsCreditNoticeAnswer(t *testing.T) {
+	notice := "The account behind this API key doesn't have enough credits. Please [top up](<https://enter.pollinations.ai/top-up?ref=agent_low_balance_topup>) or [complete a quest](<https://enter.pollinations.ai/quests>), then try again."
+	broke := fakeOpenAI(t, nil, []string{"", notice}, 200)
+	defer broke.Close()
+	// thông báo bị cắt nhỏ thành nhiều đoạn vẫn nhận ra
+	split := fakeOpenAI(t, nil, []string{notice[:20], notice[20:70], notice[70:]}, 200)
+	defer split.Close()
+	up := fakeOpenAI(t, nil, []string{"Xin ", "chào", "!"}, 200)
+	defer up.Close()
+
+	c := NewChat(&Provider{Name: "pollinations", BaseURL: broke.URL, Model: "x"},
+		&Provider{Name: "split", BaseURL: split.URL, Model: "x"},
+		&Provider{Name: "openrouter", BaseURL: up.URL, Model: "y"})
+	var got strings.Builder
+	res, err := c.Stream(context.Background(), []Message{{Role: "user", Content: "hi"}}, func(s string) { got.WriteString(s) })
+	if err != nil || got.String() != "Xin chào!" || res.Provider != "openrouter" {
+		t.Fatalf("got %q from %+v, err %v", got.String(), res, err)
+	}
+	// câu trả lời ngắn bình thường (dưới ngưỡng giữ lại) vẫn được gửi đủ
+	got.Reset()
+	if _, err := NewChat(&Provider{Name: "up", BaseURL: up.URL, Model: "y"}).Stream(context.Background(), []Message{{Role: "user", Content: "hi"}}, func(s string) { got.WriteString(s) }); err != nil || got.String() != "Xin chào!" {
+		t.Fatalf("short answer: %q %v", got.String(), err)
+	}
+	// bên hết tiền bị tạm bỏ qua: lần sau đi thẳng tới bên còn dùng được
+	if !c.Providers[0].paused() || !c.Providers[1].paused() || c.Providers[2].paused() {
+		t.Fatal("broke providers should be paused")
+	}
+	// chỉ còn bên hết tiền: báo lỗi hết credit, không đưa thông báo cho người dùng
+	got.Reset()
+	_, err = NewChat(&Provider{Name: "pollinations", BaseURL: broke.URL, Model: "x"}).Stream(context.Background(), []Message{{Role: "user", Content: "hi"}}, func(s string) { got.WriteString(s) })
+	if err == nil || got.Len() != 0 {
+		t.Fatalf("only broke: %q %v", got.String(), err)
+	}
+}
+
+func TestStreamTools(t *testing.T) {
+	var gotReq map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&gotReq)
+		w.Header().Set("Content-Type", "text/event-stream")
+		// tham số gửi thành nhiều mảnh, hai lệnh gọi song song
+		for _, d := range []string{
+			`{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"web_search","arguments":"{\"que"}}]}`,
+			`{"tool_calls":[{"index":0,"function":{"arguments":"ry\":\"giá vàng\"}"}}]}`,
+			`{"tool_calls":[{"index":1,"id":"c2","type":"function","function":{"name":"list_members","arguments":"{}"}}]}`,
+		} {
+			fmt.Fprintf(w, "data: {\"model\":\"m\",\"choices\":[{\"delta\":%s}]}\n\n", d)
+		}
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+	noTools := &Provider{Name: "free", BaseURL: "http://127.0.0.1:1", Model: "x", NoTools: true}
+	c := NewChat(noTools, &Provider{Name: "groq", BaseURL: srv.URL, Model: "m"})
+	tools := []Tool{{Name: "web_search", Description: "search", Params: map[string]any{"type": "object",
+		"properties": map[string]any{"query": map[string]any{"type": "string"}}}}, {Name: "list_members", Description: "members"}}
+	msgs := []Message{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "hỏi"},
+		{Role: "assistant", ToolCalls: []ToolCall{{ID: "c0", Name: "pinned_messages"}}},
+		{Role: "tool", ToolCallID: "c0", Content: "không có tin ghim"},
+	}
+	res, calls, err := c.StreamTools(context.Background(), msgs, tools, func(string) { t.Error("no text expected") })
+	if err != nil || res.Provider != "groq" {
+		t.Fatalf("err=%v res=%+v (free provider without tools must be skipped)", err, res)
+	}
+	if len(calls) != 2 || calls[0].ID != "c1" || calls[0].Name != "web_search" || calls[0].Args != `{"query":"giá vàng"}` || calls[1].Name != "list_members" {
+		t.Fatalf("calls = %+v", calls)
+	}
+	// yêu cầu gửi đi đúng định dạng OpenAI
+	ts := gotReq["tools"].([]any)
+	if fn := ts[0].(map[string]any)["function"].(map[string]any); fn["name"] != "web_search" || ts[1].(map[string]any)["function"].(map[string]any)["parameters"] == nil {
+		t.Fatalf("tools = %v", ts)
+	}
+	sent := gotReq["messages"].([]any)
+	as := sent[2].(map[string]any)
+	if as["content"] != nil || as["tool_calls"].([]any)[0].(map[string]any)["function"].(map[string]any)["arguments"] != "{}" {
+		t.Fatalf("assistant msg = %v", as)
+	}
+	if tm := sent[3].(map[string]any); tm["role"] != "tool" || tm["tool_call_id"] != "c0" || tm["content"] != "không có tin ghim" {
+		t.Fatalf("tool msg = %v", tm)
+	}
+	// không có tools: bên NoTools vẫn dùng được như cũ
+	if _, _, err := NewChat(noTools).StreamTools(context.Background(), msgs, nil, func(string) {}); err == nil || !strings.Contains(err.Error(), "free") {
+		t.Fatalf("no tools -> free provider tried, got %v", err)
 	}
 }

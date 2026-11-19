@@ -195,19 +195,20 @@ func (a *API) answerAI(q model.Message, asker model.User) {
 		m.Content = aiPending + "\n" + st
 		a.hub.ToChannel(ch.ID, mustJSON(messageUpdatedEvent{Type: "message.updated", Message: m}), nil)
 	}
-	msgs, got := a.aiContext(ctx, ch, q, asker, text, status)
-	status("Đang viết câu trả lời…")
-	var buf strings.Builder
-	last := time.Now()
-	res, err := s.chat.Stream(ctx, msgs, func(d string) {
-		buf.WriteString(d)
-		if time.Since(last) >= aiFlushEvery {
-			last = time.Now()
-			m.Content = clip(buf.String())
-			a.hub.ToChannel(ch.ID, mustJSON(messageUpdatedEvent{Type: "message.updated", Message: m}), nil)
-		}
-	})
-	answer := strings.TrimSpace(buf.String())
+	live := &liveText{flush: func(t string) {
+		m.Content = clip(t)
+		a.hub.ToChannel(ch.ID, mustJSON(messageUpdatedEvent{Type: "message.updated", Message: m}), nil)
+	}}
+	// agent: model tự gọi công cụ để tra cứu; không chạy được (chưa trả chữ nào) thì dùng cách cũ
+	res, got, err, ok := a.runAgent(ctx, ch, q, asker, text, refs, status, reply, live)
+	if !ok {
+		var msgs []ai.Message
+		msgs, got = a.aiContext(ctx, ch, q, asker, text, status, false)
+		status("Đang viết câu trả lời…")
+		live.reset()
+		res, err = s.chat.Stream(ctx, msgs, live.delta)
+	}
+	answer := strings.TrimSpace(live.text())
 	switch {
 	case err != nil && answer == "":
 		log.Printf("ai: %s hỏi ở kênh %d: %v", asker.Username, ch.ID, err)
@@ -223,10 +224,30 @@ func (a *API) answerAI(q model.Message, asker model.User) {
 			source += " · " + g
 		}
 		answer += "\n\n_— " + source + "_"
-		log.Printf("ai: trả lời %s ở kênh %d bằng %s/%s (%s, ~%d token vào)", asker.Username, ch.ID, res.Provider, res.Model, got, ai.EstimateTokens(msgs))
+		log.Printf("ai: trả lời %s ở kênh %d bằng %s/%s (%s, agent=%v)", asker.Username, ch.ID, res.Provider, res.Model, got, ok)
 	}
 	a.finishAI(ctx, m, clip(answer))
 }
+
+// liveText: chữ đang stream vào tin của bot, đẩy cho cả kênh mỗi aiFlushEvery.
+// reset: bỏ chữ của lượt trước (lượt đó hoá ra chỉ để gọi công cụ).
+type liveText struct {
+	buf   strings.Builder
+	last  time.Time
+	flush func(string)
+}
+
+func (l *liveText) delta(d string) {
+	l.buf.WriteString(d)
+	if time.Since(l.last) >= aiFlushEvery {
+		l.last = time.Now()
+		l.flush(l.buf.String())
+	}
+}
+
+func (l *liveText) reset()       { l.buf.Reset() }
+func (l *liveText) text() string { return l.buf.String() }
+func (l *liveText) empty() bool  { return strings.TrimSpace(l.buf.String()) == "" }
 
 // finishAI lưu nội dung cuối của tin bot và phát lại cho cả kênh.
 func (a *API) finishAI(ctx context.Context, m model.Message, content string) {
@@ -306,9 +327,15 @@ func (a *API) aiRefs(ctx context.Context, q model.Message) []ai.Ref {
 	return refs
 }
 
+// drawAI vẽ (hoặc vẽ lại từ refs) rồi gửi ảnh vào kênh. Trả về "" nếu đã gửi ảnh, không thì lý do
+// (đã báo cho người dùng) để agent biết.
 func (a *API) drawAI(ctx context.Context, ch model.Channel, q model.Message, asker model.User, prompt string, refs []ai.Ref,
-	reply func(string) (model.Message, error)) {
+	reply func(string) (model.Message, error)) string {
 	s := a.ai
+	fail := func(msg string) string {
+		_, _ = reply(msg)
+		return msg
+	}
 	w, h := 1024, 1024
 	low := strings.ToLower(prompt)
 	switch {
@@ -324,27 +351,21 @@ func (a *API) drawAI(ctx context.Context, ch model.Channel, q model.Message, ask
 	prompt = strings.TrimSpace(prompt)
 	switch {
 	case s.images == nil:
-		_, _ = reply("Máy chủ chưa bật tạo ảnh AI.")
-		return
+		return fail("Máy chủ chưa bật tạo ảnh AI.")
 	case len(refs) > 0 && !s.images.CanEdit():
-		_, _ = reply("Máy chủ chưa bật vẽ lại từ ảnh gốc (cần key Pollinations hoặc model ảnh của OpenRouter). Bỏ ảnh đi thì mình vẽ mới theo mô tả được.")
-		return
+		return fail("Máy chủ chưa bật vẽ lại từ ảnh gốc (cần key Pollinations hoặc model ảnh của OpenRouter). Bỏ ảnh đi thì mình vẽ mới theo mô tả được.")
 	case prompt == "":
-		_, _ = reply("Bạn muốn vẽ gì? Ví dụ: **@ai vẽ** chú mèo phi hành gia, phong cách màu nước")
-		return
+		return fail("Bạn muốn vẽ gì? Ví dụ: **@ai vẽ** chú mèo phi hành gia, phong cách màu nước")
 	case utf8.RuneCountInString(prompt) > 800:
-		_, _ = reply("Mô tả dài quá, gói gọn trong 800 ký tự nhé.")
-		return
+		return fail("Mô tả dài quá, gói gọn trong 800 ký tự nhé.")
 	case !s.draws.allow(asker.ID):
-		_, _ = reply("Bạn nhờ vẽ nhanh quá, đợi một phút rồi thử lại nhé.")
-		return
+		return fail("Bạn nhờ vẽ nhanh quá, đợi một phút rồi thử lại nhé.")
 	}
 	select {
 	case s.sem <- struct{}{}:
 		defer func() { <-s.sem }()
 	default:
-		_, _ = reply("Đang có nhiều người nhờ cùng lúc, thử lại sau ít giây nhé.")
-		return
+		return fail("Đang có nhiều người nhờ cùng lúc, thử lại sau ít giây nhé.")
 	}
 	what := "vẽ"
 	if len(refs) > 0 {
@@ -352,12 +373,12 @@ func (a *API) drawAI(ctx context.Context, ch model.Channel, q model.Message, ask
 	}
 	m, err := reply("🎨 Đang " + what + ": “" + prompt + "”…")
 	if err != nil {
-		return
+		return "không gửi được tin"
 	}
 
 	// Mô hình vẽ hiểu tiếng Anh tốt hơn: nhờ AI chat viết lại mô tả (lỗi thì dùng nguyên văn).
 	english := prompt
-	if s.chat != nil {
+	if s.chat != nil && !isASCII(prompt) { // agent đã viết sẵn mô tả tiếng Anh
 		pctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 		sys := "You turn a user's image request (often in Vietnamese) into ONE concise English prompt for a text-to-image model. Keep the subject, style and any text the user wants shown; add a few concrete visual details. Reply with the prompt only, no quotes, no explanations."
 		if len(refs) > 0 {
@@ -384,21 +405,31 @@ func (a *API) drawAI(ctx context.Context, ch model.Channel, q model.Message, ask
 			why = "tài khoản dịch vụ vẽ ảnh đã hết credit, nhờ admin nạp thêm nhé."
 		}
 		a.finishAI(ctx, m, "⚠️ Chưa vẽ được “"+prompt+"”: "+why)
-		return
+		return why
 	}
 	att, err := a.saveBytes(data, "ai-"+fileSlug(prompt))
 	if err != nil {
 		log.Printf("ai image save: %v", err)
 		a.finishAI(ctx, m, "⚠️ Vẽ xong nhưng không lưu được ảnh, thử lại nhé.")
-		return
+		return "không lưu được ảnh"
 	}
 	if err := a.store.AddAttachments(ctx, m.ID, []model.Attachment{att}); err != nil {
 		a.removeUpload(att.StorageKey)
 		log.Printf("ai image attach: %v", err)
-		return
+		return "không lưu được ảnh"
 	}
 	log.Printf("ai: vẽ cho %s ở kênh %d bằng %s (%d KB)", asker.Username, ch.ID, provider, len(data)/1024)
 	a.finishAI(ctx, m, "🎨 “"+prompt+"”\n\n_— "+what+" bởi "+provider+"_")
+	return ""
+}
+
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
 }
 
 // saveBytes lưu ảnh AI vào thư mục uploads như một file đính kèm.

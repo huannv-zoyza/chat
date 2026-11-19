@@ -23,15 +23,59 @@ import (
 )
 
 type Message struct {
-	Role    string // system | user | assistant
+	Role    string // system | user | assistant | tool
 	Content string
 	// Images: ảnh gửi kèm (chỉ gửi cho model đọc được ảnh).
 	Images []Ref
+	// ToolCalls: các lệnh gọi công cụ của model (tin assistant); ToolCallID: tin "tool" trả kết quả cho lệnh nào.
+	ToolCalls  []ToolCall
+	ToolCallID string
+}
+
+// Tool: một công cụ model được gọi (function calling dạng OpenAI). Params: JSON Schema của tham số.
+type Tool struct {
+	Name        string
+	Description string
+	Params      map[string]any
+}
+
+func (t Tool) MarshalJSON() ([]byte, error) {
+	params := t.Params
+	if params == nil {
+		params = map[string]any{"type": "object", "properties": map[string]any{}}
+	}
+	return json.Marshal(map[string]any{"type": "function", "function": map[string]any{
+		"name": t.Name, "description": t.Description, "parameters": params,
+	}})
+}
+
+// ToolCall: model nhờ gọi công cụ Name với tham số Args (chuỗi JSON).
+type ToolCall struct {
+	ID   string
+	Name string
+	Args string
 }
 
 // MarshalJSON: có ảnh thì content là mảng [text, image_url…] theo định dạng OpenAI.
 func (m Message) MarshalJSON() ([]byte, error) {
-	if len(m.Images) == 0 {
+	switch {
+	case m.Role == "tool":
+		return json.Marshal(map[string]string{"role": "tool", "tool_call_id": m.ToolCallID, "content": m.Content})
+	case len(m.ToolCalls) > 0:
+		calls := make([]map[string]any, len(m.ToolCalls))
+		for i, c := range m.ToolCalls {
+			args := c.Args
+			if args == "" {
+				args = "{}"
+			}
+			calls[i] = map[string]any{"id": c.ID, "type": "function", "function": map[string]string{"name": c.Name, "arguments": args}}
+		}
+		var content any // null khi chỉ gọi công cụ
+		if m.Content != "" {
+			content = m.Content
+		}
+		return json.Marshal(map[string]any{"role": m.Role, "content": content, "tool_calls": calls})
+	case len(m.Images) == 0:
 		return json.Marshal(map[string]string{"role": m.Role, "content": m.Content})
 	}
 	parts := []map[string]any{{"type": "text", "text": m.Content}}
@@ -67,6 +111,9 @@ func EstimateTokens(msgs []Message) int {
 	n := 0
 	for _, m := range msgs {
 		n += len([]rune(m.Content))*2/5 + 1000*len(m.Images)
+		for _, c := range m.ToolCalls {
+			n += len([]rune(c.Args))*2/5 + 10
+		}
 	}
 	return n
 }
@@ -87,10 +134,29 @@ type Provider struct {
 	// Vision: đọc được ảnh; VisionModel: model dùng cho ảnh (rỗng = model chat).
 	Vision      bool
 	VisionModel string
+	// NoTools: không gọi công cụ được (bị bỏ qua khi chạy agent).
+	NoTools bool
 
 	mu     sync.Mutex
 	picked string
 	pickAt time.Time
+	// broke: lúc báo hết tiền gần nhất; trong creditPause sau đó thì bỏ qua bên này
+	broke time.Time
+}
+
+// creditPause: bên báo hết tiền thì tạm bỏ qua chừng này (đỡ tốn một lượt gọi chắc chắn lỗi).
+const creditPause = 30 * time.Minute
+
+func (p *Provider) paused() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return !p.broke.IsZero() && time.Since(p.broke) < creditPause
+}
+
+func (p *Provider) markBroke() {
+	p.mu.Lock()
+	p.broke = time.Now()
+	p.mu.Unlock()
 }
 
 // Presets: cấu hình sẵn cho các nhà cung cấp hay dùng (key để trống, main điền vào).
@@ -135,7 +201,7 @@ func Pollinations(model string) *Provider {
 	if model == "" {
 		model = "openai"
 	}
-	return &Provider{Name: "pollinations", BaseURL: "https://text.pollinations.ai/openai", Model: model}
+	return &Provider{Name: "pollinations", BaseURL: "https://text.pollinations.ai/openai", Model: model, NoTools: true}
 }
 
 // Chat: chuỗi nhà cung cấp.
@@ -167,37 +233,55 @@ type Result struct {
 // Stream gửi hội thoại, gọi onDelta cho từng đoạn chữ. Bên đầu tiên lỗi trước khi trả chữ nào
 // thì chuyển sang bên tiếp theo; đã trả chữ rồi mà lỗi giữa chừng thì báo lỗi luôn.
 func (c *Chat) Stream(ctx context.Context, msgs []Message, onDelta func(string)) (Result, error) {
+	res, _, err := c.StreamTools(ctx, msgs, nil, onDelta)
+	return res, err
+}
+
+// StreamTools: như Stream nhưng model được gọi công cụ. Trả về chữ (qua onDelta) và/hoặc các lệnh gọi
+// công cụ của lượt này. Có tools thì chỉ dùng các bên gọi công cụ được.
+func (c *Chat) StreamTools(ctx context.Context, msgs []Message, tools []Tool, onDelta func(string)) (Result, []ToolCall, error) {
 	var errs []string
 	need := EstimateTokens(msgs)
-	for i, p := range c.Providers {
+	if len(tools) > 0 {
+		b, _ := json.Marshal(tools)
+		need += len(b) / 3
+	}
+	usable := make([]*Provider, 0, len(c.Providers))
+	for _, p := range c.Providers {
+		if (len(tools) == 0 || !p.NoTools) && !p.paused() {
+			usable = append(usable, p)
+		}
+	}
+	for i, p := range usable {
 		// ngữ cảnh quá lớn cho bên này (vẫn thử nếu là bên cuối cùng)
-		if p.MaxInput > 0 && need > p.MaxInput && i < len(c.Providers)-1 {
+		if p.MaxInput > 0 && need > p.MaxInput && i < len(usable)-1 {
 			continue
 		}
 		got := false
-		model, err := c.streamOne(ctx, p, msgs, func(s string) {
+		emit := func(s string) {
 			got = true
 			onDelta(s)
-		})
+		}
+		model, calls, err := c.streamOne(ctx, p, msgs, tools, emit)
 		// quá tải / giới hạn tốc độ: đợi rồi thử lại bên này một lần nữa
 		if d, ok := retryWait(err, 15*time.Second); ok && !got && sleepCtx(ctx, d) {
-			model, err = c.streamOne(ctx, p, msgs, func(s string) {
-				got = true
-				onDelta(s)
-			})
+			model, calls, err = c.streamOne(ctx, p, msgs, tools, emit)
 		}
 		if err == nil {
-			return Result{Provider: p.Name, Model: model}, nil
+			return Result{Provider: p.Name, Model: model}, calls, nil
 		}
 		if got || ctx.Err() != nil {
-			return Result{Provider: p.Name, Model: model}, err
+			return Result{Provider: p.Name, Model: model}, nil, err
+		}
+		if OutOfCredit(err) {
+			p.markBroke()
 		}
 		errs = append(errs, p.Name+": "+err.Error())
 	}
 	if len(errs) == 0 {
-		return Result{}, errors.New("chưa cấu hình nhà cung cấp AI nào")
+		return Result{}, nil, errors.New("chưa cấu hình nhà cung cấp AI nào")
 	}
-	return Result{}, errors.New(strings.Join(errs, "; "))
+	return Result{}, nil, errors.New(strings.Join(errs, "; "))
 }
 
 // Complete: như Stream nhưng trả về cả câu.
@@ -214,27 +298,83 @@ type apiError struct {
 	} `json:"error"`
 }
 
-func (c *Chat) streamOne(ctx context.Context, p *Provider, msgs []Message, onDelta func(string)) (string, error) {
+func (c *Chat) streamOne(ctx context.Context, p *Provider, msgs []Message, tools []Tool, onDelta func(string)) (string, []ToolCall, error) {
 	model, err := c.model(ctx, p)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	body, _ := json.Marshal(map[string]any{
+	reqBody := map[string]any{
 		"model": model, "messages": msgs, "stream": true, "max_tokens": c.MaxTokens, "temperature": 0.6,
-	})
+	}
+	if len(tools) > 0 {
+		reqBody["tools"] = tools
+	}
+	body, _ := json.Marshal(reqBody)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.BaseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return model, err
+		return model, nil, err
 	}
 	p.headers(req)
 	req.Header.Set("Accept", "text/event-stream")
 	res, err := c.HTTP.Do(req)
 	if err != nil {
-		return model, err
+		return model, nil, err
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return model, readError(res)
+		return model, nil, readError(res)
+	}
+	// lệnh gọi công cụ đến từng mảnh theo index: gom lại
+	var calls []ToolCall
+	addCall := func(i int, id, name, args string) {
+		for len(calls) <= i {
+			calls = append(calls, ToolCall{})
+		}
+		if id != "" {
+			calls[i].ID = id
+		}
+		calls[i].Name += name
+		calls[i].Args += args
+	}
+	finish := func() []ToolCall {
+		out := calls[:0]
+		for i, c := range calls {
+			if c.Name == "" {
+				continue
+			}
+			if c.ID == "" {
+				c.ID = fmt.Sprintf("call_%d", i)
+			}
+			out = append(out, c)
+		}
+		return out
+	}
+
+	// Vài bên (Pollinations) báo hết tiền bằng HTTP 200 kèm câu trả lời "doesn't have enough credits…".
+	// Giữ lại đoạn đầu để kiểm tra trước khi gửi cho người dùng; là thông báo đó thì coi như lỗi 402
+	// để chuỗi chuyển sang bên tiếp theo.
+	var head strings.Builder
+	held := true
+	emit := func(s string) error {
+		if !held {
+			onDelta(s)
+			return nil
+		}
+		head.WriteString(s)
+		if creditNotice(head.String()) {
+			return &HTTPError{Status: http.StatusPaymentRequired, Msg: "hết credit (trả lời 200 kèm thông báo nạp tiền)"}
+		}
+		if head.Len() >= creditHold {
+			held = false
+			onDelta(head.String())
+		}
+		return nil
+	}
+	flush := func() {
+		if held && head.Len() > 0 {
+			onDelta(head.String())
+		}
+		held = false
 	}
 
 	sc := bufio.NewScanner(res.Body)
@@ -250,13 +390,22 @@ func (c *Chat) streamOne(ctx context.Context, p *Provider, msgs []Message, onDel
 		}
 		data = strings.TrimSpace(data)
 		if data == "[DONE]" {
-			return model, nil
+			flush()
+			return model, finish(), nil
 		}
 		var chunk struct {
 			Model   string `json:"model"`
 			Choices []struct {
 				Delta struct {
-					Content string `json:"content"`
+					Content   string `json:"content"`
+					ToolCalls []struct {
+						Index    *int   `json:"index"`
+						ID       string `json:"id"`
+						Function struct {
+							Name      string `json:"name"`
+							Arguments string `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
 				} `json:"delta"`
 				FinishReason string `json:"finish_reason"`
 			} `json:"choices"`
@@ -266,22 +415,41 @@ func (c *Chat) streamOne(ctx context.Context, p *Provider, msgs []Message, onDel
 			continue
 		}
 		if chunk.Error != nil {
-			return model, errors.New(chunk.Error.Message)
+			return model, nil, errors.New(chunk.Error.Message)
 		}
 		if chunk.Model != "" {
 			model = chunk.Model
 		}
 		for _, ch := range chunk.Choices {
 			if ch.Delta.Content != "" {
-				onDelta(ch.Delta.Content)
+				if err := emit(ch.Delta.Content); err != nil {
+					return model, nil, err
+				}
+			}
+			for j, tc := range ch.Delta.ToolCalls {
+				i := len(calls) + j // không có index: mỗi mảnh là một lệnh trọn vẹn
+				if tc.Index != nil {
+					i = *tc.Index
+				}
+				addCall(i, tc.ID, tc.Function.Name, tc.Function.Arguments)
 			}
 		}
 	}
 	if err := sc.Err(); err != nil {
-		return model, err
+		flush()
+		return model, nil, err
 	}
-	return model, nil
+	flush()
+	return model, finish(), nil
 }
+
+// creditHold: số byte đầu giữ lại để nhận ra thông báo hết tiền (thông báo dài ~300 byte,
+// dấu hiệu nằm ngay câu đầu).
+const creditHold = 160
+
+var creditNoticeRe = regexp.MustCompile(`(?i)enter\.pollinations\.ai/(top-up|quests)|doesn['’]t have enough credits`)
+
+func creditNotice(s string) bool { return creditNoticeRe.MatchString(s) }
 
 func (p *Provider) headers(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
@@ -474,7 +642,7 @@ func (c *Chat) Describe(ctx context.Context, prompt string, refs []Ref) (string,
 		}
 		vp := &Provider{Name: p.Name, BaseURL: p.BaseURL, Key: p.Key, Model: model, Header: p.Header}
 		var b strings.Builder
-		model, err := c.streamOne(ctx, vp, []Message{{Role: "user", Content: prompt, Images: refs}}, func(s string) { b.WriteString(s) })
+		model, _, err := c.streamOne(ctx, vp, []Message{{Role: "user", Content: prompt, Images: refs}}, nil, func(s string) { b.WriteString(s) })
 		if err == nil && strings.TrimSpace(b.String()) != "" {
 			return strings.TrimSpace(b.String()), Result{Provider: p.Name, Model: model}, nil
 		}

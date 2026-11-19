@@ -4,17 +4,25 @@
 import { Fragment, type ReactNode } from "react";
 
 const SAFE_URL = /^https?:\/\//i;
+const WORD = /[\p{L}\p{N}*_]/u;
 
 /** Định dạng trong một dòng. */
 function inline(text: string, key: string): ReactNode[] {
   const out: ReactNode[] = [];
-  // thứ tự: code, link, đậm, nghiêng, link trần
+  // thứ tự: code, link, đậm, nghiêng, link trần.
+  // Không dùng lookbehind (?<…): iPhone iOS < 16.4 không hiểu, cả trang không chạy được.
   const re =
-    /(`[^`\n]+`)|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(\*\*|__)(.+?)\4|(?<![\p{L}\p{N}*_])([*_])(?!\s)(.+?)(?<!\s)\6(?![\p{L}\p{N}*_])|(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/gu;
+    /(`[^`\n]+`)|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(\*\*|__)(.+?)\4|([*_])(\S(?:.*?\S)??)\6(?![\p{L}\p{N}*_])|(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/gu;
   let last = 0;
   let i = 0;
-  for (const m of text.matchAll(re)) {
-    if (m.index! > last) out.push(text.slice(last, m.index));
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    // dấu nghiêng mở không được dính ngay sau chữ/số (snake_case, 2*3*4): bỏ qua, tìm tiếp từ ký tự sau
+    if (m[6] && m.index > 0 && WORD.test(Array.from(text.slice(0, m.index)).pop()!)) {
+      re.lastIndex = m.index + 1;
+      continue;
+    }
+    if (m.index > last) out.push(text.slice(last, m.index));
     const k = `${key}-${i++}`;
     if (m[1]) out.push(<code key={k}>{m[1].slice(1, -1)}</code>);
     else if (m[2] && m[3] && SAFE_URL.test(m[3]))
@@ -31,7 +39,7 @@ function inline(text: string, key: string): ReactNode[] {
           {m[8]}
         </a>,
       );
-    last = m.index! + m[0].length;
+    last = m.index + m[0].length;
   }
   if (last < text.length) out.push(text.slice(last));
   return out;

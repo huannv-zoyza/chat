@@ -10,6 +10,17 @@ export default defineConfig({
   plugins: [
     react(),
     {
+      // iPhone iOS < 16.4 không hiểu regex lookbehind (?<= (?<! : chỉ một chỗ là cả trang không chạy
+      // (bấm gì cũng không được). Chặn ngay lúc build.
+      name: "no-regex-lookbehind",
+      generateBundle(_, bundle) {
+        for (const f of Object.values(bundle)) {
+          if (f.type === "chunk" && /\(\?<[=!]/.test(f.code))
+            this.error(`${f.fileName}: có regex lookbehind (?<= / (?<!, iPhone iOS < 16.4 sẽ không chạy được.`);
+        }
+      },
+    },
+    {
       name: "build-id",
       generateBundle() {
         this.emitFile({ type: "asset", fileName: "build.json", source: JSON.stringify({ id: BUILD_ID }) });

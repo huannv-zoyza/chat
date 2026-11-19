@@ -7956,3 +7956,21 @@ button.game-player:disabled {
 .share-note.is-warn {
   color: var(--warn);
 }
+
+/* Cờ tướng (Xiangqi) */
+@keyframes xqCheckPulse {
+  0% { opacity: 0.35; }
+  50% { opacity: 0.75; }
+  100% { opacity: 0.35; }
+}
+.xiangqi-check-pulse {
+  animation: xqCheckPulse 1.2s infinite ease-in-out;
+}
+.xiangqi-piece {
+  display: inline-block;
+  vertical-align: middle;
+  transition: transform 0.12s ease-out;
+}
+.xiangqi-piece:hover {
+  transform: scale(1.06);
+}

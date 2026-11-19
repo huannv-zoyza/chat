@@ -93,6 +93,30 @@ export type ChessState = {
   captured: Record<string, number>;
 };
 
+export type XiangqiMove = {
+  from: string;
+  to: string;
+  piece: string;
+  captured?: string;
+  is_check?: boolean;
+};
+
+export type XiangqiState = {
+  opts?: { turn_minutes: number; first: string };
+  board: string;
+  turn_color: "r" | "b";
+  turn_player_id: number;
+  red_player_id: number;
+  black_player_id: number;
+  last_move?: XiangqiMove;
+  in_check: boolean;
+  check_square?: string;
+  draw_offered: boolean;
+  draw_offered_by?: number;
+  legal_moves?: Record<string, string[]>;
+  captured: Record<string, number>;
+};
+
 export const ROLE_INFO: Record<WerewolfRole, { name: string; icon: string; team: string; desc: string }> = {
   wolf: {
     name: "Sói",
@@ -169,6 +193,12 @@ export const GAME_INFO: Record<GameKind, { title: string; icon: string; players:
     players: "2 người",
     blurb: "Cờ vua quốc tế 8×8, đầy đủ luật FIDE: nhập thành, bắt tốt qua đường, phong cấp.",
   },
+  xiangqi: {
+    title: "Cờ tướng",
+    icon: "🪖",
+    players: "2 người",
+    blurb: "Cờ tướng 9×10, luật chuẩn: cản mắt tượng, cản chân mã, pháo nhảy ngòi, lộ diện tướng.",
+  },
 };
 
 /** Việc mình cần làm ngay trong ván (null nếu không có): dùng cho thông báo và nhãn "Tới lượt bạn". */
@@ -200,6 +230,10 @@ export function myTurn(g: GameView | undefined, meId: number): string | null {
       return (g.state as CaroState | undefined)?.turn === meId ? "Tới lượt bạn đánh" : null;
     case "chess": {
       const s = g.state as ChessState | undefined;
+      return s?.turn_player_id === meId ? "Tới lượt bạn đi cờ" : null;
+    }
+    case "xiangqi": {
+      const s = g.state as XiangqiState | undefined;
       return s?.turn_player_id === meId ? "Tới lượt bạn đi cờ" : null;
     }
     case "rps": {

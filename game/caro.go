@@ -12,7 +12,10 @@ import (
 // đối phương chặn cả hai đầu thì không tính.
 
 const (
-	caroSize     = 15
+	caroStart    = 15 // bàn lúc đầu
+	caroMax      = 40 // bàn tự mở rộng tới tối đa
+	caroNear     = 2  // đánh cách mép từ 2 ô trở xuống thì mở rộng
+	caroGrow     = 3  // số hàng / cột thêm mỗi lần
 	caroTurnTime = 3 * time.Minute
 )
 
@@ -24,7 +27,8 @@ type caroOptions struct {
 type caro struct {
 	Base
 	Opts  caroOptions `json:"opts"`
-	Board string      `json:"board,omitempty"` // caroSize² ký tự: '.', 'x', 'o'
+	Size  int         `json:"size,omitempty"`  // bàn vuông Size×Size (0: ván cũ, 15×15)
+	Board string      `json:"board,omitempty"` // Size² ký tự: '.', 'x', 'o'
 	Turn  int         `json:"turn"`            // 0: X (Players[0]), 1: O
 	Last  int         `json:"last"`
 	Win   []int       `json:"win,omitempty"`
@@ -37,7 +41,8 @@ func (c *caro) options() any       { return &c.Opts }
 func (c *caro) normalize()         {}
 
 func (c *caro) start(now time.Time) error {
-	c.Board = strings.Repeat(".", caroSize*caroSize)
+	c.Size = caroStart
+	c.Board = strings.Repeat(".", c.Size*c.Size)
 	c.Turn, c.Last, c.Moves, c.Win = 0, -1, 0, nil
 	c.logf("%s (X) đấu với %s (O). X đi trước.", c.Players[0].Name, c.Players[1].Name)
 	c.setDeadline(now, caroTurnTime)
@@ -48,6 +53,15 @@ func mark(turn int) byte { return "xo"[turn] }
 
 type moveData struct {
 	Cell int `json:"cell"`
+	Size int `json:"size"` // kích thước bàn người chơi đang thấy (0: app cũ không gửi)
+}
+
+// n: cạnh bàn hiện tại.
+func (c *caro) n() int {
+	if c.Size == 0 {
+		return caroStart
+	}
+	return c.Size
 }
 
 func (c *caro) act(p int64, action string, data json.RawMessage, now time.Time) error {
@@ -69,7 +83,10 @@ func (c *caro) act(p int64, action string, data json.RawMessage, now time.Time) 
 	if err := decode(data, &d); err != nil {
 		return err
 	}
-	if d.Cell < 0 || d.Cell >= caroSize*caroSize || c.Board[d.Cell] != '.' {
+	if d.Size != 0 && d.Size != c.n() {
+		return Error("Bàn vừa mở rộng, xem lại rồi đánh nhé.")
+	}
+	if d.Cell < 0 || d.Cell >= c.n()*c.n() || c.Board[d.Cell] != '.' {
 		return Error("Ô này không đánh được.")
 	}
 	b := []byte(c.Board)
@@ -83,7 +100,8 @@ func (c *caro) act(p int64, action string, data json.RawMessage, now time.Time) 
 		c.end(c.Players[me].Name+" thắng!", []int64{p})
 		return nil
 	}
-	if c.Moves == caroSize*caroSize {
+	c.grow(d.Cell)
+	if c.Moves == c.n()*c.n() {
 		c.logf("Hết chỗ đánh, hoà.")
 		c.end("Hoà!", nil)
 		return nil
@@ -95,25 +113,26 @@ func (c *caro) act(p int64, action string, data json.RawMessage, now time.Time) 
 
 // winLine: các ô của hàng thắng đi qua cell (nil nếu chưa thắng).
 func (c *caro) winLine(cell int) []int {
-	r0, c0 := cell/caroSize, cell%caroSize
+	n := c.n()
+	r0, c0 := cell/n, cell%n
 	m := c.Board[cell]
 	at := func(r, col int) byte {
-		if r < 0 || col < 0 || r >= caroSize || col >= caroSize {
+		if r < 0 || col < 0 || r >= n || col >= n {
 			return 0 // mép bàn: không tính là bị chặn
 		}
-		return c.Board[r*caroSize+col]
+		return c.Board[r*n+col]
 	}
 	for _, d := range [][2]int{{0, 1}, {1, 0}, {1, 1}, {1, -1}} {
 		line := []int{cell}
 		r, col := r0-d[0], c0-d[1]
 		for at(r, col) == m {
-			line = append([]int{r*caroSize + col}, line...)
+			line = append([]int{r*n + col}, line...)
 			r, col = r-d[0], col-d[1]
 		}
 		endA := at(r, col)
 		r, col = r0+d[0], c0+d[1]
 		for at(r, col) == m {
-			line = append(line, r*caroSize+col)
+			line = append(line, r*n+col)
 			r, col = r+d[0], col+d[1]
 		}
 		endB := at(r, col)
@@ -127,6 +146,40 @@ func (c *caro) winLine(cell int) []int {
 		return line
 	}
 	return nil
+}
+
+// grow: nước vừa đánh gần mép thì nở bàn thêm caroGrow hàng / cột về phía đó (giữ bàn vuông, tối đa
+// caroMax). Chiều nào không sát mép thì thêm về phía gần nước đi hơn.
+func (c *caro) grow(cell int) {
+	n := c.n()
+	add := min(caroGrow, caroMax-n)
+	if add <= 0 {
+		return
+	}
+	r, col := cell/n, cell%n
+	nearStart := func(i int) bool { return i <= caroNear }
+	nearEnd := func(i int) bool { return i >= n-1-caroNear }
+	if !nearStart(r) && !nearEnd(r) && !nearStart(col) && !nearEnd(col) {
+		return
+	}
+	// thêm vào đầu (trên / trái) hay cuối (dưới / phải) của mỗi chiều
+	before := func(i int) int {
+		if nearStart(i) || (!nearEnd(i) && i < n/2) {
+			return add
+		}
+		return 0
+	}
+	top, left := before(r), before(col)
+	m := n + add
+	b := []byte(strings.Repeat(".", m*m))
+	for i := 0; i < n; i++ {
+		copy(b[(i+top)*m+left:], c.Board[i*n:(i+1)*n])
+	}
+	c.Board, c.Size = string(b), m
+	if c.Last >= 0 {
+		c.Last = (c.Last/n+top)*m + c.Last%n + left
+	}
+	c.logf("Bàn mở rộng thành %d×%d.", m, m)
 }
 
 func (c *caro) tick(now time.Time) bool {
@@ -148,7 +201,7 @@ type caroPublic struct {
 }
 
 func (c *caro) view(viewer int64) (any, any) {
-	pub := caroPublic{Size: caroSize, Board: c.Board, Last: c.Last, Win: c.Win, Moves: c.Moves, FreeStyle: c.Opts.FreeStyle}
+	pub := caroPublic{Size: c.n(), Board: c.Board, Last: c.Last, Win: c.Win, Moves: c.Moves, FreeStyle: c.Opts.FreeStyle}
 	if c.Status == Playing {
 		pub.Turn = c.Players[c.Turn].ID
 	}

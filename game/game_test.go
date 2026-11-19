@@ -74,12 +74,12 @@ func TestCaroWinAndBlockRule(t *testing.T) {
 		t.Fatal("O must not move first")
 	}
 	// X: hàng 7, cột 3..7; O đánh rải rác
-	for i, oc := range []int{0, 2, 4, 6} {
-		act(t, g, x, "move", map[string]int{"cell": 7*caroSize + 3 + i})
+	for i, oc := range []int{10*caroStart + 3, 10*caroStart + 5, 10*caroStart + 7, 10*caroStart + 9} {
+		act(t, g, x, "move", map[string]int{"cell": 7*caroStart + 3 + i})
 		act(t, g, o, "move", map[string]int{"cell": oc})
 	}
 	g = roundTrip(t, g)
-	act(t, g, x, "move", map[string]int{"cell": 7*caroSize + 7})
+	act(t, g, x, "move", map[string]int{"cell": 7*caroStart + 7})
 	if g.Status() != Ended || len(g.Winners()) != 1 || g.Winners()[0] != x.ID {
 		t.Fatalf("X should win, status=%s winners=%v", g.Status(), g.Winners())
 	}
@@ -90,9 +90,9 @@ func TestCaroWinAndBlockRule(t *testing.T) {
 	// chặn hai đầu: O ở hai đầu hàng 5 của X thì X chưa thắng
 	g, ps = newGame(t, "caro", 2, "")
 	x, o = ps[0], ps[1]
-	row := 3 * caroSize
-	xs := []int{row + 2, row + 3, row + 4, row + 5, row + 6}
-	os := []int{row + 1, row + 7, 100, 102, 104}
+	row := 5 * caroStart
+	xs := []int{row + 4, row + 5, row + 6, row + 7, row + 8}
+	os := []int{row + 3, row + 9, 10*caroStart + 3, 10*caroStart + 5, 10*caroStart + 7}
 	for i := range xs {
 		act(t, g, x, "move", map[string]int{"cell": xs[i]})
 		if g.Status() == Ended {
@@ -106,6 +106,75 @@ func TestCaroWinAndBlockRule(t *testing.T) {
 	}
 	if g.Status() != Playing {
 		t.Fatalf("status = %s, want playing", g.Status())
+	}
+}
+
+func caroOf(g *Game) *caro { return g.r.(*caro) }
+
+func TestCaroBoardGrows(t *testing.T) {
+	g, ps := newGame(t, "caro", 2, "")
+	x, o := ps[0], ps[1]
+	// giữa bàn: không mở rộng
+	act(t, g, x, "move", map[string]int{"cell": 7*caroStart + 7, "size": caroStart})
+	if caroOf(g).n() != caroStart {
+		t.Fatalf("center move grew the board to %d", caroOf(g).n())
+	}
+	// O đánh sát góc trên trái: bàn thêm 3 hàng trên và 3 cột trái
+	act(t, g, o, "move", map[string]int{"cell": 1*caroStart + 0})
+	c := caroOf(g)
+	if c.n() != caroStart+caroGrow {
+		t.Fatalf("size after edge move = %d", c.n())
+	}
+	n := c.n()
+	if c.Board[10*n+10] != 'x' || c.Board[4*n+3] != 'o' || c.Last != 4*n+3 {
+		t.Fatalf("stones not shifted: last=%d x=%c o=%c", c.Last, c.Board[10*n+10], c.Board[4*n+3])
+	}
+	// người chơi còn thấy bàn cũ: từ chối thay vì đặt nhầm ô
+	if err := tryAct(g, x, "move", map[string]int{"cell": 7*caroStart + 8, "size": caroStart}); err == nil {
+		t.Fatal("move on a stale board size must be rejected")
+	}
+	// mép phải chỉ chạm một chiều: hàng thêm về phía gần nước đi hơn (dưới, vì hàng 15 > 18/2)
+	act(t, g, x, "move", map[string]int{"cell": 15*n + n - 1, "size": n})
+	c = caroOf(g)
+	m := c.n()
+	if m != n+caroGrow || c.Board[15*m+n-1] != 'x' || c.Board[10*m+10] != 'x' {
+		t.Fatalf("right-edge growth: size=%d", m)
+	}
+	// app cũ không gửi size vẫn đánh được
+	act(t, g, o, "move", map[string]int{"cell": 9*m + 9})
+
+	// thắng 5 quân qua chỗ vừa mở rộng; bàn tối đa caroMax
+	g, ps = newGame(t, "caro", 2, "")
+	x, o = ps[0], ps[1]
+	// X đánh sát mép trên (bàn nở, các quân bị dời), rồi nối tiếp theo vị trí mới của quân đầu tiên
+	act(t, g, x, "move", map[string]int{"cell": 0*caroStart + 7})
+	for i := 1; i <= 4; i++ {
+		c := caroOf(g)
+		n := c.n()
+		act(t, g, o, "move", map[string]int{"cell": (n-1)*n + n - 1 - i*2}) // góc dưới phải: nở về phía đó
+		g = roundTrip(t, g)
+		c = caroOf(g)
+		n = c.n()
+		first := strings.IndexByte(c.Board, 'x')
+		act(t, g, x, "move", map[string]int{"cell": first + i, "size": n})
+	}
+	c = caroOf(g)
+	n = c.n()
+	if g.Status() != Ended || g.Winners()[0] != x.ID {
+		t.Fatalf("five across a grown board should win: %s (size %d)", g.Status(), n)
+	}
+	if n > caroMax {
+		t.Fatalf("board grew past max: %d", n)
+	}
+
+	big := &caro{Size: caroMax, Board: strings.Repeat(".", caroMax*caroMax)}
+	big.grow(0)
+	if big.n() != caroMax {
+		t.Fatalf("grew past max: %d", big.n())
+	}
+	old := &caro{Board: strings.Repeat(".", caroStart*caroStart)} // ván lưu trước khi có Size
+	if old.n() != caroStart {
+		t.Fatal("old games default to 15×15")
 	}
 }
 

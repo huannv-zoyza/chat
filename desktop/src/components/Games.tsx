@@ -1,5 +1,17 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { ApiError, type GameKind, type GameView, type Message, type PublicUser } from "../lib/api";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
+import {
+  ApiError,
+  type GameKind,
+  type GameView,
+  type Message,
+  type PublicUser,
+} from "../lib/api";
 import {
   GAME_INFO,
   ROLE_INFO,
@@ -42,7 +54,11 @@ function Countdown({ deadline, label }: { deadline?: string; label?: string }) {
   const left = useSecondsLeft(deadline);
   if (left === null) return null;
   return (
-    <span className={`game-clock${left <= 10 ? " is-urgent" : ""}`} role="timer" aria-label={label}>
+    <span
+      className={`game-clock${left <= 10 ? " is-urgent" : ""}`}
+      role="timer"
+      aria-label={label}
+    >
       ⏱ {clock(left)}
     </span>
   );
@@ -108,7 +124,13 @@ function PlayerTile({
     </>
   );
   return onClick ? (
-    <button type="button" className={cls} onClick={onClick} disabled={ctx.busy} aria-pressed={selected}>
+    <button
+      type="button"
+      className={cls}
+      onClick={onClick}
+      disabled={ctx.busy}
+      aria-pressed={selected}
+    >
       {body}
     </button>
   ) : (
@@ -117,20 +139,39 @@ function PlayerTile({
 }
 
 /** Thẻ bí mật (vai / từ khoá): mặc định úp để người ngồi cạnh không nhìn trộm. */
-function SecretCard({ label, children, tone }: { label: string; children: ReactNode; tone?: "wolf" | "plain" }) {
+function SecretCard({
+  label,
+  children,
+  tone,
+}: {
+  label: string;
+  children: ReactNode;
+  tone?: "wolf" | "plain";
+}) {
   const [shown, setShown] = useState(false);
   return (
-    <div className={`game-secret${tone === "wolf" ? " is-wolf" : ""}${shown ? " is-shown" : ""}`}>
+    <div
+      className={`game-secret${tone === "wolf" ? " is-wolf" : ""}${shown ? " is-shown" : ""}`}
+    >
       <div className="game-secret-head">
         <span>{label}</span>
-        <button type="button" className="link-btn" onClick={() => setShown((v) => !v)} aria-expanded={shown}>
+        <button
+          type="button"
+          className="link-btn"
+          onClick={() => setShown((v) => !v)}
+          aria-expanded={shown}
+        >
           {shown ? "Úp thẻ" : "Lật xem"}
         </button>
       </div>
       {shown ? (
         <div className="game-secret-body">{children}</div>
       ) : (
-        <button type="button" className="game-secret-cover" onClick={() => setShown(true)}>
+        <button
+          type="button"
+          className="game-secret-cover"
+          onClick={() => setShown(true)}
+        >
           Bấm để lật thẻ (che màn hình khỏi người bên cạnh)
         </button>
       )}
@@ -138,7 +179,10 @@ function SecretCard({ label, children, tone }: { label: string; children: ReactN
   );
 }
 
-function votesFor(votes: Record<string, number> | undefined, target: number): number[] {
+function votesFor(
+  votes: Record<string, number> | undefined,
+  target: number,
+): number[] {
   if (!votes) return [];
   return Object.entries(votes)
     .filter(([, t]) => t === target)
@@ -172,17 +216,39 @@ export function GameCard({ message }: { message: Message }) {
     setBusy(true);
     setError(null);
     gameAction(message.id, action, data)
-      .catch((err) => setError(err instanceof ApiError ? err.message : "Không gửi được, thử lại."))
+      .catch((err) =>
+        setError(
+          err instanceof ApiError ? err.message : "Không gửi được, thử lại.",
+        ),
+      )
       .finally(() => setBusy(false));
   };
-  const nameOf = (id: number) => game.players.find((p) => p.id === id)?.name ?? "?";
+  const nameOf = (id: number) =>
+    game.players.find((p) => p.id === id)?.name ?? "?";
   const user = (id: number): PublicUser =>
-    state.users[id] ?? { id, username: nameOf(id), display_name: nameOf(id), avatar: null, status_text: "" };
+    state.users[id] ?? {
+      id,
+      username: nameOf(id),
+      display_name: nameOf(id),
+      avatar: null,
+      status_text: "",
+    };
   const [sharing, setSharing] = useState(false);
-  const ctx: Ctx = { game, meId, isPlayer, busy, act, user, nameOf, invite: () => setSharing(true) };
+  const ctx: Ctx = {
+    game,
+    meId,
+    isPlayer,
+    busy,
+    act,
+    user,
+    nameOf,
+    invite: () => setSharing(true),
+  };
   const info = GAME_INFO[game.kind];
   const turn = myTurn(game, meId);
-  const night = game.kind === "werewolf" && (game.state as WerewolfState | undefined)?.phase === "night";
+  const night =
+    game.kind === "werewolf" &&
+    (game.state as WerewolfState | undefined)?.phase === "night";
 
   const meta =
     game.status === "lobby"
@@ -204,7 +270,13 @@ export function GameCard({ message }: { message: Message }) {
           <p className="game-title">{game.title}</p>
           <p className="game-meta">
             {meta}
-            {game.status !== "ended" && <> · chủ phòng {game.host_id === meId ? "bạn" : nameOf(game.host_id)}</>}
+            {game.status !== "ended" && (
+              <>
+                {" "}
+                · chủ phòng{" "}
+                {game.host_id === meId ? "bạn" : nameOf(game.host_id)}
+              </>
+            )}
           </p>
         </div>
         {turn && <span className="game-turn">{turn}</span>}
@@ -225,14 +297,18 @@ export function GameCard({ message }: { message: Message }) {
       )}
 
       {game.status === "ended" && game.result && (
-        <p className={`game-result${game.winners?.includes(meId) ? " is-win" : ""}`}>
+        <p
+          className={`game-result${game.winners?.includes(meId) ? " is-win" : ""}`}
+        >
           {game.winners?.includes(meId) ? "🏆 " : ""}
           {game.result}
         </p>
       )}
       <GameLog game={game} />
       <FormError>{error}</FormError>
-      {sharing && <ShareDialog message={message} onClose={() => setSharing(false)} />}
+      {sharing && (
+        <ShareDialog message={message} onClose={() => setSharing(false)} />
+      )}
     </section>
   );
 }
@@ -250,7 +326,11 @@ function GameLog({ game }: { game: GameView }) {
         ))}
       </ol>
       {game.log.length > lines.length || all ? (
-        <button type="button" className="link-btn" onClick={() => setAll((v) => !v)}>
+        <button
+          type="button"
+          className="link-btn"
+          onClick={() => setAll((v) => !v)}
+        >
           {all ? "Thu gọn" : `Xem toàn bộ diễn biến (${game.log.length})`}
         </button>
       ) : null}
@@ -285,7 +365,10 @@ const RULES: Record<GameKind, string[]> = {
     "Luật chặn hai đầu: hàng 5 bị đối phương chặn cả hai đầu thì không tính.",
     "Mỗi nước có 3 phút suy nghĩ.",
   ],
-  rps: ["Búa thắng Kéo, Kéo thắng Bao, Bao thắng Búa.", "Hai người ra cùng lúc, 30 giây mỗi ván."],
+  rps: [
+    "Búa thắng Kéo, Kéo thắng Bao, Bao thắng Búa.",
+    "Hai người ra cùng lúc, 30 giây mỗi ván.",
+  ],
 };
 
 function Lobby({ ctx }: { ctx: Ctx }) {
@@ -300,8 +383,9 @@ function Lobby({ ctx }: { ctx: Ctx }) {
     const s = game.state as StationState;
     setup = (
       <p className="game-setup">
-        {s.traitor_count} kẻ phản bội · {s.opts.tasks} nhiệm vụ/người · hồi chiêu giết {s.opts.kill_cooldown}s · họp{" "}
-        {s.opts.discuss}s + bỏ phiếu {s.opts.vote}s
+        {s.traitor_count} kẻ phản bội · {s.opts.tasks} nhiệm vụ/người · hồi
+        chiêu giết {s.opts.kill_cooldown}s · họp {s.opts.discuss}s + bỏ phiếu{" "}
+        {s.opts.vote}s
       </p>
     );
   } else if (game.kind === "werewolf") {
@@ -311,22 +395,38 @@ function Lobby({ ctx }: { ctx: Ctx }) {
         Vai ({Math.max(game.players.length, 4)} người):{" "}
         {(Object.keys(ROLE_INFO) as WerewolfRole[])
           .filter((r) => s.composition[r])
-          .map((r) => `${ROLE_INFO[r].icon} ${s.composition[r]} ${ROLE_INFO[r].name}`)
+          .map(
+            (r) =>
+              `${ROLE_INFO[r].icon} ${s.composition[r]} ${ROLE_INFO[r].name}`,
+          )
           .join(" · ")}
         <br />
-        Ngày {s.opts.day_seconds}s · đêm {s.opts.night_seconds}s{s.opts.hide_roles ? " · giấu vai người chết" : ""}
+        Ngày {s.opts.day_seconds}s · đêm {s.opts.night_seconds}s
+        {s.opts.hide_roles ? " · giấu vai người chết" : ""}
       </p>
     );
   } else if (game.kind === "spy") {
-    setup = <p className="game-setup">{(game.state as SpyState).spy_count} gián điệp trong phòng</p>;
+    setup = (
+      <p className="game-setup">
+        {(game.state as SpyState).spy_count} gián điệp trong phòng
+      </p>
+    );
   } else if (game.kind === "caro") {
     setup = (
       <p className="game-setup">
-        Bàn 15×15 · {(game.state as CaroState).free_style ? "không chặn hai đầu" : "luật chặn hai đầu"}
+        Bàn {(game.state as CaroState).size}×{(game.state as CaroState).size},
+        tự mở rộng khi đánh ra mép ·{" "}
+        {(game.state as CaroState).free_style
+          ? "không chặn hai đầu"
+          : "luật chặn hai đầu"}
       </p>
     );
   } else {
-    setup = <p className="game-setup">Chạm {Math.floor((game.state as RpsState).best_of / 2) + 1} ván thắng</p>;
+    setup = (
+      <p className="game-setup">
+        Chạm {Math.floor((game.state as RpsState).best_of / 2) + 1} ván thắng
+      </p>
+    );
   }
 
   return (
@@ -335,14 +435,21 @@ function Lobby({ ctx }: { ctx: Ctx }) {
       <ul className="game-roster" aria-label="Người chơi">
         {game.players.map((p) => (
           <li key={p.id}>
-            <PlayerTile ctx={ctx} id={p.id} sub={p.id === game.host_id ? "chủ phòng" : undefined} />
+            <PlayerTile
+              ctx={ctx}
+              id={p.id}
+              sub={p.id === game.host_id ? "chủ phòng" : undefined}
+            />
           </li>
         ))}
-        {Array.from({ length: Math.max(0, game.min_players - game.players.length) }, (_, i) => (
-          <li key={`e${i}`} className="game-seat" aria-hidden>
-            Chỗ trống
-          </li>
-        ))}
+        {Array.from(
+          { length: Math.max(0, game.min_players - game.players.length) },
+          (_, i) => (
+            <li key={`e${i}`} className="game-seat" aria-hidden>
+              Chỗ trống
+            </li>
+          ),
+        )}
       </ul>
       <details className="game-rules">
         <summary>Luật chơi</summary>
@@ -354,12 +461,22 @@ function Lobby({ ctx }: { ctx: Ctx }) {
       </details>
       <div className="game-actions">
         {!isPlayer && !full && (
-          <button type="button" className="btn btn-primary" disabled={busy} onClick={() => act("join")}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={busy}
+            onClick={() => act("join")}
+          >
             {auto ? "Nhận lời thách đấu" : "Vào chơi"}
           </button>
         )}
         {isPlayer && !isHost && (
-          <button type="button" className="btn" disabled={busy} onClick={() => act("leave")}>
+          <button
+            type="button"
+            className="btn"
+            disabled={busy}
+            onClick={() => act("leave")}
+          >
             Rời phòng
           </button>
         )}
@@ -371,7 +488,9 @@ function Lobby({ ctx }: { ctx: Ctx }) {
             onClick={() => act("start")}
             title={enough ? undefined : `Cần ít nhất ${game.min_players} người`}
           >
-            {enough ? "Bắt đầu" : `Cần thêm ${game.min_players - game.players.length} người`}
+            {enough
+              ? "Bắt đầu"
+              : `Cần thêm ${game.min_players - game.players.length} người`}
           </button>
         )}
         {!full && (
@@ -381,11 +500,18 @@ function Lobby({ ctx }: { ctx: Ctx }) {
           </button>
         )}
         {isHost && (
-          <button type="button" className="btn" disabled={busy} onClick={() => act("cancel")}>
+          <button
+            type="button"
+            className="btn"
+            disabled={busy}
+            onClick={() => act("cancel")}
+          >
             Huỷ phòng
           </button>
         )}
-        {isHost && auto && <span className="game-hint">Chờ một người nhận lời…</span>}
+        {isHost && auto && (
+          <span className="game-hint">Chờ một người nhận lời…</span>
+        )}
       </div>
     </div>
   );
@@ -412,7 +538,8 @@ function Werewolf({ ctx }: { ctx: Ctx }) {
   const playing = game.status === "playing";
   const wolfMates = new Set(me?.role === "wolf" ? me.wolves : []);
   const roleOf = (id: number): WerewolfRole | undefined =>
-    s.roles[id] ?? (wolfMates.has(id) ? "wolf" : id === meId ? me?.role : undefined);
+    s.roles[id] ??
+    (wolfMates.has(id) ? "wolf" : id === meId ? me?.role : undefined);
 
   // ai bấm được và bấm thì làm gì
   const canPick = (id: number): boolean => {
@@ -433,19 +560,26 @@ function Werewolf({ ctx }: { ctx: Ctx }) {
   };
   const onPick = (id: number) => {
     if (step === "wolf") act("night", { target: id });
-    else if (step === "vote") act("vote", { target: s.votes?.[meId] === id ? 0 : id });
+    else if (step === "vote")
+      act("vote", { target: s.votes?.[meId] === id ? 0 : id });
     else setPending(id === pending ? null : id);
   };
 
   let banner: ReactNode;
   if (!playing) banner = <span>Ván đã kết thúc sau {s.round} đêm</span>;
-  else if (s.phase === "night") banner = <span>🌙 Đêm {s.round} · cả làng đi ngủ</span>;
-  else if (s.phase === "day") banner = <span>☀️ Ngày {s.round} · thảo luận trong kênh rồi bỏ phiếu treo cổ</span>;
-  else banner = <span>🏹 Thợ săn {ctx.nameOf(s.hunter ?? 0)} đang ngắm bắn</span>;
+  else if (s.phase === "night")
+    banner = <span>🌙 Đêm {s.round} · cả làng đi ngủ</span>;
+  else if (s.phase === "day")
+    banner = (
+      <span>☀️ Ngày {s.round} · thảo luận trong kênh rồi bỏ phiếu treo cổ</span>
+    );
+  else
+    banner = <span>🏹 Thợ săn {ctx.nameOf(s.hunter ?? 0)} đang ngắm bắn</span>;
 
   let hint: ReactNode = null;
   if (playing && me) {
-    if (!me.alive && step !== "shoot") hint = "Bạn đã chết. Hãy xem tiếp nhưng đừng tiết lộ gì nhé.";
+    if (!me.alive && step !== "shoot")
+      hint = "Bạn đã chết. Hãy xem tiếp nhưng đừng tiết lộ gì nhé.";
     else if (step === "wolf")
       hint = me.target
         ? `Bạn chọn cắn ${ctx.nameOf(me.target)}. Đổi được tới khi cả bầy thống nhất.`
@@ -459,7 +593,8 @@ function Werewolf({ ctx }: { ctx: Ctx }) {
           : s.votes[meId]
             ? `Bạn bỏ phiếu treo ${ctx.nameOf(s.votes[meId])}. Bấm lại để bỏ qua.`
             : "Bạn đã bỏ qua lượt bỏ phiếu.";
-    else if (step === "shoot") hint = "Bạn là Thợ săn và vừa chết. Chọn một người để bắn theo.";
+    else if (step === "shoot")
+      hint = "Bạn là Thợ săn và vừa chết. Chọn một người để bắn theo.";
     else if (s.phase === "night")
       hint =
         me.role === "seer" || me.role === "guard"
@@ -473,13 +608,19 @@ function Werewolf({ ctx }: { ctx: Ctx }) {
     <div className="ww">
       <div className="game-banner">
         {banner}
-        {playing && <Countdown deadline={game.deadline} label="Thời gian còn lại" />}
+        {playing && (
+          <Countdown deadline={game.deadline} label="Thời gian còn lại" />
+        )}
       </div>
 
       {me?.role && (
-        <SecretCard label="Vai của bạn" tone={me.role === "wolf" ? "wolf" : "plain"}>
+        <SecretCard
+          label="Vai của bạn"
+          tone={me.role === "wolf" ? "wolf" : "plain"}
+        >
           <p className="ww-role">
-            <span aria-hidden>{ROLE_INFO[me.role].icon}</span> {ROLE_INFO[me.role].name}
+            <span aria-hidden>{ROLE_INFO[me.role].icon}</span>{" "}
+            {ROLE_INFO[me.role].name}
             <small>{ROLE_INFO[me.role].team}</small>
           </p>
           <p className="ww-role-desc">{ROLE_INFO[me.role].desc}</p>
@@ -494,14 +635,16 @@ function Werewolf({ ctx }: { ctx: Ctx }) {
           )}
           {me.role === "witch" && (
             <p className="ww-role-desc">
-              Bình cứu: {me.heal_left ? "còn" : "đã dùng"} · Bình độc: {me.poison_left ? "còn" : "đã dùng"}
+              Bình cứu: {me.heal_left ? "còn" : "đã dùng"} · Bình độc:{" "}
+              {me.poison_left ? "còn" : "đã dùng"}
             </p>
           )}
           {me.seer_log && me.seer_log.length > 0 && (
             <ul className="ww-seer">
               {me.seer_log.map((c) => (
                 <li key={c.round}>
-                  Đêm {c.round}: {ctx.nameOf(c.target)} — {c.wolf ? <b>🐺 là Sói</b> : "không phải Sói"}
+                  Đêm {c.round}: {ctx.nameOf(c.target)} —{" "}
+                  {c.wolf ? <b>🐺 là Sói</b> : "không phải Sói"}
                 </li>
               ))}
             </ul>
@@ -512,7 +655,15 @@ function Werewolf({ ctx }: { ctx: Ctx }) {
       {hint && <p className="game-hint">{hint}</p>}
 
       {step === "witch" && me && (
-        <WitchPanel ctx={ctx} me={me} s={s} heal={heal} setHeal={setHeal} poison={poison} setPoison={setPoison} />
+        <WitchPanel
+          ctx={ctx}
+          me={me}
+          s={s}
+          heal={heal}
+          setHeal={setHeal}
+          poison={poison}
+          setPoison={setPoison}
+        />
       )}
 
       <ul className="game-grid" aria-label="Dân làng">
@@ -520,10 +671,15 @@ function Werewolf({ ctx }: { ctx: Ctx }) {
           const role = roleOf(p.id);
           const isDead = dead.has(p.id);
           const voters = s.phase === "day" ? votesFor(s.votes, p.id) : [];
-          const wolfVoters = step === "wolf" ? votesFor(me?.wolf_votes, p.id) : [];
+          const wolfVoters =
+            step === "wolf" ? votesFor(me?.wolf_votes, p.id) : [];
           const shownRole =
             role && (s.roles[p.id] || p.id === meId || wolfMates.has(p.id)) ? (
-              <span className={`ww-badge ww-${role}`} title={ROLE_INFO[role].name} aria-label={ROLE_INFO[role].name}>
+              <span
+                className={`ww-badge ww-${role}`}
+                title={ROLE_INFO[role].name}
+                aria-label={ROLE_INFO[role].name}
+              >
                 {ROLE_INFO[role].icon}
               </span>
             ) : null;
@@ -531,7 +687,8 @@ function Werewolf({ ctx }: { ctx: Ctx }) {
           const revealed = s.roles[p.id] ? ROLE_INFO[s.roles[p.id]].name : "";
           const sub = isDead
             ? `đã chết${revealed ? ` · ${revealed}` : ""}`
-            : revealed || (wolfMates.has(p.id) && p.id !== meId ? "đồng bọn" : undefined);
+            : revealed ||
+              (wolfMates.has(p.id) && p.id !== meId ? "đồng bọn" : undefined);
           return (
             <li key={p.id}>
               <PlayerTile
@@ -548,7 +705,10 @@ function Werewolf({ ctx }: { ctx: Ctx }) {
                 badge={shownRole}
                 onClick={canPick(p.id) ? () => onPick(p.id) : undefined}
               >
-                <VoterDots ctx={ctx} ids={voters.length ? voters : wolfVoters} />
+                <VoterDots
+                  ctx={ctx}
+                  ids={voters.length ? voters : wolfVoters}
+                />
               </PlayerTile>
             </li>
           );
@@ -557,38 +717,63 @@ function Werewolf({ ctx }: { ctx: Ctx }) {
 
       {playing && (
         <div className="game-actions">
-          {pending !== null && (step === "seer" || step === "guard" || step === "shoot") && (
+          {pending !== null &&
+            (step === "seer" || step === "guard" || step === "shoot") && (
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={busy}
+                onClick={() =>
+                  act(step === "shoot" ? "shoot" : "night", { target: pending })
+                }
+              >
+                {step === "seer" ? "Soi" : step === "guard" ? "Bảo vệ" : "Bắn"}{" "}
+                {ctx.nameOf(pending)}
+              </button>
+            )}
+          {step === "shoot" && (
             <button
               type="button"
-              className="btn btn-primary"
+              className="btn"
               disabled={busy}
-              onClick={() => act(step === "shoot" ? "shoot" : "night", { target: pending })}
+              onClick={() => act("shoot", { target: 0 })}
             >
-              {step === "seer" ? "Soi" : step === "guard" ? "Bảo vệ" : "Bắn"} {ctx.nameOf(pending)}
-            </button>
-          )}
-          {step === "shoot" && (
-            <button type="button" className="btn" disabled={busy} onClick={() => act("shoot", { target: 0 })}>
               Không bắn ai
             </button>
           )}
           {step === "vote" && s.votes?.[meId] === undefined && (
-            <button type="button" className="btn" disabled={busy} onClick={() => act("vote", { target: 0 })}>
+            <button
+              type="button"
+              className="btn"
+              disabled={busy}
+              onClick={() => act("vote", { target: 0 })}
+            >
               Bỏ qua
             </button>
           )}
           {s.phase === "day" && game.host_id === meId && (
-            <button type="button" className="btn" disabled={busy} onClick={() => act("skip_day")}>
+            <button
+              type="button"
+              className="btn"
+              disabled={busy}
+              onClick={() => act("skip_day")}
+            >
               Chốt phiếu ngay
             </button>
           )}
           {s.phase === "day" && (
             <span className="game-hint">
-              {Object.keys(s.votes ?? {}).length}/{game.players.length - s.dead.length} người đã bỏ phiếu
+              {Object.keys(s.votes ?? {}).length}/
+              {game.players.length - s.dead.length} người đã bỏ phiếu
             </span>
           )}
           {ctx.isPlayer && game.host_id === meId && (
-            <button type="button" className="link-btn game-cancel" disabled={busy} onClick={() => act("cancel")}>
+            <button
+              type="button"
+              className="link-btn game-cancel"
+              disabled={busy}
+              onClick={() => act("cancel")}
+            >
               Huỷ ván
             </button>
           )}
@@ -615,7 +800,9 @@ function WitchPanel({
   poison: number;
   setPoison: (v: number) => void;
 }) {
-  const alive = ctx.game.players.filter((p) => !s.dead.includes(p.id) && p.id !== ctx.meId);
+  const alive = ctx.game.players.filter(
+    (p) => !s.dead.includes(p.id) && p.id !== ctx.meId,
+  );
   return (
     <div className="ww-witch">
       <p>
@@ -630,14 +817,21 @@ function WitchPanel({
       </p>
       {me.victim && me.heal_left ? (
         <label className="check-field">
-          <input type="checkbox" checked={heal} onChange={(e) => setHeal(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={heal}
+            onChange={(e) => setHeal(e.target.checked)}
+          />
           <span>Dùng bình cứu cho {ctx.nameOf(me.victim)}</span>
         </label>
       ) : null}
       {me.poison_left && (
         <label className="field">
           <span>Bình độc</span>
-          <select value={poison} onChange={(e) => setPoison(Number(e.target.value))}>
+          <select
+            value={poison}
+            onChange={(e) => setPoison(Number(e.target.value))}
+          >
             <option value={0}>Không dùng</option>
             {alive.map((p) => (
               <option key={p.id} value={p.id}>
@@ -682,7 +876,8 @@ function Spy({ ctx }: { ctx: Ctx }) {
   };
 
   const rounds = new Map<number, SpyState["clues"]>();
-  for (const c of s.clues) rounds.set(c.round, [...(rounds.get(c.round) ?? []), c]);
+  for (const c of s.clues)
+    rounds.set(c.round, [...(rounds.get(c.round) ?? []), c]);
 
   return (
     <div className="spy">
@@ -691,7 +886,8 @@ function Spy({ ctx }: { ctx: Ctx }) {
           <span>Ván đã kết thúc sau {s.round} vòng</span>
         ) : s.phase === "describe" ? (
           <span>
-            🗣️ Vòng {s.round} · lượt {s.speaker === meId ? "bạn" : ctx.nameOf(s.speaker ?? 0)} mô tả
+            🗣️ Vòng {s.round} · lượt{" "}
+            {s.speaker === meId ? "bạn" : ctx.nameOf(s.speaker ?? 0)} mô tả
           </span>
         ) : (
           <span>🗳️ Vòng {s.round} · bỏ phiếu tìm gián điệp</span>
@@ -703,15 +899,16 @@ function Spy({ ctx }: { ctx: Ctx }) {
         <SecretCard label="Từ khoá của bạn">
           <p className="spy-word">{me.word}</p>
           <p className="ww-role-desc">
-            Có {s.spy_count} gián điệp nhận từ khác. Bạn cũng có thể là gián điệp mà không biết: nghe kỹ mọi người mô
-            tả!
+            Có {s.spy_count} gián điệp nhận từ khác. Bạn cũng có thể là gián
+            điệp mà không biết: nghe kỹ mọi người mô tả!
           </p>
         </SecretCard>
       )}
 
       {s.words && (
         <p className="spy-reveal">
-          Từ của dân: <b>{s.words[0]}</b> · Từ của gián điệp: <b>{s.words[1]}</b>
+          Từ của dân: <b>{s.words[0]}</b> · Từ của gián điệp:{" "}
+          <b>{s.words[1]}</b>
         </p>
       )}
 
@@ -723,7 +920,8 @@ function Spy({ ctx }: { ctx: Ctx }) {
               <ul>
                 {list.map((c, i) => (
                   <li key={i}>
-                    <b>{ctx.nameOf(c.player)}:</b> {c.text ? `“${c.text}”` : <em>(hết giờ, bỏ lượt)</em>}
+                    <b>{ctx.nameOf(c.player)}:</b>{" "}
+                    {c.text ? `“${c.text}”` : <em>(hết giờ, bỏ lượt)</em>}
                   </li>
                 ))}
               </ul>
@@ -751,7 +949,12 @@ function Spy({ ctx }: { ctx: Ctx }) {
 
       <ul className="game-grid" aria-label="Người chơi">
         {(s.order && playing
-          ? [...s.order, ...game.players.map((p) => p.id).filter((id) => !s.order!.includes(id))]
+          ? [
+              ...s.order,
+              ...game.players
+                .map((p) => p.id)
+                .filter((id) => !s.order!.includes(id)),
+            ]
           : game.players.map((p) => p.id)
         ).map((id) => {
           const voters = s.phase === "vote" ? votesFor(s.votes, id) : [];
@@ -762,7 +965,9 @@ function Spy({ ctx }: { ctx: Ctx }) {
                 ctx={ctx}
                 id={id}
                 dead={isOut}
-                selected={myVote === id || (s.phase === "describe" && s.speaker === id)}
+                selected={
+                  myVote === id || (s.phase === "describe" && s.speaker === id)
+                }
                 winner={game.status === "ended" && game.winners?.includes(id)}
                 sub={
                   isOut
@@ -775,12 +980,20 @@ function Spy({ ctx }: { ctx: Ctx }) {
                 }
                 badge={
                   spies.has(id) ? (
-                    <span className="ww-badge ww-wolf" title="Gián điệp" aria-label="Gián điệp">
+                    <span
+                      className="ww-badge ww-wolf"
+                      title="Gián điệp"
+                      aria-label="Gián điệp"
+                    >
                       🕵️
                     </span>
                   ) : null
                 }
-                onClick={canVote && !isOut && id !== meId && !busy ? () => act("vote", { target: id }) : undefined}
+                onClick={
+                  canVote && !isOut && id !== meId && !busy
+                    ? () => act("vote", { target: id })
+                    : undefined
+                }
               >
                 <VoterDots ctx={ctx} ids={voters} />
               </PlayerTile>
@@ -792,17 +1005,29 @@ function Spy({ ctx }: { ctx: Ctx }) {
       {playing && (
         <div className="game-actions">
           {canVote && myVote === undefined && (
-            <button type="button" className="btn" disabled={busy} onClick={() => act("vote", { target: 0 })}>
+            <button
+              type="button"
+              className="btn"
+              disabled={busy}
+              onClick={() => act("vote", { target: 0 })}
+            >
               Bỏ qua
             </button>
           )}
           {canVote && (
             <span className="game-hint">
-              {myVote === undefined ? "Bấm vào người bạn nghi là gián điệp." : "Đã bỏ phiếu, bấm người khác để đổi."}
+              {myVote === undefined
+                ? "Bấm vào người bạn nghi là gián điệp."
+                : "Đã bỏ phiếu, bấm người khác để đổi."}
             </span>
           )}
           {game.host_id === meId && (
-            <button type="button" className="link-btn game-cancel" disabled={busy} onClick={() => act("cancel")}>
+            <button
+              type="button"
+              className="link-btn game-cancel"
+              disabled={busy}
+              onClick={() => act("cancel")}
+            >
               Huỷ ván
             </button>
           )}
@@ -814,6 +1039,10 @@ function Spy({ ctx }: { ctx: Ctx }) {
 
 /* ---------- Cờ caro ---------- */
 
+// Ô cố định (co trong khoảng này cho vừa khung); bàn to hơn khung thì cuộn.
+const CARO_CELL_MIN = 24;
+const CARO_CELL_MAX = 32;
+
 function Caro({ ctx }: { ctx: Ctx }) {
   const { game, meId, busy, act } = ctx;
   const s = game.state as CaroState;
@@ -821,45 +1050,95 @@ function Caro({ ctx }: { ctx: Ctx }) {
   const board = s.board ?? ".".repeat(s.size * s.size);
   const win = new Set(s.win ?? []);
   const myMove = game.status === "playing" && s.turn === meId;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([e]) => setWidth(e.contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const cell = width
+    ? Math.max(
+        CARO_CELL_MIN,
+        Math.min(CARO_CELL_MAX, Math.floor((width - s.size - 1) / s.size)),
+      )
+    : CARO_CELL_MAX;
+  // nước mới (hoặc bàn vừa mở rộng): cuộn cho nước vừa đánh nằm giữa tầm nhìn
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const at =
+      s.last >= 0
+        ? s.last
+        : Math.floor(s.size / 2) * s.size + Math.floor(s.size / 2);
+    const cx = (at % s.size) * (cell + 1) + cell / 2;
+    const cy = Math.floor(at / s.size) * (cell + 1) + cell / 2;
+    el.scrollTo({
+      left: cx - el.clientWidth / 2,
+      top: cy - el.clientHeight / 2,
+      behavior: "smooth",
+    });
+  }, [s.last, s.size, cell]);
   return (
     <div className="caro">
       <div className="caro-players">
         {[x, o].map((p, i) =>
           p ? (
-            <span key={p.id} className={`caro-side${s.turn === p.id ? " is-turn" : ""}`}>
-              <b className={`caro-mark caro-${i ? "o" : "x"}`}>{i ? "O" : "X"}</b>
+            <span
+              key={p.id}
+              className={`caro-side${s.turn === p.id ? " is-turn" : ""}`}
+            >
+              <b className={`caro-mark caro-${i ? "o" : "x"}`}>
+                {i ? "O" : "X"}
+              </b>
               <Avatar user={ctx.user(p.id)} size={20} />
               {p.id === meId ? "Bạn" : p.name}
             </span>
           ) : null,
         )}
-        {game.status === "playing" && <Countdown deadline={game.deadline} label="Thời gian nước đi" />}
+        {game.status === "playing" && (
+          <Countdown deadline={game.deadline} label="Thời gian nước đi" />
+        )}
       </div>
-      <div
-        className="caro-board"
-        style={{ gridTemplateColumns: `repeat(${s.size}, 1fr)`, gridTemplateRows: `repeat(${s.size}, 1fr)` }}
-        role="grid"
-        aria-label={`Bàn cờ ${s.size}×${s.size}`}
-      >
-        {[...board].map((c, i) => (
-          <button
-            key={i}
-            type="button"
-            className={`caro-cell${c !== "." ? ` caro-${c}` : ""}${s.last === i ? " is-last" : ""}${win.has(i) ? " is-win" : ""}`}
-            disabled={!myMove || c !== "." || busy}
-            onClick={() => act("move", { cell: i })}
-            aria-label={`Hàng ${Math.floor(i / s.size) + 1}, cột ${(i % s.size) + 1}${c === "." ? "" : `: ${c.toUpperCase()}`}`}
-          >
-            {c === "." ? "" : c.toUpperCase()}
-          </button>
-        ))}
+      <div className="caro-scroll" ref={scrollRef}>
+        <div
+          className="caro-board"
+          style={{
+            gridTemplateColumns: `repeat(${s.size}, ${cell}px)`,
+            gridTemplateRows: `repeat(${s.size}, ${cell}px)`,
+            fontSize: `${Math.round(cell * 0.55)}px`,
+          }}
+          role="grid"
+          aria-label={`Bàn cờ ${s.size}×${s.size}`}
+        >
+          {[...board].map((c, i) => (
+            <button
+              key={i}
+              type="button"
+              className={`caro-cell${c !== "." ? ` caro-${c}` : ""}${s.last === i ? " is-last" : ""}${win.has(i) ? " is-win" : ""}`}
+              disabled={!myMove || c !== "." || busy}
+              onClick={() => act("move", { cell: i, size: s.size })}
+              aria-label={`Hàng ${Math.floor(i / s.size) + 1}, cột ${(i % s.size) + 1}${c === "." ? "" : `: ${c.toUpperCase()}`}`}
+            >
+              {c === "." ? "" : c.toUpperCase()}
+            </button>
+          ))}
+        </div>
       </div>
       {game.status === "playing" && ctx.isPlayer && (
         <div className="game-actions">
           <span className="game-hint">
-            {myMove ? "Tới lượt bạn." : `Chờ ${ctx.nameOf(s.turn ?? 0)} đánh…`} Nước thứ {s.moves + 1}.
+            {myMove ? "Tới lượt bạn." : `Chờ ${ctx.nameOf(s.turn ?? 0)} đánh…`}{" "}
+            Nước thứ {s.moves + 1}.
           </span>
-          <button type="button" className="link-btn game-cancel" disabled={busy} onClick={() => act("resign")}>
+          <button
+            type="button"
+            className="link-btn game-cancel"
+            disabled={busy}
+            onClick={() => act("resign")}
+          >
             Chịu thua
           </button>
         </div>
@@ -889,7 +1168,11 @@ function Rps({ ctx }: { ctx: Ctx }) {
           <div key={p.id} className="rps-side">
             <Avatar user={ctx.user(p.id)} size={34} />
             <span className="rps-name">{p.id === meId ? "Bạn" : p.name}</span>
-            {playing && <span className="rps-ready">{s.ready[i] ? "đã ra ✓" : "đang nghĩ…"}</span>}
+            {playing && (
+              <span className="rps-ready">
+                {s.ready[i] ? "đã ra ✓" : "đang nghĩ…"}
+              </span>
+            )}
           </div>
         ))}
         <p className="rps-points" aria-label="Tỉ số">
@@ -924,7 +1207,11 @@ function Rps({ ctx }: { ctx: Ctx }) {
             .map((r, i) => (
               <li key={i}>
                 Ván {i + 1}: {rpsIcon(r.picks[0])} vs {rpsIcon(r.picks[1])} →{" "}
-                {r.winner ? (r.winner === meId ? "bạn thắng" : `${ctx.nameOf(r.winner)} thắng`) : "hoà"}
+                {r.winner
+                  ? r.winner === meId
+                    ? "bạn thắng"
+                    : `${ctx.nameOf(r.winner)} thắng`
+                  : "hoà"}
               </li>
             ))
             .reverse()}
@@ -932,7 +1219,12 @@ function Rps({ ctx }: { ctx: Ctx }) {
       )}
       {playing && ctx.isPlayer && (
         <div className="game-actions">
-          <button type="button" className="link-btn game-cancel" disabled={busy} onClick={() => act("resign")}>
+          <button
+            type="button"
+            className="link-btn game-cancel"
+            disabled={busy}
+            onClick={() => act("resign")}
+          >
             Chịu thua
           </button>
         </div>
@@ -943,9 +1235,19 @@ function Rps({ ctx }: { ctx: Ctx }) {
 
 /* ---------- Mở phòng chơi ---------- */
 
-export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number; dm: boolean; onClose: () => void }) {
+export function CreateGameDialog({
+  channelId,
+  dm,
+  onClose,
+}: {
+  channelId: number;
+  dm: boolean;
+  onClose: () => void;
+}) {
   const { createGame } = useChat();
-  const kinds = (Object.keys(GAME_INFO) as GameKind[]).filter((k) => !dm || k === "caro" || k === "rps");
+  const kinds = (Object.keys(GAME_INFO) as GameKind[]).filter(
+    (k) => !dm || k === "caro" || k === "rps",
+  );
   const [kind, setKind] = useState<GameKind>(kinds[0]);
   const [day, setDay] = useState(120);
   const [night, setNight] = useState(45);
@@ -962,7 +1264,8 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
     emergencies: 1,
     hide_ejects: false,
   });
-  const setOpt = (k: keyof typeof st, v: number | boolean) => setSt((o) => ({ ...o, [k]: v }));
+  const setOpt = (k: keyof typeof st, v: number | boolean) =>
+    setSt((o) => ({ ...o, [k]: v }));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -972,7 +1275,11 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
     setError(null);
     const options: Record<GameKind, Record<string, unknown>> = {
       station: st,
-      werewolf: { day_seconds: day, night_seconds: night, hide_roles: hideRoles },
+      werewolf: {
+        day_seconds: day,
+        night_seconds: night,
+        hide_roles: hideRoles,
+      },
       spy: { spies },
       caro: { free_style: !blockRule },
       rps: { best_of: bestOf },
@@ -991,8 +1298,17 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
       <form className="dialog-form" onSubmit={submit}>
         <div className="game-picker" role="radiogroup" aria-label="Trò chơi">
           {kinds.map((k) => (
-            <label key={k} className={`game-pick${kind === k ? " is-chosen" : ""}`}>
-              <input type="radio" name="game-kind" value={k} checked={kind === k} onChange={() => setKind(k)} />
+            <label
+              key={k}
+              className={`game-pick${kind === k ? " is-chosen" : ""}`}
+            >
+              <input
+                type="radio"
+                name="game-kind"
+                value={k}
+                checked={kind === k}
+                onChange={() => setKind(k)}
+              />
               <span className="game-pick-icon" aria-hidden>
                 {GAME_INFO[k].icon}
               </span>
@@ -1010,7 +1326,10 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
             <div className="game-opts">
               <label className="field">
                 <span>Số kẻ phản bội</span>
-                <select value={st.traitors} onChange={(e) => setOpt("traitors", Number(e.target.value))}>
+                <select
+                  value={st.traitors}
+                  onChange={(e) => setOpt("traitors", Number(e.target.value))}
+                >
                   <option value={0}>Tự động (1 / 2 / 3)</option>
                   <option value={1}>1</option>
                   <option value={2}>2</option>
@@ -1019,7 +1338,12 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
               </label>
               <label className="field">
                 <span>Hồi chiêu giết</span>
-                <select value={st.kill_cooldown} onChange={(e) => setOpt("kill_cooldown", Number(e.target.value))}>
+                <select
+                  value={st.kill_cooldown}
+                  onChange={(e) =>
+                    setOpt("kill_cooldown", Number(e.target.value))
+                  }
+                >
                   {[15, 20, 25, 30, 45].map((v) => (
                     <option key={v} value={v}>
                       {v} giây
@@ -1029,7 +1353,10 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
               </label>
               <label className="field">
                 <span>Nhiệm vụ mỗi người</span>
-                <select value={st.tasks} onChange={(e) => setOpt("tasks", Number(e.target.value))}>
+                <select
+                  value={st.tasks}
+                  onChange={(e) => setOpt("tasks", Number(e.target.value))}
+                >
                   {[3, 4, 5, 6, 8].map((v) => (
                     <option key={v} value={v}>
                       {v}
@@ -1039,7 +1366,12 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
               </label>
               <label className="field">
                 <span>Lượt họp khẩn mỗi người</span>
-                <select value={st.emergencies} onChange={(e) => setOpt("emergencies", Number(e.target.value))}>
+                <select
+                  value={st.emergencies}
+                  onChange={(e) =>
+                    setOpt("emergencies", Number(e.target.value))
+                  }
+                >
                   {[1, 2, 3].map((v) => (
                     <option key={v} value={v}>
                       {v}
@@ -1049,7 +1381,10 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
               </label>
               <label className="field">
                 <span>Thảo luận</span>
-                <select value={st.discuss} onChange={(e) => setOpt("discuss", Number(e.target.value))}>
+                <select
+                  value={st.discuss}
+                  onChange={(e) => setOpt("discuss", Number(e.target.value))}
+                >
                   {[15, 30, 45, 60, 90].map((v) => (
                     <option key={v} value={v}>
                       {v} giây
@@ -1059,7 +1394,10 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
               </label>
               <label className="field">
                 <span>Bỏ phiếu</span>
-                <select value={st.vote} onChange={(e) => setOpt("vote", Number(e.target.value))}>
+                <select
+                  value={st.vote}
+                  onChange={(e) => setOpt("vote", Number(e.target.value))}
+                >
                   {[30, 60, 90, 120].map((v) => (
                     <option key={v} value={v}>
                       {v} giây
@@ -1076,7 +1414,10 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
               />
               <span>
                 Giấu danh tính người bị đẩy ra
-                <small>Không cho biết người bị loại có phải kẻ phản bội không (khó hơn).</small>
+                <small>
+                  Không cho biết người bị loại có phải kẻ phản bội không (khó
+                  hơn).
+                </small>
               </span>
             </label>
           </>
@@ -1086,7 +1427,10 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
             <div className="game-opts">
               <label className="field">
                 <span>Ban ngày (thảo luận + bỏ phiếu)</span>
-                <select value={day} onChange={(e) => setDay(Number(e.target.value))}>
+                <select
+                  value={day}
+                  onChange={(e) => setDay(Number(e.target.value))}
+                >
                   <option value={60}>1 phút</option>
                   <option value={120}>2 phút</option>
                   <option value={180}>3 phút</option>
@@ -1095,7 +1439,10 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
               </label>
               <label className="field">
                 <span>Ban đêm</span>
-                <select value={night} onChange={(e) => setNight(Number(e.target.value))}>
+                <select
+                  value={night}
+                  onChange={(e) => setNight(Number(e.target.value))}
+                >
                   <option value={30}>30 giây</option>
                   <option value={45}>45 giây</option>
                   <option value={60}>1 phút</option>
@@ -1104,7 +1451,11 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
               </label>
             </div>
             <label className="check-field">
-              <input type="checkbox" checked={hideRoles} onChange={(e) => setHideRoles(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={hideRoles}
+                onChange={(e) => setHideRoles(e.target.checked)}
+              />
               <span>
                 Giấu vai người chết
                 <small>Chỉ lộ vai của mọi người khi hết ván (khó hơn).</small>
@@ -1115,7 +1466,10 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
         {kind === "spy" && (
           <label className="field">
             <span>Số gián điệp</span>
-            <select value={spies} onChange={(e) => setSpies(Number(e.target.value))}>
+            <select
+              value={spies}
+              onChange={(e) => setSpies(Number(e.target.value))}
+            >
               <option value={0}>Tự động (1, từ 8 người là 2)</option>
               <option value={1}>1</option>
               <option value={2}>2</option>
@@ -1125,7 +1479,11 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
         )}
         {kind === "caro" && (
           <label className="check-field">
-            <input type="checkbox" checked={blockRule} onChange={(e) => setBlockRule(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={blockRule}
+              onChange={(e) => setBlockRule(e.target.checked)}
+            />
             <span>
               Luật chặn hai đầu
               <small>Hàng 5 bị chặn cả hai đầu thì không tính thắng.</small>
@@ -1135,7 +1493,10 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
         {kind === "rps" && (
           <label className="field">
             <span>Thể thức</span>
-            <select value={bestOf} onChange={(e) => setBestOf(Number(e.target.value))}>
+            <select
+              value={bestOf}
+              onChange={(e) => setBestOf(Number(e.target.value))}
+            >
               <option value={1}>1 ván quyết định</option>
               <option value={3}>Chạm 2 (3 ván)</option>
               <option value={5}>Chạm 3 (5 ván)</option>
@@ -1145,7 +1506,12 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
 
         <FormError>{error}</FormError>
         <div className="dialog-actions">
-          <button type="button" className="btn" onClick={onClose} disabled={busy}>
+          <button
+            type="button"
+            className="btn"
+            onClick={onClose}
+            disabled={busy}
+          >
             Huỷ
           </button>
           <button className="btn btn-primary" disabled={busy}>

@@ -4983,17 +4983,21 @@ button.game-player:disabled {
 .caro-players .game-clock {
   margin-left: auto;
 }
-.caro-board {
-  display: grid;
-  width: 100%;
-  max-width: 30rem;
-  aspect-ratio: 1;
+.caro-scroll {
+  max-width: min(100%, 34rem);
+  max-height: min(70vh, 34rem);
   margin-bottom: 0.5rem;
+  overflow: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--line-soft);
+}
+.caro-board {
+  display: grid;
+  width: max-content;
+  background: var(--line-soft);
   gap: 1px;
-  overflow: hidden;
 }
 .caro-cell {
   display: grid;
@@ -5003,7 +5007,6 @@ button.game-player:disabled {
   padding: 0;
   border: 0;
   background: var(--surface);
-  font-size: clamp(0.7rem, 2.6vw, 1.05rem);
   font-weight: 800;
   line-height: 1;
 }

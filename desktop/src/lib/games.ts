@@ -43,12 +43,17 @@ export type SpyState = {
 };
 export type SpyMe = { word?: string; out?: boolean };
 
+export type CaroCoord = { r: number; c: number };
+
 export type CaroState = {
   size: number;
   board?: string;
+  pieces?: Record<string, "x" | "o">;
   turn?: number;
-  last: number;
+  last?: number;
+  last_coord?: CaroCoord;
   win?: number[];
+  win_coords?: CaroCoord[];
   moves: number;
   free_style: boolean;
 };
@@ -61,6 +66,32 @@ export type RpsState = {
   ready: [boolean, boolean];
 };
 export type RpsMe = { pick?: RpsChoice };
+
+export type ChessMove = {
+  from: string;
+  to: string;
+  piece: string;
+  captured?: string;
+  promotion?: string;
+  is_check?: boolean;
+};
+
+export type ChessState = {
+  opts?: { turn_minutes: number; first: string };
+  fen: string;
+  board: string;
+  turn_color: "w" | "b";
+  turn_player_id: number;
+  white_player_id: number;
+  black_player_id: number;
+  last_move?: ChessMove;
+  in_check: boolean;
+  check_square?: string;
+  draw_offered: boolean;
+  draw_offered_by?: number;
+  legal_moves?: Record<string, string[]>;
+  captured: Record<string, number>;
+};
 
 export const ROLE_INFO: Record<WerewolfRole, { name: string; icon: string; team: string; desc: string }> = {
   wolf: {
@@ -132,6 +163,12 @@ export const GAME_INFO: Record<GameKind, { title: string; icon: string; players:
     players: "2 người",
     blurb: "Búa – Bao – Kéo, ra cùng lúc, chạm số ván thắng trước.",
   },
+  chess: {
+    title: "Cờ vua",
+    icon: "♟️",
+    players: "2 người",
+    blurb: "Cờ vua quốc tế 8×8, đầy đủ luật FIDE: nhập thành, bắt tốt qua đường, phong cấp.",
+  },
 };
 
 /** Việc mình cần làm ngay trong ván (null nếu không có): dùng cho thông báo và nhãn "Tới lượt bạn". */
@@ -161,6 +198,10 @@ export function myTurn(g: GameView | undefined, meId: number): string | null {
     }
     case "caro":
       return (g.state as CaroState | undefined)?.turn === meId ? "Tới lượt bạn đánh" : null;
+    case "chess": {
+      const s = g.state as ChessState | undefined;
+      return s?.turn_player_id === meId ? "Tới lượt bạn đi cờ" : null;
+    }
     case "rps": {
       const i = g.players.findIndex((p) => p.id === meId);
       const s = g.state as RpsState | undefined;

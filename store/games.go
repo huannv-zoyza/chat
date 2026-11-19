@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"math"
+	"sort"
 
 	"chat/model"
 )
@@ -82,4 +84,219 @@ func (s *Store) ActiveGames(ctx context.Context) ([]GameRow, error) {
 		out = append(out, g)
 	}
 	return out, rows.Err()
+}
+
+type MemberGameStats struct {
+	UserID      int64   `json:"user_id"`
+	Username    string  `json:"username"`
+	DisplayName string  `json:"display_name"`
+	Avatar      *string `json:"avatar"`
+	Wins        int     `json:"wins"`
+	Losses      int     `json:"losses"`
+	Draws       int     `json:"draws"`
+	TotalGames  int     `json:"total_games"`
+	WinRate     float64 `json:"win_rate"`
+}
+
+type LeaderboardResponse struct {
+	Kind       string            `json:"kind"`
+	TopWins    []MemberGameStats `json:"top_wins"`
+	TopLosses  []MemberGameStats `json:"top_losses"`
+	Members    []MemberGameStats `json:"members"`
+	TotalEnded int               `json:"total_ended"`
+}
+
+type gameSummaryState struct {
+	Players []struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+	} `json:"players"`
+	Winners []int64 `json:"winners"`
+}
+
+// GetGameLeaderboard tổng hợp bảng xếp hạng thành viên dựa trên các ván chơi đã kết thúc.
+func (s *Store) GetGameLeaderboard(ctx context.Context, kind string) (LeaderboardResponse, error) {
+	query := `
+		SELECT g.kind, g.state
+		FROM games g
+		JOIN messages m ON m.id = g.message_id
+		WHERE g.status = 'ended' AND m.deleted_at IS NULL`
+	var args []any
+	if kind != "" && kind != "all" {
+		query += " AND g.kind = ?"
+		args = append(args, kind)
+	}
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return LeaderboardResponse{}, err
+	}
+	defer rows.Close()
+
+	type rawStats struct {
+		id       int64
+		fallback string
+		wins     int
+		losses   int
+		draws    int
+		total    int
+	}
+
+	statsMap := make(map[int64]*rawStats)
+	var totalEnded int
+
+	for rows.Next() {
+		var gKind string
+		var stateStr string
+		if err := rows.Scan(&gKind, &stateStr); err != nil {
+			return LeaderboardResponse{}, err
+		}
+		totalEnded++
+
+		var sum gameSummaryState
+		if err := json.Unmarshal([]byte(stateStr), &sum); err != nil {
+			continue
+		}
+
+		if len(sum.Players) == 0 {
+			continue
+		}
+
+		for _, p := range sum.Players {
+			if _, ok := statsMap[p.ID]; !ok {
+				statsMap[p.ID] = &rawStats{id: p.ID, fallback: p.Name}
+			}
+		}
+
+		if len(sum.Winners) == 0 {
+			for _, p := range sum.Players {
+				st := statsMap[p.ID]
+				st.draws++
+				st.total++
+			}
+		} else {
+			winSet := make(map[int64]bool, len(sum.Winners))
+			for _, wid := range sum.Winners {
+				winSet[wid] = true
+				if st, ok := statsMap[wid]; ok {
+					st.wins++
+					st.total++
+				}
+			}
+			for _, p := range sum.Players {
+				if !winSet[p.ID] {
+					st := statsMap[p.ID]
+					st.losses++
+					st.total++
+				}
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return LeaderboardResponse{}, err
+	}
+
+	userMap := make(map[int64]struct {
+		username    string
+		displayName string
+		avatar      *string
+	})
+
+	if len(statsMap) > 0 {
+		uRows, err := s.db.QueryContext(ctx, `SELECT id, username, display_name, avatar FROM users`)
+		if err == nil {
+			defer uRows.Close()
+			for uRows.Next() {
+				var uid int64
+				var un, dn string
+				var av *string
+				if err := uRows.Scan(&uid, &un, &dn, &av); err == nil {
+					userMap[uid] = struct {
+						username    string
+						displayName string
+						avatar      *string
+					}{username: un, displayName: dn, avatar: av}
+				}
+			}
+		}
+	}
+
+	members := make([]MemberGameStats, 0, len(statsMap))
+	for id, st := range statsMap {
+		dn := st.fallback
+		un := ""
+		var av *string
+		if u, ok := userMap[id]; ok {
+			un = u.username
+			if u.displayName != "" {
+				dn = u.displayName
+			} else if u.username != "" {
+				dn = u.username
+			}
+			av = u.avatar
+		}
+
+		var wr float64
+		if st.total > 0 {
+			wr = math.Round((float64(st.wins)/float64(st.total)*100)*10) / 10
+		}
+
+		members = append(members, MemberGameStats{
+			UserID:      id,
+			Username:    un,
+			DisplayName: dn,
+			Avatar:      av,
+			Wins:        st.wins,
+			Losses:      st.losses,
+			Draws:       st.draws,
+			TotalGames:  st.total,
+			WinRate:     wr,
+		})
+	}
+
+	sort.Slice(members, func(i, j int) bool {
+		if members[i].Wins != members[j].Wins {
+			return members[i].Wins > members[j].Wins
+		}
+		if members[i].WinRate != members[j].WinRate {
+			return members[i].WinRate > members[j].WinRate
+		}
+		return members[i].TotalGames > members[j].TotalGames
+	})
+
+	topWinsList := make([]MemberGameStats, len(members))
+	copy(topWinsList, members)
+	sort.Slice(topWinsList, func(i, j int) bool {
+		if topWinsList[i].Wins != topWinsList[j].Wins {
+			return topWinsList[i].Wins > topWinsList[j].Wins
+		}
+		return topWinsList[i].TotalGames < topWinsList[j].TotalGames
+	})
+	if len(topWinsList) > 10 {
+		topWinsList = topWinsList[:10]
+	}
+
+	topLossesList := make([]MemberGameStats, len(members))
+	copy(topLossesList, members)
+	sort.Slice(topLossesList, func(i, j int) bool {
+		if topLossesList[i].Losses != topLossesList[j].Losses {
+			return topLossesList[i].Losses > topLossesList[j].Losses
+		}
+		return topLossesList[i].TotalGames > topLossesList[j].TotalGames
+	})
+	if len(topLossesList) > 10 {
+		topLossesList = topLossesList[:10]
+	}
+
+	if kind == "" {
+		kind = "caro"
+	}
+
+	return LeaderboardResponse{
+		Kind:       kind,
+		TopWins:    topWinsList,
+		TopLosses:  topLossesList,
+		Members:    members,
+		TotalEnded: totalEnded,
+	}, nil
 }

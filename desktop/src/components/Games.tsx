@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ApiError, type GameKind, type GameView, type Message, type PublicUser } from "../lib/api";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { ApiError, type GameKind, type GameLeaderboard, type GameView, type Message, type PublicUser } from "../lib/api";
 import {
   GAME_INFO,
   ROLE_INFO,
   myTurn,
   type CaroState,
+  type ChessState,
   type RpsChoice,
   type RpsMe,
   type RpsState,
@@ -14,6 +15,7 @@ import {
   type WerewolfRole,
   type WerewolfState,
 } from "../lib/games";
+import { ChessPiece } from "./ChessPiece";
 import { useChat } from "../state/ChatProvider";
 import type { StationState } from "../lib/station";
 import { StationSummary } from "./Station";
@@ -220,6 +222,8 @@ export function GameCard({ message }: { message: Message }) {
         <Spy ctx={ctx} />
       ) : game.kind === "caro" ? (
         <Caro ctx={ctx} />
+      ) : game.kind === "chess" ? (
+        <Chess ctx={ctx} />
       ) : (
         <Rps ctx={ctx} />
       )}
@@ -285,6 +289,11 @@ const RULES: Record<GameKind, string[]> = {
     "Luật chặn hai đầu: hàng 5 bị đối phương chặn cả hai đầu thì không tính.",
     "Mỗi nước có 3 phút suy nghĩ.",
   ],
+  chess: [
+    "Cờ vua quốc tế 8×8, Trắng đi trước, Đen đi sau (hệ thống chọn ngẫu nhiên màu quân).",
+    "Tuân thủ đầy đủ luật FIDE: nhập thành, bắt tốt qua đường (en passant), phong cấp tốt.",
+    "Chiếu bí đối phương để giành chiến thắng. Hoà cờ khi hết nước đi (stalemate), luật 50 nước, không đủ lực lượng hoặc đôi bên đồng ý.",
+  ],
   rps: ["Búa thắng Kéo, Kéo thắng Bao, Bao thắng Búa.", "Hai người ra cùng lúc, 30 giây mỗi ván."],
 };
 
@@ -322,8 +331,21 @@ function Lobby({ ctx }: { ctx: Ctx }) {
   } else if (game.kind === "caro") {
     setup = (
       <p className="game-setup">
-        Bàn {(game.state as CaroState).size}×{(game.state as CaroState).size}, tự mở rộng khi đánh ra mép ·{" "}
-        {(game.state as CaroState).free_style ? "không chặn hai đầu" : "luật chặn hai đầu"}
+        Bàn cờ tự do (kéo để di chuyển) · {(game.state as CaroState).free_style ? "không chặn hai đầu" : "luật chặn hai đầu"}
+      </p>
+    );
+  } else if (game.kind === "chess") {
+    const s = game.state as ChessState;
+    const mins = s?.opts?.turn_minutes || 3;
+    const firstStr =
+      s?.opts?.first === "host"
+        ? "chủ phòng cầm Trắng"
+        : s?.opts?.first === "guest"
+        ? "khách cầm Trắng"
+        : "ngẫu nhiên màu quân";
+    setup = (
+      <p className="game-setup">
+        Bàn cờ 8×8 tiêu chuẩn · Luật FIDE · {mins} phút/nước · {firstStr}
       </p>
     );
   } else {
@@ -815,102 +837,319 @@ function Spy({ ctx }: { ctx: Ctx }) {
 
 /* ---------- Cờ caro ---------- */
 
-// Ô giữ một cỡ suốt ván: cỡ để bàn 15×15 vừa khung (rộng tối đa 34rem, cao tối đa 70% màn hình). Bàn nở to
-// hơn thì khung vẫn cỡ 15×15 và thành cửa sổ nhìn: kéo để xem chỗ khác, nước mới tự trượt vào giữa.
-const CARO_VIEW = 15;
-const CARO_CELL_MIN = 18;
-const CARO_CELL_MAX = 34;
-const CARO_BOX_MAX = 544; // 34rem
-
 function Caro({ ctx }: { ctx: Ctx }) {
   const { game, meId, busy, act } = ctx;
   const s = game.state as CaroState;
   const [x, o] = game.players;
-  const board = s.board ?? ".".repeat(s.size * s.size);
-  const win = new Set(s.win ?? []);
   const myMove = game.status === "playing" && s.turn === meId;
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [room, setRoom] = useState({ w: 0, h: 0 });
-  const [overview, setOverview] = useState(false);
-  const [edges, setEdges] = useState({ l: false, r: false, t: false, b: false });
-  const drag = useRef<{ x: number; y: number; sl: number; st: number; moved: boolean } | null>(null);
-  const dragged = useRef(false);
+  const myMark = x?.id === meId ? "X" : "O";
+
+  const pieces = useMemo(() => {
+    if (s.pieces) return s.pieces;
+    const map: Record<string, "x" | "o"> = {};
+    if (s.board) {
+      for (let i = 0; i < s.board.length; i++) {
+        const ch = s.board[i];
+        if (ch === "x" || ch === "o") {
+          map[`${Math.floor(i / s.size)},${i % s.size}`] = ch;
+        }
+      }
+    }
+    return map;
+  }, [s.pieces, s.board, s.size]);
+
+  const winCoords = useMemo(() => {
+    if (s.win_coords && s.win_coords.length > 0) {
+      return new Set(s.win_coords.map((c) => `${c.r},${c.c}`));
+    }
+    if (s.win && s.win.length > 0) {
+      return new Set(s.win.map((idx) => `${Math.floor(idx / s.size)},${idx % s.size}`));
+    }
+    return new Set<string>();
+  }, [s.win_coords, s.win, s.size]);
+
+  const lastCoord = useMemo(() => {
+    if (s.last_coord) return s.last_coord;
+    if (s.last !== undefined && s.last >= 0) {
+      return { r: Math.floor(s.last / s.size), c: s.last % s.size };
+    }
+    return null;
+  }, [s.last_coord, s.last, s.size]);
+
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [cellSize, setCellSize] = useState(30);
+  const [dragging, setDragging] = useState(false);
+  const [hover, setHover] = useState<{ r: number; c: number } | null>(null);
+  const initializedRef = useRef(false);
+  const [lbOpen, setLbOpen] = useState(false);
+
+  const centerAt = useCallback((row: number, col: number, cs = cellSize) => {
+    const c = containerRef.current;
+    if (!c) return;
+    const rect = c.getBoundingClientRect();
+    setPan({
+      x: rect.width / 2 - (col + 0.5) * cs,
+      y: rect.height / 2 - (row + 0.5) * cs,
+    });
+  }, [cellSize]);
+
   useEffect(() => {
-    const el = wrapRef.current;
-    if (!el) return;
-    const measure = () => setRoom({ w: el.clientWidth, h: window.innerHeight });
-    measure();
-    window.addEventListener("resize", measure);
-    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
-    ro?.observe(el);
-    return () => {
-      window.removeEventListener("resize", measure);
-      ro?.disconnect();
-    };
-  }, []);
-  const room15 = Math.min(Math.min(room.w, CARO_BOX_MAX), Math.min(room.h * 0.7, CARO_BOX_MAX)) - 2; // trừ viền
-  const base = room.w
-    ? Math.max(CARO_CELL_MIN, Math.min(CARO_CELL_MAX, Math.floor((room15 - CARO_VIEW + 1) / CARO_VIEW)))
-    : 28;
-  const view = CARO_VIEW * base + CARO_VIEW - 1; // cạnh cửa sổ nhìn (ô + đường kẻ 1px)
-  const big = s.size > CARO_VIEW;
-  const zoomed = big && overview;
-  const cell = zoomed ? Math.max(6, Math.floor((view - s.size + 1) / s.size)) : base;
-  const boardPx = s.size * cell + s.size - 1;
-  const boxPx = Math.min(boardPx, view);
-  const panning = big && !zoomed;
-  const updateEdges = () => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const e = {
-      l: el.scrollLeft > 1,
-      r: el.scrollLeft + el.clientWidth < el.scrollWidth - 1,
-      t: el.scrollTop > 1,
-      b: el.scrollTop + el.clientHeight < el.scrollHeight - 1,
-    };
-    setEdges((p) => (p.l === e.l && p.r === e.r && p.t === e.t && p.b === e.b ? p : e));
-  };
-  // nước mới (hoặc bàn vừa mở rộng): trượt cho nước vừa đánh nằm giữa cửa sổ
+    if (initializedRef.current) return;
+    const c = containerRef.current;
+    if (!c) return;
+    const rect = c.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      initializedRef.current = true;
+      if (lastCoord) {
+        centerAt(lastCoord.r, lastCoord.c);
+      } else {
+        centerAt(7, 7);
+      }
+    }
+  }, [centerAt, lastCoord]);
+
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    if (panning) {
-      const at = s.last >= 0 ? s.last : Math.floor(s.size / 2) * s.size + Math.floor(s.size / 2);
-      const cx = (at % s.size) * (cell + 1) + cell / 2;
-      const cy = Math.floor(at / s.size) * (cell + 1) + cell / 2;
-      el.scrollTo({ left: cx - el.clientWidth / 2, top: cy - el.clientHeight / 2, behavior: "smooth" });
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx2d = canvas.getContext("2d");
+    if (!ctx2d) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const width = rect.width;
+    const height = rect.height;
+    if (width === 0 || height === 0) return;
+    const dpr = window.devicePixelRatio || 1;
+
+    if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
     }
-    updateEdges();
-  }, [s.last, s.size, cell, panning]);
-  // kéo bằng chuột (cảm ứng thì trình duyệt tự cuộn khi vuốt)
-  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!panning || e.pointerType !== "mouse" || e.button !== 0) return;
-    const el = e.currentTarget;
-    drag.current = { x: e.clientX, y: e.clientY, sl: el.scrollLeft, st: el.scrollTop, moved: false };
-  };
-  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    const d = drag.current;
-    if (!d) return;
-    const dx = e.clientX - d.x;
-    const dy = e.clientY - d.y;
-    if (!d.moved && Math.hypot(dx, dy) < 5) return;
-    if (!d.moved) {
-      d.moved = true;
-      e.currentTarget.setPointerCapture(e.pointerId);
+
+    ctx2d.save();
+    ctx2d.scale(dpr, dpr);
+
+    const computed = getComputedStyle(canvas);
+    const surfaceColor = computed.getPropertyValue("--surface").trim() || "#ffffff";
+    const canvasColor = computed.getPropertyValue("--canvas").trim() || "#f8fafc";
+    const lineSoft = computed.getPropertyValue("--line-soft").trim() || "rgba(128,128,128,0.2)";
+    const lineStrong = computed.getPropertyValue("--line").trim() || "rgba(128,128,128,0.45)";
+    const u1Color = computed.getPropertyValue("--u1").trim() || "#2f6fb3";
+    const u4Color = computed.getPropertyValue("--u4").trim() || "#e05252";
+    const signalColor = computed.getPropertyValue("--signal").trim() || "#3b82f6";
+    const signalSoft = computed.getPropertyValue("--signal-soft").trim() || "rgba(59,130,246,0.18)";
+    const textSoft = computed.getPropertyValue("--text-soft").trim() || "#94a3b8";
+
+    // 1. Clear full canvas
+    ctx2d.fillStyle = canvasColor;
+    ctx2d.fillRect(0, 0, width, height);
+
+    // 2. Starting 15x15 court
+    const courtLeft = 0 * cellSize + pan.x;
+    const courtTop = 0 * cellSize + pan.y;
+    const courtSize = 15 * cellSize;
+    ctx2d.fillStyle = surfaceColor;
+    ctx2d.fillRect(courtLeft, courtTop, courtSize, courtSize);
+    ctx2d.strokeStyle = lineStrong;
+    ctx2d.lineWidth = 1.5;
+    ctx2d.strokeRect(courtLeft, courtTop, courtSize, courtSize);
+
+    // 3. Grid lines
+    const startCol = Math.floor(-pan.x / cellSize) - 1;
+    const endCol = Math.ceil((width - pan.x) / cellSize) + 1;
+    const startRow = Math.floor(-pan.y / cellSize) - 1;
+    const endRow = Math.ceil((height - pan.y) / cellSize) + 1;
+
+    ctx2d.lineWidth = 1;
+    ctx2d.strokeStyle = lineSoft;
+    ctx2d.beginPath();
+    for (let c = startCol; c <= endCol; c++) {
+      const xPos = Math.round(c * cellSize + pan.x) + 0.5;
+      ctx2d.moveTo(xPos, 0);
+      ctx2d.lineTo(xPos, height);
     }
-    e.currentTarget.scrollLeft = d.sl - dx;
-    e.currentTarget.scrollTop = d.st - dy;
-  };
-  const onPointerUp = () => {
-    if (drag.current?.moved) {
-      dragged.current = true; // nhả chuột sau khi kéo: không tính là bấm ô
-      setTimeout(() => (dragged.current = false), 0);
+    for (let r = startRow; r <= endRow; r++) {
+      const yPos = Math.round(r * cellSize + pan.y) + 0.5;
+      ctx2d.moveTo(0, yPos);
+      ctx2d.lineTo(width, yPos);
     }
-    drag.current = null;
+    ctx2d.stroke();
+
+    // Hoshi reference points in standard 15x15
+    const hoshi = [
+      [7, 7],
+      [3, 3],
+      [3, 11],
+      [11, 3],
+      [11, 11],
+    ];
+    ctx2d.fillStyle = textSoft;
+    for (const [hr, hc] of hoshi) {
+      const cx = hc * cellSize + pan.x + cellSize / 2;
+      const cy = hr * cellSize + pan.y + cellSize / 2;
+      if (cx >= -5 && cx <= width + 5 && cy >= -5 && cy <= height + 5) {
+        ctx2d.beginPath();
+        ctx2d.arc(cx, cy, Math.max(2, cellSize * 0.08), 0, Math.PI * 2);
+        ctx2d.fill();
+      }
+    }
+
+    // 4. Winning line highlight
+    if (winCoords.size > 0) {
+      for (const key of winCoords) {
+        const [r, c] = key.split(",").map(Number);
+        const cellX = c * cellSize + pan.x;
+        const cellY = r * cellSize + pan.y;
+        if (cellX + cellSize >= 0 && cellX <= width && cellY + cellSize >= 0 && cellY <= height) {
+          ctx2d.fillStyle = signalSoft;
+          ctx2d.fillRect(cellX, cellY, cellSize, cellSize);
+          ctx2d.strokeStyle = signalColor;
+          ctx2d.lineWidth = 2;
+          ctx2d.strokeRect(cellX + 1, cellY + 1, cellSize - 2, cellSize - 2);
+        }
+      }
+    }
+
+    // 5. Last move highlight
+    if (lastCoord) {
+      const cellX = lastCoord.c * cellSize + pan.x;
+      const cellY = lastCoord.r * cellSize + pan.y;
+      if (cellX + cellSize >= 0 && cellX <= width && cellY + cellSize >= 0 && cellY <= height) {
+        ctx2d.fillStyle = signalSoft;
+        ctx2d.fillRect(cellX, cellY, cellSize, cellSize);
+        ctx2d.strokeStyle = signalColor;
+        ctx2d.lineWidth = 1.5;
+        ctx2d.setLineDash([3, 3]);
+        ctx2d.strokeRect(cellX + 1.5, cellY + 1.5, cellSize - 3, cellSize - 3);
+        ctx2d.setLineDash([]);
+      }
+    }
+
+    // 6. Hover preview (ghost mark)
+    if (hover && myMove && !pieces[`${hover.r},${hover.c}`] && !busy) {
+      const cellX = hover.c * cellSize + pan.x;
+      const cellY = hover.r * cellSize + pan.y;
+      if (cellX + cellSize >= 0 && cellX <= width && cellY + cellSize >= 0 && cellY <= height) {
+        ctx2d.fillStyle = signalSoft;
+        ctx2d.fillRect(cellX, cellY, cellSize, cellSize);
+
+        ctx2d.font = `800 ${Math.round(cellSize * 0.65)}px sans-serif`;
+        ctx2d.textAlign = "center";
+        ctx2d.textBaseline = "middle";
+        ctx2d.fillStyle = myMark === "X" ? u1Color : u4Color;
+        ctx2d.globalAlpha = 0.45;
+        ctx2d.fillText(myMark, cellX + cellSize / 2, cellY + cellSize / 2);
+        ctx2d.globalAlpha = 1.0;
+      }
+    }
+
+    // 7. Placed pieces
+    ctx2d.font = `800 ${Math.round(cellSize * 0.65)}px sans-serif`;
+    ctx2d.textAlign = "center";
+    ctx2d.textBaseline = "middle";
+
+    for (const [key, mark] of Object.entries(pieces)) {
+      const [r, c] = key.split(",").map(Number);
+      const cellX = c * cellSize + pan.x;
+      const cellY = r * cellSize + pan.y;
+      if (cellX + cellSize < 0 || cellX > width || cellY + cellSize < 0 || cellY > height) {
+        continue;
+      }
+      const upper = mark.toUpperCase();
+      const isWin = winCoords.has(key);
+      ctx2d.fillStyle = isWin ? signalColor : upper === "X" ? u1Color : u4Color;
+      ctx2d.fillText(upper, cellX + cellSize / 2, cellY + cellSize / 2);
+    }
+
+    ctx2d.restore();
+  }, [cellSize, pan, pieces, winCoords, lastCoord, hover, myMove, busy, myMark]);
+
+  const pointerRef = useRef<{
+    id: number;
+    startX: number;
+    startY: number;
+    panX: number;
+    panY: number;
+    isDrag: boolean;
+  } | null>(null);
+
+  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    pointerRef.current = {
+      id: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      panX: pan.x,
+      panY: pan.y,
+      isDrag: false,
+    };
   };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const p = pointerRef.current;
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (p && p.id === e.pointerId) {
+      const dx = e.clientX - p.startX;
+      const dy = e.clientY - p.startY;
+      if (!p.isDrag && Math.hypot(dx, dy) > 4) {
+        p.isDrag = true;
+        setDragging(true);
+      }
+      if (p.isDrag) {
+        setPan({ x: p.panX + dx, y: p.panY + dy });
+        return;
+      }
+    }
+    const col = Math.floor((e.clientX - rect.left - pan.x) / cellSize);
+    const row = Math.floor((e.clientY - rect.top - pan.y) / cellSize);
+    if (!hover || hover.r !== row || hover.c !== col) {
+      setHover({ r: row, c: col });
+    }
+  };
+
+  const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const p = pointerRef.current;
+    if (!p || p.id !== e.pointerId) return;
+    pointerRef.current = null;
+    setDragging(false);
+
+    if (!p.isDrag) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const col = Math.floor((e.clientX - rect.left - pan.x) / cellSize);
+      const row = Math.floor((e.clientY - rect.top - pan.y) / cellSize);
+      if (myMove && !pieces[`${row},${col}`] && !busy) {
+        act("move", { r: row, c: col });
+      }
+    }
+  };
+
+  const onPointerCancel = () => {
+    pointerRef.current = null;
+    setDragging(false);
+  };
+
+  const onWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
+    const newCellSize = Math.max(18, Math.min(64, Math.round(cellSize * zoomFactor)));
+    if (newCellSize === cellSize) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const scale = newCellSize / cellSize;
+    const newPanX = mouseX - (mouseX - pan.x) * scale;
+    const newPanY = mouseY - (mouseY - pan.y) * scale;
+
+    setCellSize(newCellSize);
+    setPan({ x: newPanX, y: newPanY });
+  };
+
   return (
-    <div className="caro" ref={wrapRef}>
+    <div className="caro">
       <div className="caro-players">
         {[x, o].map((p, i) =>
           p ? (
@@ -923,72 +1162,474 @@ function Caro({ ctx }: { ctx: Ctx }) {
         )}
         {game.status === "playing" && <Countdown deadline={game.deadline} label="Thời gian nước đi" />}
       </div>
-      <div className="caro-view">
-        <div
-          className={`caro-scroll${panning ? " is-panning" : ""}`}
-          ref={scrollRef}
-          style={{ width: `${boxPx + 2}px`, height: `${boxPx + 2}px` }}
-          onScroll={updateEdges}
+      <div className="caro-board-container" ref={containerRef}>
+        <canvas
+          ref={canvasRef}
+          className={`caro-canvas${dragging ? " is-dragging" : ""}`}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
-          onClickCapture={(e) => {
-            if (dragged.current) {
-              e.stopPropagation();
-              e.preventDefault();
-            }
-          }}
-        >
-          <div
-            className="caro-board"
-            style={{
-              gridTemplateColumns: `repeat(${s.size}, ${cell}px)`,
-              gridTemplateRows: `repeat(${s.size}, ${cell}px)`,
-              fontSize: `${Math.max(7, Math.round(cell * 0.55))}px`,
-            }}
-            role="grid"
-            aria-label={`Bàn cờ ${s.size}×${s.size}`}
+          onPointerCancel={onPointerCancel}
+          onPointerLeave={() => setHover(null)}
+          onWheel={onWheel}
+          aria-label="Bàn cờ caro vô hạn. Kéo để di chuyển bàn cờ, bấm để đánh cờ."
+        />
+        <div className="caro-toolbar">
+          <button
+            type="button"
+            className="caro-tool-btn"
+            title="Về trung tâm (bàn 15×15 ban đầu)"
+            onClick={() => centerAt(7, 7)}
           >
-            {[...board].map((c, i) => (
-              <button
-                key={i}
-                type="button"
-                className={`caro-cell${c !== "." ? ` caro-${c}` : ""}${s.last === i ? " is-last" : ""}${win.has(i) ? " is-win" : ""}`}
-                disabled={!myMove || c !== "." || busy}
-                onClick={() => act("move", { cell: i, size: s.size })}
-                aria-label={`Hàng ${Math.floor(i / s.size) + 1}, cột ${(i % s.size) + 1}${c === "." ? "" : `: ${c.toUpperCase()}`}`}
-              >
-                {c === "." ? "" : c.toUpperCase()}
-              </button>
-            ))}
-          </div>
+            🎯 Về tâm
+          </button>
+          {lastCoord && (
+            <button
+              type="button"
+              className="caro-tool-btn"
+              title="Xem nước đi mới nhất"
+              onClick={() => centerAt(lastCoord.r, lastCoord.c)}
+            >
+              📍 Nước cuối
+            </button>
+          )}
+          <button
+            type="button"
+            className="caro-tool-btn"
+            title="Phóng to"
+            onClick={() => {
+              const newSize = Math.min(64, cellSize + 4);
+              setCellSize(newSize);
+            }}
+          >
+            +
+          </button>
+          <button
+            type="button"
+            className="caro-tool-btn"
+            title="Thu nhỏ"
+            onClick={() => {
+              const newSize = Math.max(18, cellSize - 4);
+              setCellSize(newSize);
+            }}
+          >
+            −
+          </button>
         </div>
-        {panning && (
-          <>
-            {edges.l && <span className="caro-fade is-l" aria-hidden />}
-            {edges.r && <span className="caro-fade is-r" aria-hidden />}
-            {edges.t && <span className="caro-fade is-t" aria-hidden />}
-            {edges.b && <span className="caro-fade is-b" aria-hidden />}
-          </>
-        )}
+        <span className="caro-pan-hint">🖱️ Kéo để di chuyển</span>
       </div>
-      {big && (
-        <button type="button" className="link-btn caro-zoom" onClick={() => setOverview((v) => !v)}>
-          {zoomed ? "Về cỡ thường" : `Xem toàn bàn ${s.size}×${s.size}`}
-        </button>
-      )}
-      {game.status === "playing" && ctx.isPlayer && (
-        <div className="game-actions">
+      <div className="game-actions">
+        {game.status === "playing" && (
           <span className="game-hint">
             {myMove ? "Tới lượt bạn." : `Chờ ${ctx.nameOf(s.turn ?? 0)} đánh…`} Nước thứ {s.moves + 1}.
-            {panning ? " Kéo bàn để xem chỗ khác." : ""}
           </span>
+        )}
+        <button type="button" className="link-btn" onClick={() => setLbOpen(true)}>
+          🏆 Bảng xếp hạng
+        </button>
+        {game.status === "playing" && ctx.isPlayer && (
           <button type="button" className="link-btn game-cancel" disabled={busy} onClick={() => act("resign")}>
             Chịu thua
           </button>
+        )}
+      </div>
+      {lbOpen && <GameLeaderboardDialog initialKind="caro" onClose={() => setLbOpen(false)} />}
+    </div>
+  );
+}
+
+/* ---------- Cờ vua (Chess) ---------- */
+
+function Chess({ ctx }: { ctx: Ctx }) {
+  const { game, meId, busy, act } = ctx;
+  const s = game.state as ChessState;
+  const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
+  const [pendingPromotion, setPendingPromotion] = useState<{ from: string; to: string } | null>(null);
+  const [confirmResign, setConfirmResign] = useState(false);
+  const [manualFlip, setManualFlip] = useState<boolean | null>(null);
+  const [lbOpen, setLbOpen] = useState(false);
+
+  const whitePlayer = game.players.find((p) => p.id === s.white_player_id);
+  const blackPlayer = game.players.find((p) => p.id === s.black_player_id);
+  const isWhite = s.white_player_id === meId;
+  const isBlack = s.black_player_id === meId;
+  const isPlayer = isWhite || isBlack;
+  const isMyTurn = game.status === "playing" && s.turn_player_id === meId;
+
+  // Tự động xoay bàn cờ nếu mình cầm Đen (có thể lật tay tuỳ ý)
+  const flipped = manualFlip !== null ? manualFlip : isBlack;
+
+  // Danh sách nước đi hợp lệ từ ô đang chọn
+  const validTargets = useMemo(() => {
+    if (!selectedSquare || !s.legal_moves) return new Set<string>();
+    const moves = s.legal_moves[selectedSquare] || [];
+    return new Set(moves.map((m) => m.slice(0, 2)));
+  }, [selectedSquare, s.legal_moves]);
+
+  // Kiểm tra quân cờ có thuộc phe mình không
+  const isMyPiece = useCallback(
+    (pieceChar: string) => {
+      if (!pieceChar || pieceChar === ".") return false;
+      if (isWhite) return pieceChar >= "A" && pieceChar <= "Z";
+      if (isBlack) return pieceChar >= "a" && pieceChar <= "z";
+      return false;
+    },
+    [isWhite, isBlack]
+  );
+
+  const onSquareClick = (sq: string, pieceChar: string) => {
+    if (!isMyTurn || busy) return;
+
+    if (selectedSquare) {
+      if (selectedSquare === sq) {
+        setSelectedSquare(null);
+        return;
+      }
+      if (validTargets.has(sq)) {
+        // Nước đi hợp lệ!
+        // Kiểm tra phong cấp: Tốt trắng tới hàng 8 hoặc Tốt đen tới hàng 1
+        const selIdx = (selectedSquare.charCodeAt(1) - 49) * 8 + (selectedSquare.charCodeAt(0) - 97);
+        const movingPiece = s.board ? s.board[selIdx] : "";
+        const isPromo =
+          (movingPiece === "P" && sq[1] === "8") ||
+          (movingPiece === "p" && sq[1] === "1");
+
+        if (isPromo) {
+          setPendingPromotion({ from: selectedSquare, to: sq });
+        } else {
+          act("move", { from: selectedSquare, to: sq });
+          setSelectedSquare(null);
+        }
+        return;
+      }
+      // Nếu bấm vào quân khác của phe mình -> đổi chọn quân đó
+      if (isMyPiece(pieceChar)) {
+        setSelectedSquare(sq);
+        return;
+      }
+      // Bấm ra ngoài -> bỏ chọn
+      setSelectedSquare(null);
+    } else {
+      if (isMyPiece(pieceChar)) {
+        setSelectedSquare(sq);
+      }
+    }
+  };
+
+  const ranks = flipped ? [0, 1, 2, 3, 4, 5, 6, 7] : [7, 6, 5, 4, 3, 2, 1, 0];
+  const files = flipped ? [7, 6, 5, 4, 3, 2, 1, 0] : [0, 1, 2, 3, 4, 5, 6, 7];
+
+  // Tính điểm chênh lệch lực lượng
+  const pieceValues: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9 };
+  let whiteMaterialLoss = 0;
+  let blackMaterialLoss = 0;
+  if (s.captured) {
+    for (const [p, count] of Object.entries(s.captured)) {
+      const val = pieceValues[p.toLowerCase()] || 0;
+      if (p >= "A" && p <= "Z") {
+        whiteMaterialLoss += val * count;
+      } else {
+        blackMaterialLoss += val * count;
+      }
+    }
+  }
+  const whiteAdvantage = blackMaterialLoss - whiteMaterialLoss;
+  const blackAdvantage = whiteMaterialLoss - blackMaterialLoss;
+
+  const topPlayer = flipped ? whitePlayer : blackPlayer;
+  const topColor = flipped ? "white" : "black";
+  const topAdvantage = flipped ? whiteAdvantage : blackAdvantage;
+
+  const bottomPlayer = flipped ? blackPlayer : whitePlayer;
+  const bottomColor = flipped ? "black" : "white";
+  const bottomAdvantage = flipped ? blackAdvantage : whiteAdvantage;
+
+  return (
+    <div className="chess-container">
+      {/* Thông báo chiếu */}
+      {game.status === "playing" && s.in_check && (
+        <div className="chess-banner is-check">
+          <span>⚠️ {s.turn_color === "w" ? "Trắng" : "Đen"} đang bị chiếu!</span>
         </div>
       )}
+
+      {/* Thông báo đề nghị hoà */}
+      {game.status === "playing" && s.draw_offered && (
+        <div className="chess-banner is-draw-offer">
+          {s.draw_offered_by === meId ? (
+            <span>Bạn đã đề nghị hoà cờ. Đang chờ đối thủ trả lời...</span>
+          ) : (
+            <>
+              <span>Đối thủ đề nghị hoà cờ:</span>
+              <div style={{ display: "flex", gap: "0.4rem" }}>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  disabled={busy}
+                  onClick={() => act("draw_accept")}
+                >
+                  Đồng ý hoà
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-secondary"
+                  disabled={busy}
+                  onClick={() => act("draw_decline")}
+                >
+                  Từ chối
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Thông tin đối thủ (ở trên) */}
+      <div className="chess-player-bar">
+        <div className="chess-player-info">
+          <span className={`chess-color-badge ${topColor}`} aria-hidden>
+            {topColor === "white" ? "⚪" : "⚫"}
+          </span>
+          <span>
+            {topPlayer?.name || (topColor === "white" ? "Quân Trắng" : "Quân Đen")}
+            {topPlayer?.id === meId ? " (Bạn)" : ""}
+          </span>
+          {topAdvantage > 0 && <span className="chess-advantage">+{topAdvantage}</span>}
+          {/* Quân bị ăn */}
+          <div className="chess-captured-list">
+            {Object.entries(s.captured || {}).map(([p, count]) => {
+              const isThisSide = topColor === "white" ? p >= "a" && p <= "z" : p >= "A" && p <= "Z";
+              if (!isThisSide) return null;
+              return Array.from({ length: count }).map((_, i) => (
+                <span key={`${p}-${i}`} className="chess-captured-item">
+                  <ChessPiece piece={p} />
+                </span>
+              ));
+            })}
+          </div>
+        </div>
+        {game.status === "playing" && s.turn_color === (topColor === "white" ? "w" : "b") && (
+          <Countdown deadline={game.deadline} label="Thời gian nước đi" />
+        )}
+      </div>
+
+      {/* Bàn cờ 8×8 */}
+      <div className="chess-board-wrapper">
+        <div className="chess-board" role="grid" aria-label="Bàn cờ vua">
+          {ranks.map((r, rIdx) =>
+            files.map((f, fIdx) => {
+              const sq = `${String.fromCharCode(97 + f)}${r + 1}`;
+              const idx = r * 8 + f;
+              const pieceChar = s.board ? s.board[idx] : ".";
+              const isLight = (r + f) % 2 === 1;
+              const isSelected = selectedSquare === sq;
+              const isLastMove = s.last_move && (s.last_move.from === sq || s.last_move.to === sq);
+              const isInCheck = s.in_check && s.check_square === sq;
+              const isTarget = validTargets.has(sq);
+              const hasEnemy = pieceChar !== "." && !isMyPiece(pieceChar);
+
+              return (
+                <button
+                  key={sq}
+                  type="button"
+                  className={`chess-square ${isLight ? "is-light" : "is-dark"}${
+                    isSelected ? " is-selected" : ""
+                  }${isLastMove ? " is-last-move" : ""}${isInCheck ? " is-in-check" : ""}`}
+                  onClick={() => onSquareClick(sq, pieceChar)}
+                  onDragOver={(e) => {
+                    if (isTarget) {
+                      e.preventDefault();
+                    }
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const from = e.dataTransfer.getData("text/plain");
+                    if (from && isTarget) {
+                      const selIdx = (from.charCodeAt(1) - 49) * 8 + (from.charCodeAt(0) - 97);
+                      const movingPiece = s.board ? s.board[selIdx] : "";
+                      const isPromo =
+                        (movingPiece === "P" && sq[1] === "8") ||
+                        (movingPiece === "p" && sq[1] === "1");
+                      if (isPromo) {
+                        setPendingPromotion({ from, to: sq });
+                      } else {
+                        act("move", { from, to: sq });
+                        setSelectedSquare(null);
+                      }
+                    }
+                  }}
+                  aria-label={`${sq}: ${pieceChar !== "." ? pieceChar : "ô trống"}`}
+                >
+                  {/* Toạ độ hàng/cột */}
+                  {fIdx === 0 && <span className="chess-coord-rank">{r + 1}</span>}
+                  {rIdx === 7 && <span className="chess-coord-file">{String.fromCharCode(97 + f)}</span>}
+
+                  {/* Quân cờ */}
+                  {pieceChar !== "." && (
+                    <span
+                      draggable={isMyTurn && isMyPiece(pieceChar)}
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("text/plain", sq);
+                        setSelectedSquare(sq);
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: "100%",
+                        height: "100%",
+                        cursor: isMyTurn && isMyPiece(pieceChar) ? "grab" : "default",
+                      }}
+                    >
+                      <ChessPiece piece={pieceChar} />
+                    </span>
+                  )}
+
+                  {/* Chấm gợi ý nước đi */}
+                  {isTarget && (
+                    <span className={hasEnemy ? "chess-hint-capture" : "chess-hint-dot"} />
+                  )}
+                </button>
+              );
+            })
+          )}
+        </div>
+
+        {/* Modal phong cấp Tốt */}
+        {pendingPromotion && (
+          <div className="chess-promotion-modal">
+            <div className="chess-promotion-content">
+              <div className="chess-promotion-title">Chọn quân phong cấp:</div>
+              <div className="chess-promotion-choices">
+                {(["q", "r", "b", "n"] as const).map((pr) => {
+                  const promoChar = isWhite ? pr.toUpperCase() : pr;
+                  const label = pr === "q" ? "Hậu" : pr === "r" ? "Xe" : pr === "b" ? "Tượng" : "Mã";
+                  return (
+                    <button
+                      key={pr}
+                      type="button"
+                      className="chess-promotion-btn"
+                      onClick={() => {
+                        act("move", { from: pendingPromotion.from, to: pendingPromotion.to, promotion: pr });
+                        setPendingPromotion(null);
+                        setSelectedSquare(null);
+                      }}
+                    >
+                      <ChessPiece piece={promoChar} />
+                      <span>{label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ width: "100%" }}
+                onClick={() => setPendingPromotion(null)}
+              >
+                Huỷ
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Thông tin phe ở dưới (thường là mình) */}
+      <div className="chess-player-bar" style={{ marginTop: "0.35rem" }}>
+        <div className="chess-player-info">
+          <span className={`chess-color-badge ${bottomColor}`} aria-hidden>
+            {bottomColor === "white" ? "⚪" : "⚫"}
+          </span>
+          <span>
+            {bottomPlayer?.name || (bottomColor === "white" ? "Quân Trắng" : "Quân Đen")}
+            {bottomPlayer?.id === meId ? " (Bạn)" : ""}
+          </span>
+          {bottomAdvantage > 0 && <span className="chess-advantage">+{bottomAdvantage}</span>}
+          {/* Quân bị ăn */}
+          <div className="chess-captured-list">
+            {Object.entries(s.captured || {}).map(([p, count]) => {
+              const isThisSide = bottomColor === "white" ? p >= "a" && p <= "z" : p >= "A" && p <= "Z";
+              if (!isThisSide) return null;
+              return Array.from({ length: count }).map((_, i) => (
+                <span key={`${p}-${i}`} className="chess-captured-item">
+                  <ChessPiece piece={p} />
+                </span>
+              ));
+            })}
+          </div>
+        </div>
+        {game.status === "playing" && s.turn_color === (bottomColor === "white" ? "w" : "b") && (
+          <Countdown deadline={game.deadline} label="Thời gian nước đi" />
+        )}
+      </div>
+
+      {/* Thanh công cụ / Hành động */}
+      <div className="chess-actions">
+        <div style={{ display: "flex", gap: "0.4rem" }}>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setManualFlip((prev) => (prev === null ? !isBlack : !prev))}
+            title="Xoay bàn cờ"
+          >
+            🔄 Lật bàn
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setLbOpen(true)}
+          >
+            🏆 Xếp hạng
+          </button>
+        </div>
+
+        {game.status === "playing" && isPlayer && (
+          <div style={{ display: "flex", gap: "0.4rem" }}>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              disabled={busy || s.draw_offered}
+              onClick={() => act("draw_offer")}
+              title="Gửi lời đề nghị hoà cho đối thủ"
+            >
+              🤝 Cầu hoà
+            </button>
+            {confirmResign ? (
+              <div style={{ display: "flex", gap: "0.25rem", alignItems: "center" }}>
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm"
+                  disabled={busy}
+                  onClick={() => {
+                    act("resign");
+                    setConfirmResign(false);
+                  }}
+                >
+                  Xác nhận chịu thua
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setConfirmResign(false)}
+                >
+                  Huỷ
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={busy}
+                onClick={() => setConfirmResign(true)}
+              >
+                🏳️ Chịu thua
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {lbOpen && <GameLeaderboardDialog initialKind="chess" onClose={() => setLbOpen(false)} />}
     </div>
   );
 }
@@ -1070,13 +1711,15 @@ function Rps({ ctx }: { ctx: Ctx }) {
 
 export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number; dm: boolean; onClose: () => void }) {
   const { createGame } = useChat();
-  const kinds = (Object.keys(GAME_INFO) as GameKind[]).filter((k) => !dm || k === "caro" || k === "rps");
+  const kinds = (Object.keys(GAME_INFO) as GameKind[]).filter((k) => !dm || k === "caro" || k === "rps" || k === "chess");
   const [kind, setKind] = useState<GameKind>(kinds[0]);
   const [day, setDay] = useState(120);
   const [night, setNight] = useState(45);
   const [hideRoles, setHideRoles] = useState(false);
   const [spies, setSpies] = useState(0);
   const [blockRule, setBlockRule] = useState(true);
+  const [chessMinutes, setChessMinutes] = useState(3);
+  const [chessFirst, setChessFirst] = useState<"random" | "host" | "guest">("random");
   const [bestOf, setBestOf] = useState(3);
   const [st, setSt] = useState({
     traitors: 0,
@@ -1090,6 +1733,7 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
   const setOpt = (k: keyof typeof st, v: number | boolean) => setSt((o) => ({ ...o, [k]: v }));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [leaderboardOpen, setLeaderboardOpen] = useState(false);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -1100,6 +1744,7 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
       werewolf: { day_seconds: day, night_seconds: night, hide_roles: hideRoles },
       spy: { spies },
       caro: { free_style: !blockRule },
+      chess: { turn_minutes: chessMinutes, first: chessFirst },
       rps: { best_of: bestOf },
     };
     try {
@@ -1257,6 +1902,27 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
             </span>
           </label>
         )}
+        {kind === "chess" && (
+          <>
+            <label className="field">
+              <span>Thời gian mỗi nước đi</span>
+              <select value={chessMinutes} onChange={(e) => setChessMinutes(Number(e.target.value))}>
+                <option value={1}>1 phút (Chớp - Blitz)</option>
+                <option value={3}>3 phút (Tiêu chuẩn)</option>
+                <option value={5}>5 phút (Nhanh - Rapid)</option>
+                <option value={10}>10 phút (Dài)</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Cầm quân Trắng (đi trước)</span>
+              <select value={chessFirst} onChange={(e) => setChessFirst(e.target.value as any)}>
+                <option value="random">Ngẫu nhiên (50/50)</option>
+                <option value="host">Chủ phòng cầm Trắng</option>
+                <option value="guest">Khách cầm Trắng</option>
+              </select>
+            </label>
+          </>
+        )}
         {kind === "rps" && (
           <label className="field">
             <span>Thể thức</span>
@@ -1270,6 +1936,14 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
 
         <FormError>{error}</FormError>
         <div className="dialog-actions">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => setLeaderboardOpen(true)}
+            style={{ marginRight: "auto" }}
+          >
+            🏆 Bảng xếp hạng
+          </button>
           <button type="button" className="btn" onClick={onClose} disabled={busy}>
             Huỷ
           </button>
@@ -1278,6 +1952,227 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
           </button>
         </div>
       </form>
+      {leaderboardOpen && <GameLeaderboardDialog initialKind={kind} onClose={() => setLeaderboardOpen(false)} />}
+    </Dialog>
+  );
+}
+
+/* ---------- Bảng xếp hạng trò chơi ---------- */
+
+export function GameLeaderboardDialog({
+  initialKind = "caro",
+  onClose,
+}: {
+  initialKind?: string;
+  onClose: () => void;
+}) {
+  const { api } = useChat();
+  const [kind, setKind] = useState<string>(initialKind);
+  const [data, setData] = useState<GameLeaderboard | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api
+      ?.gameLeaderboard(kind)
+      .then((res) => {
+        if (!cancelled) {
+          setData(res);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Không tải được bảng xếp hạng.");
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, kind]);
+
+  const tabs: { id: string; label: string }[] = [
+    { id: "caro", label: "Cờ caro" },
+    { id: "chess", label: "Cờ vua" },
+    { id: "all", label: "Tất cả game" },
+    { id: "rps", label: "Oẳn tù tì" },
+    { id: "werewolf", label: "Ma Sói" },
+    { id: "spy", label: "Gián điệp" },
+    { id: "station", label: "Trạm vũ trụ" },
+  ];
+
+  return (
+    <Dialog title="🏆 Bảng xếp hạng trò chơi" onClose={onClose} wide>
+      <div className="lb-container">
+        <div className="lb-tabs" role="tablist">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={`lb-tab${kind === t.id ? " is-active" : ""}`}
+              onClick={() => setKind(t.id)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {loading ? (
+          <div className="lb-loading">Đang tải bảng xếp hạng…</div>
+        ) : error ? (
+          <div className="lb-error">{error}</div>
+        ) : !data || data.total_ended === 0 ? (
+          <div className="lb-empty">
+            <p>Chưa có ván chơi nào hoàn thành cho mục này.</p>
+            <small>Hãy rủ bạn bè vào phòng cùng chơi để vinh danh trên bảng xếp hạng nhé!</small>
+          </div>
+        ) : (
+          <div className="lb-body">
+            {/* Top 10 Thắng & Top 10 Thua */}
+            <div className="lb-top-grid">
+              {/* Top 10 Thắng */}
+              <div className="lb-top-card lb-top-wins">
+                <div className="lb-card-header">
+                  <h3>🥇 Top 10 Số Bàn Thắng</h3>
+                  <span>{data.top_wins.length} thành viên</span>
+                </div>
+                <div className="lb-top-list">
+                  {data.top_wins.length === 0 ? (
+                    <p className="lb-subtle">Chưa có ai thắng trận nào.</p>
+                  ) : (
+                    data.top_wins.map((m, idx) => (
+                      <div key={m.user_id} className={`lb-item rank-${idx + 1}`}>
+                        <span className="lb-rank">
+                          {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : `#${idx + 1}`}
+                        </span>
+                        <Avatar
+                          user={
+                            {
+                              id: m.user_id,
+                              username: m.username,
+                              display_name: m.display_name,
+                              avatar: m.avatar,
+                            } as PublicUser
+                          }
+                          size={28}
+                        />
+                        <div className="lb-user-info">
+                          <span className="lb-name">{m.display_name || m.username}</span>
+                          <span className="lb-sub">Tỉ lệ thắng: {m.win_rate}%</span>
+                        </div>
+                        <div className="lb-stat-badge win-badge">
+                          <b>{m.wins}</b> thắng
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Top 10 Thua */}
+              <div className="lb-top-card lb-top-losses">
+                <div className="lb-card-header">
+                  <h3>💀 Top 10 Số Bàn Thua</h3>
+                  <span>{data.top_losses.length} thành viên</span>
+                </div>
+                <div className="lb-top-list">
+                  {data.top_losses.length === 0 ? (
+                    <p className="lb-subtle">Chưa có ai thua trận nào.</p>
+                  ) : (
+                    data.top_losses.map((m, idx) => (
+                      <div key={m.user_id} className={`lb-item rank-${idx + 1}`}>
+                        <span className="lb-rank">#{idx + 1}</span>
+                        <Avatar
+                          user={
+                            {
+                              id: m.user_id,
+                              username: m.username,
+                              display_name: m.display_name,
+                              avatar: m.avatar,
+                            } as PublicUser
+                          }
+                          size={28}
+                        />
+                        <div className="lb-user-info">
+                          <span className="lb-name">{m.display_name || m.username}</span>
+                          <span className="lb-sub">Tổng: {m.total_games} ván</span>
+                        </div>
+                        <div className="lb-stat-badge loss-badge">
+                          <b>{m.losses}</b> thua
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Bảng xếp hạng chi tiết tất cả thành viên */}
+            <div className="lb-table-wrap">
+              <div className="lb-card-header">
+                <h3>📋 Bảng Xếp Hạng Chi Tiết ({data.members.length} người chơi)</h3>
+                <span>Tổng cộng {data.total_ended} ván đã hoàn thành</span>
+              </div>
+              <div className="lb-table-scroll">
+                <table className="lb-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: "3.5rem" }}>Hạng</th>
+                      <th>Thành viên</th>
+                      <th style={{ textAlign: "center" }}>Tổng ván</th>
+                      <th style={{ textAlign: "center" }}>Thắng</th>
+                      <th style={{ textAlign: "center" }}>Thua</th>
+                      <th style={{ textAlign: "center" }}>Hoà</th>
+                      <th style={{ textAlign: "right" }}>Tỉ lệ thắng</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.members.map((m, idx) => (
+                      <tr key={m.user_id}>
+                        <td className="lb-td-rank">
+                          {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : idx + 1}
+                        </td>
+                        <td className="lb-td-user">
+                          <div className="lb-td-user-inner">
+                            <Avatar
+                              user={
+                                {
+                                  id: m.user_id,
+                                  username: m.username,
+                                  display_name: m.display_name,
+                                  avatar: m.avatar,
+                                } as PublicUser
+                              }
+                              size={24}
+                            />
+                            <span className="lb-td-name">{m.display_name || m.username}</span>
+                            {m.username && <span className="lb-td-handle">@{m.username}</span>}
+                          </div>
+                        </td>
+                        <td style={{ textAlign: "center" }}>
+                          <b>{m.total_games}</b>
+                        </td>
+                        <td style={{ textAlign: "center", color: "var(--u1)", fontWeight: 700 }}>
+                          {m.wins}
+                        </td>
+                        <td style={{ textAlign: "center", color: "var(--u4)", fontWeight: 700 }}>
+                          {m.losses}
+                        </td>
+                        <td style={{ textAlign: "center", color: "var(--text-soft)" }}>{m.draws}</td>
+                        <td style={{ textAlign: "right", fontWeight: 700 }}>{m.win_rate}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </Dialog>
   );
 }

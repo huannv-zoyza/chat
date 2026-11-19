@@ -160,7 +160,7 @@ func (a *API) startGame(ctx context.Context, ch model.Channel, host model.User, 
 	if title == "" {
 		return model.Message{}, game.Error("Không có trò chơi này.")
 	}
-	if ch.IsDM() && kind != "caro" && kind != "rps" {
+	if ch.IsDM() && kind != "caro" && kind != "rps" && kind != "chess" {
 		return model.Message{}, game.Error("Trò này cần nhiều người, hãy mở trong kênh.")
 	}
 	now := time.Now()
@@ -239,6 +239,16 @@ func (a *API) gameAction(w http.ResponseWriter, r *http.Request) {
 	}
 	a.ensureLoop(s)
 	writeJSON(w, http.StatusOK, json.RawMessage(viewJSON(s.g, me.ID)))
+}
+
+func (a *API) gameLeaderboard(w http.ResponseWriter, r *http.Request) {
+	kind := r.URL.Query().Get("kind")
+	lb, err := a.store.GetGameLeaderboard(r.Context(), kind)
+	if err != nil {
+		internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, lb)
 }
 
 func writeGameError(w http.ResponseWriter, r *http.Request, err error) {

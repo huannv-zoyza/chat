@@ -107,6 +107,47 @@ func TestGamesCaro(t *testing.T) {
 	}
 }
 
+func TestGameLeaderboard(t *testing.T) {
+	e := newEnv(t)
+	alice := e.register("alice", "Alice")
+	bob := e.register("bob", "Bob")
+	var ch channel
+	e.do("POST", "/api/channels", alice.Token, map[string]any{"name": "game-room"}, &ch)
+	e.do("POST", "/api/channels/"+itoa(ch.ID)+"/join", bob.Token, nil, nil)
+
+	var m gameMsg
+	e.do("POST", "/api/channels/"+itoa(ch.ID)+"/games", alice.Token, map[string]any{"kind": "caro"}, &m)
+
+	var g gameResp
+	e.do("POST", "/api/messages/"+itoa(m.ID)+"/game", bob.Token, map[string]any{"action": "join"}, &g)
+
+	e.do("POST", "/api/messages/"+itoa(m.ID)+"/game", alice.Token, map[string]any{"action": "resign"}, nil)
+
+	var lb struct {
+		Kind      string `json:"kind"`
+		TopWins   []any  `json:"top_wins"`
+		TopLosses []any  `json:"top_losses"`
+		Members   []struct {
+			UserID     int64   `json:"user_id"`
+			Wins       int     `json:"wins"`
+			Losses     int     `json:"losses"`
+			TotalGames int     `json:"total_games"`
+			WinRate    float64 `json:"win_rate"`
+		} `json:"members"`
+		TotalEnded int `json:"total_ended"`
+	}
+	code := e.do("GET", "/api/games/leaderboard?kind=caro", alice.Token, nil, &lb)
+	if code != 200 {
+		t.Fatalf("leaderboard status: %d", code)
+	}
+	if lb.TotalEnded != 1 {
+		t.Fatalf("total ended want 1, got %d", lb.TotalEnded)
+	}
+	if len(lb.Members) != 2 {
+		t.Fatalf("members count want 2, got %d", len(lb.Members))
+	}
+}
+
 func TestGamesSecretsStayPrivate(t *testing.T) {
 	e := newEnv(t)
 	names := []string{"anh", "binh", "chi", "dung", "emm"}
@@ -227,3 +268,75 @@ func TestStationRealtime(t *testing.T) {
 	}
 	_ = ids
 }
+
+func TestGamesChess(t *testing.T) {
+	e := newEnv(t)
+	alice := e.register("alice", "Alice")
+	bob := e.register("bob", "Bob")
+
+	wsAlice := e.dial(alice.Token)
+	wsAlice.waitFor("ready")
+
+	// Test DM creation for chess
+	var dm channel
+	if code := e.do("POST", "/api/dms", alice.Token, map[string]any{"user_id": bob.User.ID}, &dm); code != 201 {
+		t.Fatalf("create dm: %d", code)
+	}
+
+	var m gameMsg
+	if code := e.do("POST", "/api/channels/"+itoa(dm.ID)+"/games", alice.Token, map[string]any{
+		"kind": "chess",
+		"options": map[string]any{
+			"turn_minutes": 3,
+			"first":        "host",
+		},
+	}, &m); code != 201 {
+		t.Fatalf("create chess in dm: %d", code)
+	}
+
+	// Bob joins, auto-starts 2-player chess
+	var g gameResp
+	if code := e.do("POST", "/api/messages/"+itoa(m.ID)+"/game", bob.Token, map[string]any{"action": "join"}, &g); code != 200 {
+		t.Fatalf("bob join: %d", code)
+	}
+	if g.Status != "playing" {
+		t.Fatalf("expected playing status, got %s", g.Status)
+	}
+
+	// Alice (host) specified first: "host", so Alice must be White
+	turnPID := int64(g.State["turn_player_id"].(float64))
+	if turnPID != alice.User.ID {
+		t.Fatalf("expected alice (host) to have first turn, got %d", turnPID)
+	}
+
+	// WebSocket receives game.updated on join
+	ev := wsAlice.waitFor("game.updated")
+	if ev["message_id"].(float64) != float64(m.ID) {
+		t.Fatalf("ws game.updated mismatch: %v", ev)
+	}
+
+	// White (Alice) moves e2 -> e4
+	if code := e.do("POST", "/api/messages/"+itoa(m.ID)+"/game", alice.Token, map[string]any{
+		"action": "move",
+		"data":   map[string]string{"from": "e2", "to": "e4"},
+	}, &g); code != 200 {
+		t.Fatalf("white move e2-e4: %d", code)
+	}
+
+	// WebSocket receives game.updated on move
+	wsAlice.waitFor("game.updated")
+
+	// Black (Bob) resigns
+	if code := e.do("POST", "/api/messages/"+itoa(m.ID)+"/game", bob.Token, map[string]any{
+		"action": "resign",
+	}, &g); code != 200 {
+		t.Fatalf("black resign: %d", code)
+	}
+	if g.Status != "ended" {
+		t.Fatalf("expected ended status, got %s", g.Status)
+	}
+
+	// WebSocket receives game.updated on end
+	wsAlice.waitFor("game.updated")
+}
+

@@ -2,6 +2,7 @@ package game
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -74,12 +75,12 @@ func TestCaroWinAndBlockRule(t *testing.T) {
 		t.Fatal("O must not move first")
 	}
 	// X: hàng 7, cột 3..7; O đánh rải rác
-	for i, oc := range []int{10*caroStart + 3, 10*caroStart + 5, 10*caroStart + 7, 10*caroStart + 9} {
-		act(t, g, x, "move", map[string]int{"cell": 7*caroStart + 3 + i})
+	for i, oc := range []int{0, 2, 4, 6} {
+		act(t, g, x, "move", map[string]int{"cell": 7*caroSize + 3 + i})
 		act(t, g, o, "move", map[string]int{"cell": oc})
 	}
 	g = roundTrip(t, g)
-	act(t, g, x, "move", map[string]int{"cell": 7*caroStart + 7})
+	act(t, g, x, "move", map[string]int{"cell": 7*caroSize + 7})
 	if g.Status() != Ended || len(g.Winners()) != 1 || g.Winners()[0] != x.ID {
 		t.Fatalf("X should win, status=%s winners=%v", g.Status(), g.Winners())
 	}
@@ -90,9 +91,9 @@ func TestCaroWinAndBlockRule(t *testing.T) {
 	// chặn hai đầu: O ở hai đầu hàng 5 của X thì X chưa thắng
 	g, _ = newGame(t, "caro", 2, "")
 	x, o = g.Players()[0], g.Players()[1]
-	row := 5 * caroStart
-	xs := []int{row + 4, row + 5, row + 6, row + 7, row + 8}
-	os := []int{row + 3, row + 9, 10*caroStart + 3, 10*caroStart + 5, 10*caroStart + 7}
+	row := 3 * caroSize
+	xs := []int{row + 2, row + 3, row + 4, row + 5, row + 6}
+	os := []int{row + 1, row + 7, 100, 102, 104}
 	for i := range xs {
 		act(t, g, x, "move", map[string]int{"cell": xs[i]})
 		if g.Status() == Ended {
@@ -106,75 +107,6 @@ func TestCaroWinAndBlockRule(t *testing.T) {
 	}
 	if g.Status() != Playing {
 		t.Fatalf("status = %s, want playing", g.Status())
-	}
-}
-
-func caroOf(g *Game) *caro { return g.r.(*caro) }
-
-func TestCaroBoardGrows(t *testing.T) {
-	g, _ := newGame(t, "caro", 2, "")
-	x, o := g.Players()[0], g.Players()[1]
-	// giữa bàn: không mở rộng
-	act(t, g, x, "move", map[string]int{"cell": 7*caroStart + 7, "size": caroStart})
-	if caroOf(g).n() != caroStart {
-		t.Fatalf("center move grew the board to %d", caroOf(g).n())
-	}
-	// O đánh sát góc trên trái: bàn thêm 3 hàng trên và 3 cột trái
-	act(t, g, o, "move", map[string]int{"cell": 1*caroStart + 0})
-	c := caroOf(g)
-	if c.n() != caroStart+caroGrow {
-		t.Fatalf("size after edge move = %d", c.n())
-	}
-	n := c.n()
-	if c.Board[10*n+10] != 'x' || c.Board[4*n+3] != 'o' || c.Last != 4*n+3 {
-		t.Fatalf("stones not shifted: last=%d x=%c o=%c", c.Last, c.Board[10*n+10], c.Board[4*n+3])
-	}
-	// người chơi còn thấy bàn cũ: từ chối thay vì đặt nhầm ô
-	if err := tryAct(g, x, "move", map[string]int{"cell": 7*caroStart + 8, "size": caroStart}); err == nil {
-		t.Fatal("move on a stale board size must be rejected")
-	}
-	// mép phải chỉ chạm một chiều: hàng thêm về phía gần nước đi hơn (dưới, vì hàng 15 > 18/2)
-	act(t, g, x, "move", map[string]int{"cell": 15*n + n - 1, "size": n})
-	c = caroOf(g)
-	m := c.n()
-	if m != n+caroGrow || c.Board[15*m+n-1] != 'x' || c.Board[10*m+10] != 'x' {
-		t.Fatalf("right-edge growth: size=%d", m)
-	}
-	// app cũ không gửi size vẫn đánh được
-	act(t, g, o, "move", map[string]int{"cell": 9*m + 9})
-
-	// thắng 5 quân qua chỗ vừa mở rộng; bàn tối đa caroMax
-	g, _ = newGame(t, "caro", 2, "")
-	x, o = g.Players()[0], g.Players()[1]
-	// X đánh sát mép trên (bàn nở, các quân bị dời), rồi nối tiếp theo vị trí mới của quân đầu tiên
-	act(t, g, x, "move", map[string]int{"cell": 0*caroStart + 7})
-	for i := 1; i <= 4; i++ {
-		c := caroOf(g)
-		n := c.n()
-		act(t, g, o, "move", map[string]int{"cell": (n-1)*n + n - 1 - i*2}) // góc dưới phải: nở về phía đó
-		g = roundTrip(t, g)
-		c = caroOf(g)
-		n = c.n()
-		first := strings.IndexByte(c.Board, 'x')
-		act(t, g, x, "move", map[string]int{"cell": first + i, "size": n})
-	}
-	c = caroOf(g)
-	n = c.n()
-	if g.Status() != Ended || g.Winners()[0] != x.ID {
-		t.Fatalf("five across a grown board should win: %s (size %d)", g.Status(), n)
-	}
-	if n > caroMax {
-		t.Fatalf("board grew past max: %d", n)
-	}
-
-	big := &caro{Size: caroMax, Board: strings.Repeat(".", caroMax*caroMax)}
-	big.grow(0)
-	if big.n() != caroMax {
-		t.Fatalf("grew past max: %d", big.n())
-	}
-	old := &caro{Board: strings.Repeat(".", caroStart*caroStart)} // ván lưu trước khi có Size
-	if old.n() != caroStart {
-		t.Fatal("old games default to 15×15")
 	}
 }
 
@@ -203,6 +135,60 @@ func TestCaroRandomFirstPlayer(t *testing.T) {
 	}
 	if hostFirst == 0 || guestFirst == 0 {
 		t.Fatalf("caro first player is not random: hostFirst=%d guestFirst=%d", hostFirst, guestFirst)
+	}
+}
+
+func TestCaroBeyondBoundaries(t *testing.T) {
+	g, _ := newGame(t, "caro", 2, "")
+	x, o := g.Players()[0], g.Players()[1]
+	coordsX := [][2]int{{13, 13}, {14, 14}, {15, 15}, {16, 16}, {17, 17}}
+	coordsO := [][2]int{{-1, -1}, {-2, -2}, {-3, -3}, {-4, -4}}
+	for i := range 4 {
+		act(t, g, x, "move", map[string]int{"r": coordsX[i][0], "c": coordsX[i][1]})
+		act(t, g, o, "move", map[string]int{"r": coordsO[i][0], "c": coordsO[i][1]})
+	}
+	act(t, g, x, "move", map[string]int{"r": coordsX[4][0], "c": coordsX[4][1]})
+	if g.Status() != Ended || len(g.Winners()) != 1 || g.Winners()[0] != x.ID {
+		t.Fatalf("X should win across boundary, status=%s winners=%v", g.Status(), g.Winners())
+	}
+}
+
+func TestCaroLoadsOldSaves(t *testing.T) {
+	b15 := []byte(strings.Repeat(".", caroSize*caroSize))
+	for i := 0; i < 5; i++ {
+		b15[7*caroSize+3+i] = 'x'
+	}
+	b15[0] = 'o'
+	old := fmt.Sprintf(`{"kind":"caro","status":"ended","players":[{"id":1,"name":"A"},{"id":2,"name":"B"}],
+"board":%q,"turn":0,"last":%d,"win":[%d,%d,%d,%d,%d],"moves":6}`, b15, 7*caroSize+7,
+		7*caroSize+3, 7*caroSize+4, 7*caroSize+5, 7*caroSize+6, 7*caroSize+7)
+	g, err := Load("caro", []byte(old))
+	if err != nil {
+		t.Fatalf("load 15×15 save: %v", err)
+	}
+	c := g.r.(*caro)
+	if c.Pieces["7,3"] != "x" || c.Pieces["0,0"] != "o" || len(c.Pieces) != 6 || *c.Last != (Coord{7, 7}) || len(c.Win) != 5 || c.Win[0] != (Coord{7, 3}) {
+		t.Fatalf("15×15 save: pieces=%v last=%v win=%v", c.Pieces, c.Last, c.Win)
+	}
+
+	// bàn đã tự nở thành 18×18 (bản trước): chỉ số ô tính theo cạnh 18
+	b18 := []byte(strings.Repeat(".", 18*18))
+	b18[10*18+10], b18[4*18+3] = 'x', 'o'
+	grown := fmt.Sprintf(`{"kind":"caro","status":"playing","players":[{"id":1,"name":"A"},{"id":2,"name":"B"}],
+"size":18,"board":%q,"turn":0,"last":%d,"moves":2}`, b18, 4*18+3)
+	g, err = Load("caro", []byte(grown))
+	if err != nil {
+		t.Fatalf("load grown save: %v", err)
+	}
+	c = g.r.(*caro)
+	if c.Pieces["10,10"] != "x" || c.Pieces["4,3"] != "o" || *c.Last != (Coord{4, 3}) {
+		t.Fatalf("grown save: pieces=%v last=%v", c.Pieces, c.Last)
+	}
+	// chơi tiếp được, lưu rồi đọc lại theo kiểu mới
+	act(t, g, g.Players()[0], "move", map[string]int{"r": 11, "c": 11})
+	g = roundTrip(t, g)
+	if c := g.r.(*caro); c.Pieces["11,11"] != "x" || c.Pieces["10,10"] != "x" || *c.Last != (Coord{11, 11}) {
+		t.Fatalf("after move: %v %v", c.Pieces, c.Last)
 	}
 }
 

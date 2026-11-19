@@ -105,8 +105,8 @@ func (a *API) agentTools() []ai.Tool {
 	}
 	tools = append(tools,
 		ai.Tool{Name: "start_game", Description: "Open a game room in this channel with the person asking as host; others join by clicking it. " +
-			"station = Trạm Vũ Trụ (impostor game like Among Us), werewolf = Ma Sói, spy = Ai là gián điệp (spy word game), caro = Cờ caro (gomoku, 2 players), rps = Oẳn tù tì (rock paper scissors).",
-			Params: obj(map[string]any{"game": map[string]any{"type": "string", "enum": []string{"station", "werewolf", "spy", "caro", "rps"}}}, "game")},
+			"station = Trạm Vũ Trụ (impostor game like Among Us), werewolf = Ma Sói, spy = Ai là gián điệp (spy word game), caro = Cờ caro (gomoku, 2 players), rps = Oẳn tù tì (rock paper scissors), chess = Cờ vua (chess, 2 players).",
+			Params: obj(map[string]any{"game": map[string]any{"type": "string", "enum": []string{"station", "werewolf", "spy", "caro", "rps", "chess"}}}, "game")},
 		ai.Tool{Name: "pin_message", Description: "Pin (or unpin) a message of this channel on behalf of the person asking.",
 			Params: obj(map[string]any{
 				"message_id": num("The message id (the number after #)."),

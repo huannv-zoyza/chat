@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ApiError, type Channel, type Embed, type Message, type MessageLinkInfo } from "../lib/api";
 import { channelLabel, channelTitle, dmPeerId, isDM } from "../lib/channel";
 import { e2ee, useE2EE } from "../lib/e2ee";
-import { displayName } from "../lib/format";
+import { copyText, displayName } from "../lib/format";
 import type { GameView } from "../lib/api";
 import { useChat } from "../state/ChatProvider";
 import { ChannelSigil } from "./ChannelDialogs";
@@ -26,24 +26,6 @@ const KIND_LABEL: Record<string, { icon: string; label: string }> = {
 /** Tin có thể gửi dạng bản sao (game, bình chọn, cuộc gọi thì không chép được). */
 function copyable(m: Message) {
   return !m.poll && !["game", "call"].includes(m.embed?.type ?? "");
-}
-
-async function copyToClipboard(text: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    // http thường (không phải https) không có clipboard API
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.style.position = "fixed";
-    ta.style.opacity = "0";
-    document.body.appendChild(ta);
-    ta.select();
-    const ok = document.execCommand("copy");
-    ta.remove();
-    return ok;
-  }
 }
 
 export function ShareDialog({ message, onClose }: { message: Message; onClose: () => void }) {
@@ -91,11 +73,12 @@ export function ShareDialog({ message, onClose }: { message: Message; onClose: (
     }
   };
 
+  const [copyFailed, setCopyFailed] = useState(false);
   const copy = async (what: "link" | "text") => {
-    const ok = await copyToClipboard(what === "link" ? link : text);
+    const ok = await copyText(what === "link" ? link : text);
     setCopied(ok ? what : null);
-    if (!ok) setError("Trình duyệt chặn sao chép, hãy chọn và sao chép thủ công.");
-    setTimeout(() => setCopied(null), 1800);
+    setCopyFailed(!ok);
+    if (ok) setTimeout(() => setCopied(null), 1800);
   };
 
   const nativeShare = async () => {
@@ -121,11 +104,26 @@ export function ShareDialog({ message, onClose }: { message: Message; onClose: (
         </div>
       </div>
 
-      <div className="share-quick" role="group" aria-label="Chia sẻ nhanh">
-        <button type="button" className="btn btn-sm" onClick={() => void copy("link")}>
-          <Icon name="link" size={15} />
-          {copied === "link" ? "Đã sao chép link" : "Sao chép liên kết"}
+      <div className="share-link">
+        <input
+          readOnly
+          value={link}
+          aria-label="Liên kết tới tin nhắn"
+          onFocus={(e) => e.currentTarget.select()}
+          onClick={(e) => e.currentTarget.select()}
+        />
+        <button type="button" className="btn btn-sm btn-primary" onClick={() => void copy("link")}>
+          <Icon name={copied === "link" ? "check" : "link"} size={15} />
+          {copied === "link" ? "Đã sao chép" : "Sao chép liên kết"}
         </button>
+      </div>
+      {copyFailed && (
+        <p className="share-note is-warn" role="alert">
+          Trình duyệt không cho tự sao chép (trang đang mở bằng http). Bấm vào ô link ở trên rồi nhấn Ctrl+C (điện
+          thoại: nhấn giữ → Sao chép).
+        </p>
+      )}
+      <div className="share-quick" role="group" aria-label="Chia sẻ nhanh">
         {text && (
           <button type="button" className="btn btn-sm" onClick={() => void copy("text")}>
             <Icon name="copy" size={15} />

@@ -105,7 +105,7 @@ export const ST_COLORS = [
   { fill: "#6b7a8f", name: "Xám" },
 ];
 
-export const RANGE = { use: 95, kill: 120, report: 160, button: 130 };
+export const RANGE = { use: 120, kill: 120, report: 160, button: 130 };
 
 function inRect(x: number, y: number, r: { x: number; y: number; w: number; h: number }, inset: number) {
   return x >= r.x + inset && x <= r.x + r.w - inset && y >= r.y + inset && y <= r.y + r.h - inset;
@@ -119,9 +119,123 @@ export function walkable(m: StationMap, x: number, y: number): boolean {
   return false;
 }
 
+export function roomOf(m: StationMap, x: number, y: number): StRoom | undefined {
+  return m.rooms.find((room) => inRect(x, y, room, 0));
+}
+
 export function roomAt(m: StationMap, x: number, y: number): string {
-  for (const room of m.rooms) if (inRect(x, y, room, 0)) return room.name;
-  return "Hành lang";
+  return roomOf(m, x, y)?.name ?? "Hành lang";
+}
+
+/* ---------- Tìm đường (bấm vào bản đồ / nhiệm vụ là tự đi tới) ---------- */
+
+export type Pt = { x: number; y: number };
+const CELL = 20;
+type Grid = { cols: number; rows: number; open: Uint8Array };
+const grids = new WeakMap<StationMap, Grid>();
+
+function gridOf(m: StationMap): Grid {
+  let g = grids.get(m);
+  if (g) return g;
+  const cols = Math.ceil(m.w / CELL);
+  const rows = Math.ceil(m.h / CELL);
+  const open = new Uint8Array(cols * rows);
+  for (let j = 0; j < rows; j++)
+    for (let i = 0; i < cols; i++) open[j * cols + i] = walkable(m, (i + 0.5) * CELL, (j + 0.5) * CELL) ? 1 : 0;
+  g = { cols, rows, open };
+  grids.set(m, g);
+  return g;
+}
+
+/** Đi thẳng từ a tới b được trọn đường (lấy mẫu mỗi 8 đơn vị). */
+export function clearLine(m: StationMap, a: Pt, b: Pt): boolean {
+  const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 8));
+  for (let k = 1; k <= n; k++) {
+    const t = k / n;
+    if (!walkable(m, a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)) return false;
+  }
+  return true;
+}
+
+/** Ô đi được gần (x, y) nhất, tìm theo vòng vuông lan dần ra. */
+function nearestCell(g: Grid, x: number, y: number, maxR: number): number {
+  const ci = Math.floor(x / CELL);
+  const cj = Math.floor(y / CELL);
+  for (let r = 0; r <= maxR; r++) {
+    let best = -1;
+    let bestD = Infinity;
+    for (let j = cj - r; j <= cj + r; j++)
+      for (let i = ci - r; i <= ci + r; i++) {
+        if (Math.max(Math.abs(i - ci), Math.abs(j - cj)) !== r) continue;
+        if (i < 0 || j < 0 || i >= g.cols || j >= g.rows || !g.open[j * g.cols + i]) continue;
+        const d = Math.hypot((i + 0.5) * CELL - x, (j + 0.5) * CELL - y);
+        if (d < bestD) {
+          bestD = d;
+          best = j * g.cols + i;
+        }
+      }
+    if (best >= 0) return best;
+  }
+  return -1;
+}
+
+/** Điểm đi được gần (x, y) nhất (bấm trúng tường thì đi tới sát tường). */
+export function snapWalkable(m: StationMap, x: number, y: number): Pt | null {
+  if (walkable(m, x, y)) return { x, y };
+  const g = gridOf(m);
+  const c = nearestCell(g, x, y, 15);
+  return c < 0 ? null : { x: ((c % g.cols) + 0.5) * CELL, y: (Math.floor(c / g.cols) + 0.5) * CELL };
+}
+
+/** Đường đi từ a tới b (các điểm rẽ, không gồm a). null nếu không tới được. */
+export function findPath(m: StationMap, a: Pt, b: Pt): Pt[] | null {
+  if (walkable(m, b.x, b.y) && clearLine(m, a, b)) return [b];
+  const g = gridOf(m);
+  const start = nearestCell(g, a.x, a.y, 3);
+  const goal = nearestCell(g, b.x, b.y, 15);
+  if (start < 0 || goal < 0) return null;
+  // BFS 8 hướng (không cắt góc tường), sau đó làm mượt bằng đường thẳng
+  const prev = new Int32Array(g.cols * g.rows).fill(-1);
+  const queue = new Int32Array(g.cols * g.rows);
+  let head = 0;
+  let tail = 0;
+  prev[start] = start;
+  queue[tail++] = start;
+  while (head < tail) {
+    const c = queue[head++];
+    if (c === goal) break;
+    const ci = c % g.cols;
+    const cj = Math.floor(c / g.cols);
+    for (let dj = -1; dj <= 1; dj++)
+      for (let di = -1; di <= 1; di++) {
+        if (!di && !dj) continue;
+        const i = ci + di;
+        const j = cj + dj;
+        if (i < 0 || j < 0 || i >= g.cols || j >= g.rows) continue;
+        const n = j * g.cols + i;
+        if (!g.open[n] || prev[n] >= 0) continue;
+        if (di && dj && (!g.open[cj * g.cols + i] || !g.open[j * g.cols + ci])) continue;
+        prev[n] = c;
+        queue[tail++] = n;
+      }
+  }
+  if (prev[goal] < 0) return null;
+  const pts: Pt[] = [];
+  for (let c = goal; c !== start; c = prev[c])
+    pts.push({ x: ((c % g.cols) + 0.5) * CELL, y: (Math.floor(c / g.cols) + 0.5) * CELL });
+  pts.reverse();
+  if (walkable(m, b.x, b.y) && (pts.length === 0 || clearLine(m, pts[pts.length - 1], b))) pts.push(b);
+  const out: Pt[] = [];
+  let from = a;
+  let k = 0;
+  while (k < pts.length) {
+    let far = k;
+    while (far + 1 < pts.length && clearLine(m, from, pts[far + 1])) far++;
+    out.push(pts[far]);
+    from = pts[far];
+    k = far + 1;
+  }
+  return out;
 }
 
 type Snap = { t: number; x: number; y: number };

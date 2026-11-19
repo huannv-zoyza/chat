@@ -66,19 +66,33 @@ export async function copyText(text: string): Promise<boolean> {
   } catch {
     /* thử cách dưới */
   }
+  // Trang http (vd. http://<IP LAN>) không có clipboard API: chép qua một ô chữ tạm.
+  // Ô này phải nằm TRONG hộp thoại đang mở: <dialog> mở dạng modal làm phần còn lại của trang
+  // "inert" (không focus / chọn chữ được), khi đó execCommand vẫn báo thành công nhưng không chép gì.
+  const active = document.activeElement as HTMLElement | null;
+  const host =
+    active?.closest<HTMLElement>("dialog[open]") ??
+    document.querySelector<HTMLElement>("dialog[open]") ??
+    document.body;
   const ta = document.createElement("textarea");
   ta.value = text;
   ta.setAttribute("readonly", "");
-  ta.style.position = "fixed";
-  ta.style.opacity = "0";
-  document.body.appendChild(ta);
+  ta.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;padding:0;border:0;opacity:0";
+  host.appendChild(ta);
+  ta.focus();
   ta.select();
+  ta.setSelectionRange(0, text.length);
   let ok = false;
   try {
-    ok = document.execCommand("copy");
+    // chỉ tin là chép được khi ô tạm thật sự đang được chọn
+    ok =
+      document.activeElement === ta &&
+      ta.selectionEnd - ta.selectionStart === text.length &&
+      document.execCommand("copy");
   } catch {
     ok = false;
   }
   ta.remove();
+  active?.focus?.({ preventScroll: true });
   return ok;
 }

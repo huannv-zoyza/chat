@@ -223,6 +223,45 @@ func TestStationTasksWin(t *testing.T) {
 	}
 }
 
+func TestStationTraitorTasksAreFake(t *testing.T) {
+	g, s, ps := newStation(t, 5, "")
+	bad, good := split(s, ps)
+	k := bad[0]
+	now := t0.Add(time.Minute)
+	task := s.P[k.ID].Tasks[0]
+	st, _ := stStationByID(task.Station)
+	place(s, k, st.X, st.Y)
+	if err := actAt(g, k, "use", map[string]string{"station": st.ID}, now); err == nil {
+		t.Fatal("traitor must not open a real task")
+	}
+	if err := actAt(g, k, "task", map[string]string{"station": st.ID}, now.Add(10*time.Second)); err == nil {
+		t.Fatal("traitor must not finish a task")
+	}
+	if s.P[k.ID].Tasks[0].Done {
+		t.Fatal("fake task marked done")
+	}
+	// nhưng vẫn sửa được sự cố (để trà trộn)
+	now = t0.Add(stIntro + stFirstKill + time.Second)
+	if err := actAt(g, k, "sabotage", map[string]string{"kind": "power"}, now); err != nil {
+		t.Fatal(err)
+	}
+	fix, _ := stStationByID("fix-power")
+	place(s, k, fix.X, fix.Y)
+	if err := actAt(g, k, "use", map[string]string{"station": fix.ID}, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := actAt(g, k, "fix", map[string]string{"station": fix.ID}, now.Add(3*time.Second)); err != nil || s.Sab != "" {
+		t.Fatalf("traitor should be able to fix: %v sab=%q", err, s.Sab)
+	}
+	// thuyền viên vẫn làm bình thường
+	c := good[0]
+	ct, _ := stStationByID(s.P[c.ID].Tasks[0].Station)
+	place(s, c, ct.X, ct.Y)
+	if err := actAt(g, c, "use", map[string]string{"station": ct.ID}, now); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestStationOxygenSabotage(t *testing.T) {
 	g, s, ps := newStation(t, 5, "")
 	bad, good := split(s, ps)

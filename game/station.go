@@ -22,13 +22,13 @@ import (
 
 const (
 	stRadius      = 22.0
-	stSpeed       = 330.0 // đơn vị/giây
+	stSpeed       = 350.0 // đơn vị/giây
 	stVisionCrew  = 360.0
 	stVisionDark  = 150.0 // khi mất điện
 	stVisionBad   = 520.0 // kẻ phản bội nhìn xa hơn
 	stKillRange   = 120.0
 	stReportRange = 160.0
-	stUseRange    = 95.0
+	stUseRange    = 120.0
 	stButtonRange = 130.0
 	stIntro       = 5 * time.Second
 	stEject       = 7 * time.Second
@@ -89,20 +89,21 @@ var stationMap = func() stMap {
 		{"oxygen", "Trạm oxy", 150, 1450, 500, 400},
 		{"comms", "Trạm liên lạc", 2350, 1450, 500, 400},
 	}
-	// hành lang: lấn vào phòng 60 đơn vị mỗi đầu để đi qua chỗ nối không bị kẹt
+	// hành lang rộng 140 (người chơi bán kính 22 còn ~100 để lách qua cửa), lấn vào phòng
+	// 60 đơn vị mỗi đầu để đi qua chỗ nối không bị kẹt
 	halls := []rect{
-		{1450, 390, 100, 370},  // đài chỉ huy - sảnh
-		{590, 870, 670, 100},   // phòng máy - sảnh
-		{1740, 870, 670, 100},  // sảnh - thí nghiệm
-		{1450, 1090, 100, 420}, // sảnh - kho
-		{350, 390, 100, 320},   // y tế - phòng máy
-		{590, 230, 720, 100},   // y tế - đài chỉ huy
-		{1690, 230, 720, 100},  // đài chỉ huy - phòng điện
-		{2550, 390, 100, 320},  // phòng điện - thí nghiệm
-		{350, 1140, 100, 370},  // phòng máy - oxy
-		{590, 1600, 720, 100},  // oxy - kho
-		{1690, 1600, 720, 100}, // kho - liên lạc
-		{2550, 1140, 100, 370}, // thí nghiệm - liên lạc
+		{1430, 390, 140, 370},  // đài chỉ huy - sảnh
+		{590, 850, 670, 140},   // phòng máy - sảnh
+		{1740, 850, 670, 140},  // sảnh - thí nghiệm
+		{1430, 1090, 140, 420}, // sảnh - kho
+		{330, 390, 140, 320},   // y tế - phòng máy
+		{590, 210, 720, 140},   // y tế - đài chỉ huy
+		{1690, 210, 720, 140},  // đài chỉ huy - phòng điện
+		{2530, 390, 140, 320},  // phòng điện - thí nghiệm
+		{330, 1140, 140, 370},  // phòng máy - oxy
+		{590, 1580, 720, 140},  // oxy - kho
+		{1690, 1580, 720, 140}, // kho - liên lạc
+		{2530, 1140, 140, 370}, // thí nghiệm - liên lạc
 	}
 	stations := []stStation{
 		{"eng-fuel", "Nạp nhiên liệu", "engine", "hold", 260, 760},
@@ -471,6 +472,9 @@ func (s *station) act(id int64, action string, data json.RawMessage, now time.Ti
 			if p.Dead || (st.ID == "fix-power" && s.Sab != "power") || (st.ID == "fix-oxygen" && s.Sab != "oxygen") {
 				return Error("Không có gì cần sửa ở đây.")
 			}
+		} else if p.Traitor {
+			// nhiệm vụ của kẻ phản bội là giả: chỉ đứng cạnh để giả vờ, không mở máy được
+			return Error("Kẻ phản bội không làm được nhiệm vụ thật, chỉ đứng giả vờ thôi.")
 		} else if !slices.ContainsFunc(p.Tasks, func(t stTask) bool { return t.Station == st.ID && !t.Done }) {
 			return Error("Đây không phải nhiệm vụ của bạn.")
 		}
@@ -502,10 +506,8 @@ func (s *station) act(id int64, action string, data json.RawMessage, now time.Ti
 				p.Tasks[i].Done = true
 			}
 		}
-		if !p.Traitor { // nhiệm vụ của kẻ phản bội là giả
-			s.dirty = true
-			s.checkWin()
-		}
+		s.dirty = true
+		s.checkWin()
 	case "cancel_use":
 		p.Using = ""
 	case "kill":

@@ -6,7 +6,8 @@ import "strings"
 // chất lượng; Pollinations (miễn phí, không cần key) luôn đứng cuối làm dự phòng.
 //
 //	Chat:  GEMINI_API_KEY, GROQ_API_KEY, OPENROUTER_API_KEY (+ GEMINI_MODEL, GROQ_MODEL, OPENROUTER_MODEL)
-//	Ảnh:   TOGETHER_API_KEY (+ TOGETHER_IMAGE_MODEL), CF_ACCOUNT_ID + CF_API_TOKEN,
+//	Ảnh:   TOGETHER_API_KEY (+ TOGETHER_IMAGE_MODEL),
+//	       CF_ACCOUNT_ID + CF_API_TOKEN (quyền Workers AI; CF_IMAGE_MODEL mặc định flux-2-dev, vẽ lại được từ ảnh gốc),
 //	       OPENROUTER_IMAGE_MODEL (model ảnh trả phí, cần OPENROUTER_API_KEY)
 //	       POLLINATIONS_API_KEY (key "pollen": bỏ giới hạn 1 ảnh/45 giây, dùng model flux,
 //	       vẽ lại từ ảnh gốc bằng POLLINATIONS_EDIT_MODEL, mặc định flux.1-kontext-pro)
@@ -40,7 +41,12 @@ func FromEnv(get func(string) string) (*Chat, *Images) {
 		img = append(img, TogetherImage{Key: k, Model: get("TOGETHER_IMAGE_MODEL")})
 	}
 	if acc, tok := get("CF_ACCOUNT_ID"), get("CF_API_TOKEN"); acc != "" && tok != "" {
-		img = append(img, CloudflareImage{AccountID: acc, Token: tok, Model: get("CF_IMAGE_MODEL")})
+		cf := CloudflareImage{AccountID: acc, Token: tok, Model: get("CF_IMAGE_MODEL")}
+		if cf.flux2() {
+			img = append(img, CloudflareEditor{cf}) // vẽ được cả từ chữ lẫn từ ảnh gốc
+		} else {
+			img = append(img, cf)
+		}
 	}
 	if k, m := get("OPENROUTER_API_KEY"), get("OPENROUTER_IMAGE_MODEL"); k != "" && m != "" {
 		img = append(img, OpenRouterImage{Key: k, Model: m})

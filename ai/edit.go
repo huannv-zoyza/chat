@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -40,7 +39,7 @@ func (im *Images) CanEdit() bool {
 
 // Edit vẽ lại từ ảnh gốc, thử lần lượt các dịch vụ biết sửa ảnh.
 func (im *Images) Edit(ctx context.Context, prompt string, refs []Ref, w, h int) ([]byte, string, error) {
-	var errs []string
+	var errs chainError
 	for _, p := range im.Providers {
 		ed, ok := p.(ImageEditor)
 		if !ok {
@@ -63,12 +62,12 @@ func (im *Images) Edit(ctx context.Context, prompt string, refs []Ref, w, h int)
 		if ctx.Err() != nil {
 			return nil, "", ctx.Err()
 		}
-		errs = append(errs, p.Name()+": "+err.Error())
+		errs = append(errs, fmt.Errorf("%s: %w", p.Name(), err))
 	}
 	if len(errs) == 0 {
 		return nil, "", errors.New("chưa có dịch vụ nào vẽ lại được từ ảnh gốc")
 	}
-	return nil, "", errors.New(strings.Join(errs, "; "))
+	return nil, "", errs
 }
 
 /* ---------- Pollinations (cần key): /v1/images/edits dạng OpenAI ---------- */

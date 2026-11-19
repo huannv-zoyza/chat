@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"io"
 	"math/rand/v2"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"strings"
 	"time"
@@ -38,7 +40,7 @@ func (im *Images) Names() []string {
 
 // Generate trả về ảnh và tên dịch vụ đã vẽ.
 func (im *Images) Generate(ctx context.Context, prompt string, w, h int) ([]byte, string, error) {
-	var errs []string
+	var errs chainError
 	for _, p := range im.Providers {
 		b, err := p.Generate(ctx, prompt, w, h)
 		// dịch vụ miễn phí hay báo "đang quá tải / 1 ảnh mỗi 45 giây, thử lại sau N giây": thử thêm tối đa 2 lần
@@ -58,12 +60,31 @@ func (im *Images) Generate(ctx context.Context, prompt string, w, h int) ([]byte
 		if ctx.Err() != nil {
 			return nil, "", ctx.Err()
 		}
-		errs = append(errs, p.Name()+": "+err.Error())
+		errs = append(errs, fmt.Errorf("%s: %w", p.Name(), err))
 	}
 	if len(errs) == 0 {
 		return nil, "", errors.New("chưa cấu hình dịch vụ tạo ảnh nào")
 	}
-	return nil, "", errors.New(strings.Join(errs, "; "))
+	return nil, "", errs
+}
+
+// chainError: lỗi của từng dịch vụ trong chuỗi, giữ nguyên kiểu để errors.As tìm được.
+type chainError []error
+
+func (e chainError) Error() string {
+	s := make([]string, len(e))
+	for i, err := range e {
+		s[i] = err.Error()
+	}
+	return strings.Join(s, "; ")
+}
+
+func (e chainError) Unwrap() []error { return e }
+
+// OutOfCredit: dịch vụ báo tài khoản hết tiền (HTTP 402 không kèm "thử lại sau N giây").
+func OutOfCredit(err error) bool {
+	var he *HTTPError
+	return errors.As(err, &he) && he.Status == http.StatusPaymentRequired && he.RetryAfter == 0
 }
 
 var imageHTTP = &http.Client{Timeout: 2 * time.Minute}
@@ -213,7 +234,10 @@ func fetchImage(ctx context.Context, u string) ([]byte, error) {
 	return readImage(res)
 }
 
-/* ---------- Cloudflare Workers AI: FLUX.1-schnell, gói miễn phí theo ngày ---------- */
+/* ---------- Cloudflare Workers AI: gói miễn phí theo ngày ---------- */
+
+// Mặc định FLUX.2 dev: đẹp hơn hẳn schnell, nhận kích thước và vẽ lại được từ ảnh gốc.
+const cfDefaultImageModel = "@cf/black-forest-labs/flux-2-dev"
 
 type CloudflareImage struct {
 	AccountID, Token, Model, BaseURL string
@@ -221,19 +245,80 @@ type CloudflareImage struct {
 
 func (c CloudflareImage) Name() string { return "cloudflare" }
 
-func (c CloudflareImage) Generate(ctx context.Context, prompt string, _, _ int) ([]byte, error) {
-	model, base := c.Model, c.BaseURL
-	if model == "" {
-		model = "@cf/black-forest-labs/flux-1-schnell"
+func (c CloudflareImage) model() string {
+	if c.Model == "" {
+		return cfDefaultImageModel
 	}
+	return c.Model
+}
+
+// flux2: họ FLUX.2 trên Workers AI nhận multipart (prompt, width, height, input_image_N).
+func (c CloudflareImage) flux2() bool {
+	return strings.HasPrefix(c.model(), "@cf/black-forest-labs/flux-2")
+}
+
+func (c CloudflareImage) url() string {
+	base := c.BaseURL
 	if base == "" {
 		base = "https://api.cloudflare.com/client/v4"
 	}
-	res, err := postJSON(ctx, base+"/accounts/"+url.PathEscape(c.AccountID)+"/ai/run/"+model,
-		map[string]string{"Authorization": "Bearer " + c.Token}, map[string]any{"prompt": prompt, "steps": 8})
+	return base + "/accounts/" + url.PathEscape(c.AccountID) + "/ai/run/" + c.model()
+}
+
+func (c CloudflareImage) Generate(ctx context.Context, prompt string, w, h int) ([]byte, error) {
+	if c.flux2() {
+		return c.runMultipart(ctx, prompt, nil, w, h)
+	}
+	res, err := postJSON(ctx, c.url(), map[string]string{"Authorization": "Bearer " + c.Token}, map[string]any{"prompt": prompt, "steps": 8})
 	if err != nil {
 		return nil, err
 	}
+	return readCloudflare(res)
+}
+
+// cfMaxRefs: FLUX.2 nhận tối đa 4 ảnh gốc.
+const cfMaxRefs = 4
+
+func (c CloudflareImage) runMultipart(ctx context.Context, prompt string, refs []Ref, w, h int) ([]byte, error) {
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	_ = mw.WriteField("prompt", prompt)
+	if w > 0 && h > 0 {
+		_ = mw.WriteField("width", fmt.Sprint(w))
+		_ = mw.WriteField("height", fmt.Sprint(h))
+	}
+	for i, r := range refs {
+		if i == cfMaxRefs {
+			break
+		}
+		hd := textproto.MIMEHeader{}
+		hd.Set("Content-Disposition", fmt.Sprintf(`form-data; name="input_image_%d"; filename="ref%d"`, i, i))
+		hd.Set("Content-Type", r.Type)
+		part, err := mw.CreatePart(hd)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := part.Write(r.Data); err != nil {
+			return nil, err
+		}
+	}
+	if err := mw.Close(); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url(), &buf)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	res, err := imageHTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return readCloudflare(res)
+}
+
+func readCloudflare(res *http.Response) ([]byte, error) {
 	defer res.Body.Close()
 	if ct := res.Header.Get("Content-Type"); strings.HasPrefix(ct, "image/") {
 		return readImage(res)
@@ -257,6 +342,15 @@ func (c CloudflareImage) Generate(ctx context.Context, prompt string, _, _ int) 
 		return nil, fmt.Errorf("HTTP %d", res.StatusCode)
 	}
 	return decodeB64(out.Result.Image)
+}
+
+// CloudflareEditor: model FLUX.2 vẽ lại từ ảnh gốc (giữ nhân vật, đổi phong cách / thêm bớt chi tiết).
+type CloudflareEditor struct {
+	CloudflareImage
+}
+
+func (c CloudflareEditor) Edit(ctx context.Context, prompt string, refs []Ref, w, h int) ([]byte, error) {
+	return c.runMultipart(ctx, prompt, refs, w, h)
 }
 
 /* ---------- OpenRouter: model ảnh (trả phí), ảnh nằm trong message.images ---------- */

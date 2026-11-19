@@ -336,3 +336,82 @@ func TestPageTextTables(t *testing.T) {
 		t.Fatalf("table rows: %v %q", err, text)
 	}
 }
+
+func TestOutOfCredit(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusPaymentRequired)
+		fmt.Fprint(w, `{"error":{"message":"Insufficient balance. This request costs about $0.0300"}}`)
+	}))
+	defer srv.Close()
+	refs := []Ref{{Data: tinyPNG(), Type: "image/png"}}
+	im := &Images{Providers: []ImageProvider{PollinationsEditor{PollinationsImage: PollinationsImage{Key: "pk"}, GenURL: srv.URL}}}
+	if _, _, err := im.Edit(context.Background(), "x", refs, 1024, 1024); !OutOfCredit(err) {
+		t.Fatalf("edit 402 through chain: %v", err)
+	}
+	// "1 ảnh mỗi 45 giây, thử lại sau" cũng là 402 nhưng không phải hết tiền
+	if OutOfCredit(&HTTPError{Status: 402, RetryAfter: 30 * time.Second}) {
+		t.Fatal("rate limit is not out of credit")
+	}
+}
+
+func TestCloudflareFlux2(t *testing.T) {
+	pngData := tinyPNG()
+	b64 := base64.StdEncoding.EncodeToString(pngData)
+	var lastRefs int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/accounts/acc/ai/run/@cf/black-forest-labs/flux-1-schnell" {
+			var body map[string]any
+			if json.NewDecoder(r.Body).Decode(&body) != nil || body["prompt"] != "con mèo" {
+				t.Errorf("schnell wants JSON, got %v", body)
+			}
+			fmt.Fprintf(w, `{"success":true,"result":{"image":%q}}`, b64)
+			return
+		}
+		if r.URL.Path != "/accounts/acc/ai/run/"+cfDefaultImageModel || r.Header.Get("Authorization") != "Bearer t" {
+			t.Errorf("flux-2 request: %s", r.URL.Path)
+		}
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Fatalf("flux-2 wants multipart: %v", err)
+		}
+		if r.FormValue("prompt") != "con mèo" || r.FormValue("width") != "832" || r.FormValue("height") != "1216" {
+			t.Errorf("fields: %v", r.MultipartForm.Value)
+		}
+		lastRefs = len(r.MultipartForm.File)
+		for i := 0; i < lastRefs; i++ {
+			fh := r.MultipartForm.File[fmt.Sprintf("input_image_%d", i)]
+			if len(fh) != 1 || fh[0].Header.Get("Content-Type") != "image/png" {
+				t.Errorf("input_image_%d: %v", i, fh)
+			}
+		}
+		fmt.Fprintf(w, `{"success":true,"result":{"image":%q}}`, b64)
+	}))
+	defer srv.Close()
+	ctx := context.Background()
+
+	cf := CloudflareImage{AccountID: "acc", Token: "t", BaseURL: srv.URL}
+	if b, err := cf.Generate(ctx, "con mèo", 832, 1216); err != nil || !bytes.Equal(b, pngData) || lastRefs != 0 {
+		t.Fatalf("generate: %v refs=%d", err, lastRefs)
+	}
+	refs := make([]Ref, 6)
+	for i := range refs {
+		refs[i] = Ref{Data: pngData, Type: "image/png"}
+	}
+	if b, err := (CloudflareEditor{cf}).Edit(ctx, "con mèo", refs, 832, 1216); err != nil || !bytes.Equal(b, pngData) || lastRefs != cfMaxRefs {
+		t.Fatalf("edit: %v refs=%d", err, lastRefs)
+	}
+	old := CloudflareImage{AccountID: "acc", Token: "t", BaseURL: srv.URL, Model: "@cf/black-forest-labs/flux-1-schnell"}
+	if _, err := old.Generate(ctx, "con mèo", 832, 1216); err != nil {
+		t.Fatalf("schnell: %v", err)
+	}
+
+	// có Cloudflare (FLUX.2) thì vẽ lại từ ảnh được kể cả khi không có key Pollinations
+	env := map[string]string{"CF_ACCOUNT_ID": "acc", "CF_API_TOKEN": "t"}
+	_, im := FromEnv(func(k string) string { return env[k] })
+	if !im.CanEdit() || im.Names()[0] != "cloudflare" {
+		t.Fatalf("cf editor: %v", im.Names())
+	}
+	env["CF_IMAGE_MODEL"] = "@cf/black-forest-labs/flux-1-schnell"
+	if _, im = FromEnv(func(k string) string { return env[k] }); im.CanEdit() {
+		t.Fatal("schnell cannot edit")
+	}
+}

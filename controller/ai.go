@@ -379,7 +379,11 @@ func (a *API) drawAI(ctx context.Context, ch model.Channel, q model.Message, ask
 	}
 	if err != nil {
 		log.Printf("ai image: %v", err)
-		a.finishAI(ctx, m, "⚠️ Chưa vẽ được “"+prompt+"”: dịch vụ tạo ảnh đang lỗi hoặc quá tải. Thử lại sau nhé.")
+		why := "dịch vụ tạo ảnh đang lỗi hoặc quá tải. Thử lại sau nhé."
+		if ai.OutOfCredit(err) {
+			why = "tài khoản dịch vụ vẽ ảnh đã hết credit, nhờ admin nạp thêm nhé."
+		}
+		a.finishAI(ctx, m, "⚠️ Chưa vẽ được “"+prompt+"”: "+why)
 		return
 	}
 	att, err := a.saveBytes(data, "ai-"+fileSlug(prompt))

@@ -76,7 +76,7 @@ export type MessageLinkInfo = {
   message?: Message;
 };
 
-export type GameKind = "station" | "werewolf" | "spy" | "caro" | "rps";
+export type GameKind = "station" | "werewolf" | "spy" | "caro" | "rps" | "chess";
 export type GamePlayer = { id: number; name: string };
 
 export type GameMemberStats = {

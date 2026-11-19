@@ -268,3 +268,59 @@ func TestStationRealtime(t *testing.T) {
 	}
 	_ = ids
 }
+
+func TestGamesChess(t *testing.T) {
+	e := newEnv(t)
+	alice := e.register("alice", "Alice")
+	bob := e.register("bob", "Bob")
+
+	// Test DM creation for chess
+	var dm channel
+	if code := e.do("POST", "/api/dms", alice.Token, map[string]any{"user_id": bob.User.ID}, &dm); code != 201 {
+		t.Fatalf("create dm: %d", code)
+	}
+
+	var m gameMsg
+	if code := e.do("POST", "/api/channels/"+itoa(dm.ID)+"/games", alice.Token, map[string]any{"kind": "chess"}, &m); code != 201 {
+		t.Fatalf("create chess in dm: %d", code)
+	}
+
+	// Bob joins, auto-starts 2-player chess
+	var g gameResp
+	if code := e.do("POST", "/api/messages/"+itoa(m.ID)+"/game", bob.Token, map[string]any{"action": "join"}, &g); code != 200 {
+		t.Fatalf("bob join: %d", code)
+	}
+	if g.Status != "playing" {
+		t.Fatalf("expected playing status, got %s", g.Status)
+	}
+
+	// State contains FEN, Board, TurnPlayerID
+	turnPID := int64(g.State["turn_player_id"].(float64))
+	var whiteTok, blackTok string
+	if turnPID == alice.User.ID {
+		whiteTok = alice.Token
+		blackTok = bob.Token
+	} else {
+		whiteTok = bob.Token
+		blackTok = alice.Token
+	}
+
+	// White moves e2 -> e4
+	if code := e.do("POST", "/api/messages/"+itoa(m.ID)+"/game", whiteTok, map[string]any{
+		"action": "move",
+		"data":   map[string]string{"from": "e2", "to": "e4"},
+	}, &g); code != 200 {
+		t.Fatalf("white move e2-e4: %d", code)
+	}
+
+	// Black resigns
+	if code := e.do("POST", "/api/messages/"+itoa(m.ID)+"/game", blackTok, map[string]any{
+		"action": "resign",
+	}, &g); code != 200 {
+		t.Fatalf("black resign: %d", code)
+	}
+	if g.Status != "ended" {
+		t.Fatalf("expected ended status, got %s", g.Status)
+	}
+}
+

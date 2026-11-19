@@ -116,6 +116,7 @@ var titles = map[string]string{
 	"spy":      "Ai là gián điệp",
 	"caro":     "Cờ caro",
 	"rps":      "Oẳn tù tì",
+	"chess":    "Cờ vua",
 }
 
 // Title: tên trò chơi để hiển thị ("" nếu không có trò này).
@@ -133,6 +134,8 @@ func newRules(kind string) rules {
 		return &caro{}
 	case "rps":
 		return &rps{}
+	case "chess":
+		return &chess{}
 	}
 	return nil
 }

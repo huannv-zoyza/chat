@@ -160,7 +160,7 @@ func (a *API) startGame(ctx context.Context, ch model.Channel, host model.User, 
 	if title == "" {
 		return model.Message{}, game.Error("Không có trò chơi này.")
 	}
-	if ch.IsDM() && kind != "caro" && kind != "rps" {
+	if ch.IsDM() && kind != "caro" && kind != "rps" && kind != "chess" {
 		return model.Message{}, game.Error("Trò này cần nhiều người, hãy mở trong kênh.")
 	}
 	now := time.Now()

@@ -5,6 +5,7 @@ import {
   ROLE_INFO,
   myTurn,
   type CaroState,
+  type ChessState,
   type RpsChoice,
   type RpsMe,
   type RpsState,
@@ -14,6 +15,7 @@ import {
   type WerewolfRole,
   type WerewolfState,
 } from "../lib/games";
+import { ChessPiece } from "./ChessPiece";
 import { useChat } from "../state/ChatProvider";
 import type { StationState } from "../lib/station";
 import { StationSummary } from "./Station";
@@ -220,6 +222,8 @@ export function GameCard({ message }: { message: Message }) {
         <Spy ctx={ctx} />
       ) : game.kind === "caro" ? (
         <Caro ctx={ctx} />
+      ) : game.kind === "chess" ? (
+        <Chess ctx={ctx} />
       ) : (
         <Rps ctx={ctx} />
       )}
@@ -285,6 +289,11 @@ const RULES: Record<GameKind, string[]> = {
     "Luật chặn hai đầu: hàng 5 bị đối phương chặn cả hai đầu thì không tính.",
     "Mỗi nước có 3 phút suy nghĩ.",
   ],
+  chess: [
+    "Cờ vua quốc tế 8×8, Trắng đi trước, Đen đi sau (hệ thống chọn ngẫu nhiên màu quân).",
+    "Tuân thủ đầy đủ luật FIDE: nhập thành, bắt tốt qua đường (en passant), phong cấp tốt.",
+    "Chiếu bí đối phương để giành chiến thắng. Hoà cờ khi hết nước đi (stalemate), luật 50 nước, không đủ lực lượng hoặc đôi bên đồng ý.",
+  ],
   rps: ["Búa thắng Kéo, Kéo thắng Bao, Bao thắng Búa.", "Hai người ra cùng lúc, 30 giây mỗi ván."],
 };
 
@@ -323,6 +332,12 @@ function Lobby({ ctx }: { ctx: Ctx }) {
     setup = (
       <p className="game-setup">
         Bàn cờ tự do (kéo để di chuyển) · {(game.state as CaroState).free_style ? "không chặn hai đầu" : "luật chặn hai đầu"}
+      </p>
+    );
+  } else if (game.kind === "chess") {
+    setup = (
+      <p className="game-setup">
+        Bàn cờ 8×8 tiêu chuẩn · Luật quốc tế FIDE
       </p>
     );
   } else {
@@ -1215,6 +1230,362 @@ function Caro({ ctx }: { ctx: Ctx }) {
   );
 }
 
+/* ---------- Cờ vua (Chess) ---------- */
+
+function Chess({ ctx }: { ctx: Ctx }) {
+  const { game, meId, busy, act } = ctx;
+  const s = game.state as ChessState;
+  const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
+  const [pendingPromotion, setPendingPromotion] = useState<{ from: string; to: string } | null>(null);
+  const [confirmResign, setConfirmResign] = useState(false);
+  const [manualFlip, setManualFlip] = useState<boolean | null>(null);
+  const [lbOpen, setLbOpen] = useState(false);
+
+  const whitePlayer = game.players.find((p) => p.id === s.white_player_id);
+  const blackPlayer = game.players.find((p) => p.id === s.black_player_id);
+  const isWhite = s.white_player_id === meId;
+  const isBlack = s.black_player_id === meId;
+  const isPlayer = isWhite || isBlack;
+  const isMyTurn = game.status === "playing" && s.turn_player_id === meId;
+
+  // Tự động xoay bàn cờ nếu mình cầm Đen (có thể lật tay tuỳ ý)
+  const flipped = manualFlip !== null ? manualFlip : isBlack;
+
+  // Danh sách nước đi hợp lệ từ ô đang chọn
+  const validTargets = useMemo(() => {
+    if (!selectedSquare || !s.legal_moves) return new Set<string>();
+    const moves = s.legal_moves[selectedSquare] || [];
+    return new Set(moves.map((m) => m.slice(0, 2)));
+  }, [selectedSquare, s.legal_moves]);
+
+  // Kiểm tra quân cờ có thuộc phe mình không
+  const isMyPiece = useCallback(
+    (pieceChar: string) => {
+      if (!pieceChar || pieceChar === ".") return false;
+      if (isWhite) return pieceChar >= "A" && pieceChar <= "Z";
+      if (isBlack) return pieceChar >= "a" && pieceChar <= "z";
+      return false;
+    },
+    [isWhite, isBlack]
+  );
+
+  const onSquareClick = (sq: string, pieceChar: string) => {
+    if (!isMyTurn || busy) return;
+
+    if (selectedSquare) {
+      if (selectedSquare === sq) {
+        setSelectedSquare(null);
+        return;
+      }
+      if (validTargets.has(sq)) {
+        // Nước đi hợp lệ!
+        // Kiểm tra phong cấp: Tốt trắng tới hàng 8 hoặc Tốt đen tới hàng 1
+        const selIdx = (selectedSquare.charCodeAt(1) - 49) * 8 + (selectedSquare.charCodeAt(0) - 97);
+        const movingPiece = s.board ? s.board[selIdx] : "";
+        const isPromo =
+          (movingPiece === "P" && sq[1] === "8") ||
+          (movingPiece === "p" && sq[1] === "1");
+
+        if (isPromo) {
+          setPendingPromotion({ from: selectedSquare, to: sq });
+        } else {
+          act("move", { from: selectedSquare, to: sq });
+          setSelectedSquare(null);
+        }
+        return;
+      }
+      // Nếu bấm vào quân khác của phe mình -> đổi chọn quân đó
+      if (isMyPiece(pieceChar)) {
+        setSelectedSquare(sq);
+        return;
+      }
+      // Bấm ra ngoài -> bỏ chọn
+      setSelectedSquare(null);
+    } else {
+      if (isMyPiece(pieceChar)) {
+        setSelectedSquare(sq);
+      }
+    }
+  };
+
+  const ranks = flipped ? [0, 1, 2, 3, 4, 5, 6, 7] : [7, 6, 5, 4, 3, 2, 1, 0];
+  const files = flipped ? [7, 6, 5, 4, 3, 2, 1, 0] : [0, 1, 2, 3, 4, 5, 6, 7];
+
+  // Tính điểm chênh lệch lực lượng
+  const pieceValues: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9 };
+  let whiteMaterialLoss = 0;
+  let blackMaterialLoss = 0;
+  if (s.captured) {
+    for (const [p, count] of Object.entries(s.captured)) {
+      const val = pieceValues[p.toLowerCase()] || 0;
+      if (p >= "A" && p <= "Z") {
+        whiteMaterialLoss += val * count;
+      } else {
+        blackMaterialLoss += val * count;
+      }
+    }
+  }
+  const whiteAdvantage = blackMaterialLoss - whiteMaterialLoss;
+  const blackAdvantage = whiteMaterialLoss - blackMaterialLoss;
+
+  const topPlayer = flipped ? whitePlayer : blackPlayer;
+  const topColor = flipped ? "white" : "black";
+  const topAdvantage = flipped ? whiteAdvantage : blackAdvantage;
+
+  const bottomPlayer = flipped ? blackPlayer : whitePlayer;
+  const bottomColor = flipped ? "black" : "white";
+  const bottomAdvantage = flipped ? blackAdvantage : whiteAdvantage;
+
+  return (
+    <div className="chess-container">
+      {/* Thông báo chiếu */}
+      {game.status === "playing" && s.in_check && (
+        <div className="chess-banner is-check">
+          <span>⚠️ {s.turn_color === "w" ? "Trắng" : "Đen"} đang bị chiếu!</span>
+        </div>
+      )}
+
+      {/* Thông báo đề nghị hoà */}
+      {game.status === "playing" && s.draw_offered && (
+        <div className="chess-banner is-draw-offer">
+          {s.draw_offered_by === meId ? (
+            <span>Bạn đã đề nghị hoà cờ. Đang chờ đối thủ trả lời...</span>
+          ) : (
+            <>
+              <span>Đối thủ đề nghị hoà cờ:</span>
+              <div style={{ display: "flex", gap: "0.4rem" }}>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  disabled={busy}
+                  onClick={() => act("draw_accept")}
+                >
+                  Đồng ý hoà
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-secondary"
+                  disabled={busy}
+                  onClick={() => act("draw_decline")}
+                >
+                  Từ chối
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Thông tin đối thủ (ở trên) */}
+      <div className="chess-player-bar">
+        <div className="chess-player-info">
+          <span className={`chess-color-badge ${topColor}`} aria-hidden>
+            {topColor === "white" ? "⚪" : "⚫"}
+          </span>
+          <span>
+            {topPlayer?.name || (topColor === "white" ? "Quân Trắng" : "Quân Đen")}
+            {topPlayer?.id === meId ? " (Bạn)" : ""}
+          </span>
+          {topAdvantage > 0 && <span className="chess-advantage">+{topAdvantage}</span>}
+          {/* Quân bị ăn */}
+          <div className="chess-captured-list">
+            {Object.entries(s.captured || {}).map(([p, count]) => {
+              const isThisSide = topColor === "white" ? p >= "a" && p <= "z" : p >= "A" && p <= "Z";
+              if (!isThisSide) return null;
+              return Array.from({ length: count }).map((_, i) => (
+                <span key={`${p}-${i}`} className="chess-captured-item">
+                  <ChessPiece piece={p} />
+                </span>
+              ));
+            })}
+          </div>
+        </div>
+        {game.status === "playing" && s.turn_color === (topColor === "white" ? "w" : "b") && (
+          <Countdown deadline={game.deadline} label="Thời gian nước đi" />
+        )}
+      </div>
+
+      {/* Bàn cờ 8×8 */}
+      <div className="chess-board-wrapper">
+        <div className="chess-board" role="grid" aria-label="Bàn cờ vua">
+          {ranks.map((r, rIdx) =>
+            files.map((f, fIdx) => {
+              const sq = `${String.fromCharCode(97 + f)}${r + 1}`;
+              const idx = r * 8 + f;
+              const pieceChar = s.board ? s.board[idx] : ".";
+              const isLight = (r + f) % 2 === 1;
+              const isSelected = selectedSquare === sq;
+              const isLastMove = s.last_move && (s.last_move.from === sq || s.last_move.to === sq);
+              const isInCheck = s.in_check && s.check_square === sq;
+              const isTarget = validTargets.has(sq);
+              const hasEnemy = pieceChar !== "." && !isMyPiece(pieceChar);
+
+              return (
+                <button
+                  key={sq}
+                  type="button"
+                  className={`chess-square ${isLight ? "is-light" : "is-dark"}${
+                    isSelected ? " is-selected" : ""
+                  }${isLastMove ? " is-last-move" : ""}${isInCheck ? " is-in-check" : ""}`}
+                  onClick={() => onSquareClick(sq, pieceChar)}
+                  aria-label={`${sq}: ${pieceChar !== "." ? pieceChar : "ô trống"}`}
+                >
+                  {/* Toạ độ hàng/cột */}
+                  {fIdx === 0 && <span className="chess-coord-rank">{r + 1}</span>}
+                  {rIdx === 7 && <span className="chess-coord-file">{String.fromCharCode(97 + f)}</span>}
+
+                  {/* Quân cờ */}
+                  {pieceChar !== "." && <ChessPiece piece={pieceChar} />}
+
+                  {/* Chấm gợi ý nước đi */}
+                  {isTarget && (
+                    <span className={hasEnemy ? "chess-hint-capture" : "chess-hint-dot"} />
+                  )}
+                </button>
+              );
+            })
+          )}
+        </div>
+
+        {/* Modal phong cấp Tốt */}
+        {pendingPromotion && (
+          <div className="chess-promotion-modal">
+            <div className="chess-promotion-content">
+              <div className="chess-promotion-title">Chọn quân phong cấp:</div>
+              <div className="chess-promotion-choices">
+                {(["q", "r", "b", "n"] as const).map((pr) => {
+                  const promoChar = isWhite ? pr.toUpperCase() : pr;
+                  const label = pr === "q" ? "Hậu" : pr === "r" ? "Xe" : pr === "b" ? "Tượng" : "Mã";
+                  return (
+                    <button
+                      key={pr}
+                      type="button"
+                      className="chess-promotion-btn"
+                      onClick={() => {
+                        act("move", { from: pendingPromotion.from, to: pendingPromotion.to, promotion: pr });
+                        setPendingPromotion(null);
+                        setSelectedSquare(null);
+                      }}
+                    >
+                      <ChessPiece piece={promoChar} />
+                      <span>{label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ width: "100%" }}
+                onClick={() => setPendingPromotion(null)}
+              >
+                Huỷ
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Thông tin phe ở dưới (thường là mình) */}
+      <div className="chess-player-bar" style={{ marginTop: "0.35rem" }}>
+        <div className="chess-player-info">
+          <span className={`chess-color-badge ${bottomColor}`} aria-hidden>
+            {bottomColor === "white" ? "⚪" : "⚫"}
+          </span>
+          <span>
+            {bottomPlayer?.name || (bottomColor === "white" ? "Quân Trắng" : "Quân Đen")}
+            {bottomPlayer?.id === meId ? " (Bạn)" : ""}
+          </span>
+          {bottomAdvantage > 0 && <span className="chess-advantage">+{bottomAdvantage}</span>}
+          {/* Quân bị ăn */}
+          <div className="chess-captured-list">
+            {Object.entries(s.captured || {}).map(([p, count]) => {
+              const isThisSide = bottomColor === "white" ? p >= "a" && p <= "z" : p >= "A" && p <= "Z";
+              if (!isThisSide) return null;
+              return Array.from({ length: count }).map((_, i) => (
+                <span key={`${p}-${i}`} className="chess-captured-item">
+                  <ChessPiece piece={p} />
+                </span>
+              ));
+            })}
+          </div>
+        </div>
+        {game.status === "playing" && s.turn_color === (bottomColor === "white" ? "w" : "b") && (
+          <Countdown deadline={game.deadline} label="Thời gian nước đi" />
+        )}
+      </div>
+
+      {/* Thanh công cụ / Hành động */}
+      <div className="chess-actions">
+        <div style={{ display: "flex", gap: "0.4rem" }}>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setManualFlip((prev) => (prev === null ? !isBlack : !prev))}
+            title="Xoay bàn cờ"
+          >
+            🔄 Lật bàn
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setLbOpen(true)}
+          >
+            🏆 Xếp hạng
+          </button>
+        </div>
+
+        {game.status === "playing" && isPlayer && (
+          <div style={{ display: "flex", gap: "0.4rem" }}>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              disabled={busy || s.draw_offered}
+              onClick={() => act("draw_offer")}
+              title="Gửi lời đề nghị hoà cho đối thủ"
+            >
+              🤝 Cầu hoà
+            </button>
+            {confirmResign ? (
+              <div style={{ display: "flex", gap: "0.25rem", alignItems: "center" }}>
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm"
+                  disabled={busy}
+                  onClick={() => {
+                    act("resign");
+                    setConfirmResign(false);
+                  }}
+                >
+                  Xác nhận chịu thua
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setConfirmResign(false)}
+                >
+                  Huỷ
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={busy}
+                onClick={() => setConfirmResign(true)}
+              >
+                🏳️ Chịu thua
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {lbOpen && <GameLeaderboardDialog initialKind="chess" onClose={() => setLbOpen(false)} />}
+    </div>
+  );
+}
+
 /* ---------- Oẳn tù tì ---------- */
 
 const RPS: { id: RpsChoice; icon: string; name: string }[] = [
@@ -1292,13 +1663,14 @@ function Rps({ ctx }: { ctx: Ctx }) {
 
 export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number; dm: boolean; onClose: () => void }) {
   const { createGame } = useChat();
-  const kinds = (Object.keys(GAME_INFO) as GameKind[]).filter((k) => !dm || k === "caro" || k === "rps");
+  const kinds = (Object.keys(GAME_INFO) as GameKind[]).filter((k) => !dm || k === "caro" || k === "rps" || k === "chess");
   const [kind, setKind] = useState<GameKind>(kinds[0]);
   const [day, setDay] = useState(120);
   const [night, setNight] = useState(45);
   const [hideRoles, setHideRoles] = useState(false);
   const [spies, setSpies] = useState(0);
   const [blockRule, setBlockRule] = useState(true);
+  const [chessMinutes, setChessMinutes] = useState(3);
   const [bestOf, setBestOf] = useState(3);
   const [st, setSt] = useState({
     traitors: 0,
@@ -1323,6 +1695,7 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
       werewolf: { day_seconds: day, night_seconds: night, hide_roles: hideRoles },
       spy: { spies },
       caro: { free_style: !blockRule },
+      chess: { turn_minutes: chessMinutes },
       rps: { best_of: bestOf },
     };
     try {
@@ -1478,6 +1851,17 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
               Luật chặn hai đầu
               <small>Hàng 5 bị chặn cả hai đầu thì không tính thắng.</small>
             </span>
+          </label>
+        )}
+        {kind === "chess" && (
+          <label className="field">
+            <span>Thời gian mỗi nước đi</span>
+            <select value={chessMinutes} onChange={(e) => setChessMinutes(Number(e.target.value))}>
+              <option value={1}>1 phút (Chớp - Blitz)</option>
+              <option value={3}>3 phút (Tiêu chuẩn)</option>
+              <option value={5}>5 phút (Nhanh - Rapid)</option>
+              <option value={10}>10 phút (Dài)</option>
+            </select>
           </label>
         )}
         {kind === "rps" && (

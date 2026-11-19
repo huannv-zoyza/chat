@@ -75,10 +75,14 @@ func TestGamesCaro(t *testing.T) {
 	if ev["game"].(map[string]any)["status"] != "playing" {
 		t.Fatalf("spectator update: %v", ev)
 	}
-	if code, g := act(bob.Token, "move", map[string]int{"cell": 0}); code != 400 || g.Error == "" {
+	firstTok, secondTok := alice.Token, bob.Token
+	if g.Players[0].ID == bob.User.ID {
+		firstTok, secondTok = bob.Token, alice.Token
+	}
+	if code, g := act(secondTok, "move", map[string]int{"cell": 0}); code != 400 || g.Error == "" {
 		t.Fatalf("O moved first: %d", code)
 	}
-	if code, _ := act(alice.Token, "move", map[string]int{"cell": 112}); code != 200 {
+	if code, _ := act(firstTok, "move", map[string]int{"cell": 112}); code != 200 {
 		t.Fatalf("move: %d", code)
 	}
 	if code, g := act(carol.Token, "move", map[string]int{"cell": 113}); code != 400 || g.Error != "Bạn không chơi ván này." {

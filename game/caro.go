@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Cờ caro 15×15, hai người: X (chủ phòng) đi trước, ai có 5 quân liền hàng ngang/dọc/chéo
+// Cờ caro 15×15, hai người: X (ngẫu nhiên một trong hai người) đi trước, ai có 5 quân liền hàng ngang/dọc/chéo
 // trước thì thắng. Luật "chặn hai đầu" (mặc định bật, như chơi ngoài đời): hàng 5 bị quân
 // đối phương chặn cả hai đầu thì không tính.
 
@@ -38,6 +38,7 @@ func (c *caro) normalize()         {}
 
 func (c *caro) start(now time.Time) error {
 	c.Board = strings.Repeat(".", caroSize*caroSize)
+	shuffle(c.Players)
 	c.Turn, c.Last, c.Moves, c.Win = 0, -1, 0, nil
 	c.logf("%s (X) đấu với %s (O). X đi trước.", c.Players[0].Name, c.Players[1].Name)
 	c.setDeadline(now, caroTurnTime)

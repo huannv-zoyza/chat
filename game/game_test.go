@@ -65,11 +65,11 @@ func roundTrip(t *testing.T, g *Game) *Game {
 }
 
 func TestCaroWinAndBlockRule(t *testing.T) {
-	g, ps := newGame(t, "caro", 2, "")
+	g, _ := newGame(t, "caro", 2, "")
 	if g.Status() != Playing {
 		t.Fatalf("caro must auto-start when 2 players joined, got %s", g.Status())
 	}
-	x, o := ps[0], ps[1]
+	x, o := g.Players()[0], g.Players()[1]
 	if err := tryAct(g, o, "move", map[string]int{"cell": 0}); err == nil {
 		t.Fatal("O must not move first")
 	}
@@ -88,8 +88,8 @@ func TestCaroWinAndBlockRule(t *testing.T) {
 	}
 
 	// chặn hai đầu: O ở hai đầu hàng 5 của X thì X chưa thắng
-	g, ps = newGame(t, "caro", 2, "")
-	x, o = ps[0], ps[1]
+	g, _ = newGame(t, "caro", 2, "")
+	x, o = g.Players()[0], g.Players()[1]
 	row := 3 * caroSize
 	xs := []int{row + 2, row + 3, row + 4, row + 5, row + 6}
 	os := []int{row + 1, row + 7, 100, 102, 104}
@@ -110,15 +110,30 @@ func TestCaroWinAndBlockRule(t *testing.T) {
 }
 
 func TestCaroTimeout(t *testing.T) {
-	g, ps := newGame(t, "caro", 2, "")
+	g, _ := newGame(t, "caro", 2, "")
 	if g.Tick(t0.Add(time.Minute)) {
 		t.Fatal("tick before deadline must do nothing")
 	}
 	if !g.Tick(t0.Add(caroTurnTime + time.Second)) {
 		t.Fatal("tick after deadline must change the game")
 	}
-	if g.Winners()[0] != ps[1].ID {
+	if g.Winners()[0] != g.Players()[1].ID {
 		t.Fatalf("O should win when X times out, winners=%v", g.Winners())
+	}
+}
+
+func TestCaroRandomFirstPlayer(t *testing.T) {
+	var hostFirst, guestFirst int
+	for range 100 {
+		g, ps := newGame(t, "caro", 2, "")
+		if g.Players()[0].ID == ps[0].ID {
+			hostFirst++
+		} else {
+			guestFirst++
+		}
+	}
+	if hostFirst == 0 || guestFirst == 0 {
+		t.Fatalf("caro first player is not random: hostFirst=%d guestFirst=%d", hostFirst, guestFirst)
 	}
 }
 

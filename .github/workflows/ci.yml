@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-backend:
+    name: Backend Tests (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Run Go tests
+        run: go test -v ./...
+
+      - name: Build Go server binary
+        run: go build -v .
+
+  test-frontend:
+    name: Frontend Build & Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install frontend dependencies
+        working-directory: desktop
+        run: pnpm install --frozen-lockfile
+
+      - name: Run frontend typecheck and build
+        working-directory: desktop
+        run: pnpm build
+
+  ci-check:
+    name: Verify All Tests Passed
+    needs: [test-backend, test-frontend]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check status of test jobs
+        run: |
+          if [ "${{ needs.test-backend.result }}" != "success" ] || [ "${{ needs.test-frontend.result }}" != "success" ]; then
+            echo "CI checks failed. Please check the backend and frontend test job results."
+            exit 1
+          fi
+          echo "All backend and frontend tests passed successfully!"

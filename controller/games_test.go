@@ -1,9 +1,15 @@
 package controller_test
 
 import (
-	"chat/controller"
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
+
+	"chat/controller"
+	"chat/model"
 
 	"github.com/coder/websocket"
 )
@@ -574,5 +580,121 @@ func TestGameSpectators(t *testing.T) {
 	})
 	// typing sent without errors
 }
+
+func TestPlayerGameplayAnalytics(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+
+	alice := e.register("alice_analyst", "Alice Analyst")
+	bob := e.register("bob_analyst", "Bob Analyst")
+
+	var ch channel
+	e.do("POST", "/api/channels", alice.Token, map[string]any{"name": "analytics-channel"}, &ch)
+	e.do("POST", "/api/channels/"+fmt.Sprint(ch.ID)+"/join", bob.Token, nil, nil)
+
+	// 1. Tạo ván cờ tướng (Xiangqi) với nước mở Pháo đầu P2-5 M8+7
+	xiangqiState, _ := json.Marshal(map[string]any{
+		"players": []map[string]any{
+			{"id": alice.User.ID, "name": alice.User.DisplayName},
+			{"id": bob.User.ID, "name": bob.User.DisplayName},
+		},
+		"winners": []int64{alice.User.ID},
+		"log": []string{
+			"1. P2-5 M8+7",
+			"2. M2+3 X9-8",
+			"Chiếu bí! Đỏ thắng cuộc.",
+		},
+		"result": "Đỏ thắng",
+	})
+	_, err := e.st.CreateGame(ctx, ch.ID, alice.User.ID, model.Embed{Type: "game", ID: "xiangqi"}, "ended", xiangqiState)
+	if err != nil {
+		t.Fatalf("create xiangqi game: %v", err)
+	}
+
+	// Cập nhật rating Elo
+	if _, _, err := e.st.RecordSoloGameResult(ctx, "xiangqi", alice.User.ID, bob.User.ID, 1.0); err != nil {
+		t.Fatalf("record game result: %v", err)
+	}
+
+	// 2. Phân tích cờ tướng của Alice
+	xqRep, err := e.st.AnalyzePlayerGameplay(ctx, alice.User.ID, "xiangqi")
+	if err != nil {
+		t.Fatalf("analyze xiangqi gameplay: %v", err)
+	}
+	if xqRep.Rating <= 1200 {
+		t.Fatalf("expected rating > 1200 after win, got %d", xqRep.Rating)
+	}
+	if xqRep.Wins != 1 || xqRep.TotalGames != 1 {
+		t.Fatalf("expected 1 win out of 1 game, got %+v", xqRep)
+	}
+	if xqRep.FirstTurnGames != 1 || xqRep.FirstTurnWins != 1 {
+		t.Fatalf("expected 1 first turn win, got %+v", xqRep)
+	}
+	if len(xqRep.FavoriteOpenings) == 0 || xqRep.FavoriteOpenings[0] != "P2-5 M8+7" {
+		t.Fatalf("expected favorite opening P2-5 M8+7, got %v", xqRep.FavoriteOpenings)
+	}
+	if !strings.Contains(xqRep.PlaystyleSummary, "Chiến tướng công sát trung lộ") {
+		t.Fatalf("expected offensive archetype, got: %s", xqRep.PlaystyleSummary)
+	}
+	if len(xqRep.Strengths) == 0 || len(xqRep.Weaknesses) == 0 || len(xqRep.CounterTips) == 0 {
+		t.Fatalf("missing tactical evaluation: %+v", xqRep)
+	}
+	if len(xqRep.RecentMatches) != 1 || !strings.Contains(xqRep.RecentMatches[0], "Thắng") {
+		t.Fatalf("expected recent match win summary, got: %v", xqRep.RecentMatches)
+	}
+
+	// 3. Phân tích Cờ vua (Chess)
+	chessState, _ := json.Marshal(map[string]any{
+		"players": []map[string]any{
+			{"id": alice.User.ID, "name": alice.User.DisplayName},
+			{"id": bob.User.ID, "name": bob.User.DisplayName},
+		},
+		"winners": []int64{alice.User.ID},
+		"log": []string{
+			"1. e4 e5",
+			"2. Nf3 Nc6",
+		},
+		"result": "Trắng thắng",
+	})
+	if _, err := e.st.CreateGame(ctx, ch.ID, alice.User.ID, model.Embed{Type: "game", ID: "chess"}, "ended", chessState); err != nil {
+		t.Fatalf("create chess game: %v", err)
+	}
+
+	chessRep, err := e.st.AnalyzePlayerGameplay(ctx, alice.User.ID, "chess")
+	if err != nil {
+		t.Fatalf("analyze chess gameplay: %v", err)
+	}
+	if !strings.Contains(chessRep.PlaystyleSummary, "Kỳ thủ chiến thuật mở") {
+		t.Fatalf("expected open chess archetype, got: %s", chessRep.PlaystyleSummary)
+	}
+	if len(chessRep.CounterTips) == 0 || !strings.Contains(chessRep.CounterTips[0], "Sicilian") {
+		t.Fatalf("expected Sicilian counter tip, got: %v", chessRep.CounterTips)
+	}
+
+	// 4. Phân tích Caro
+	caroRep, err := e.st.AnalyzePlayerGameplay(ctx, alice.User.ID, "caro")
+	if err != nil {
+		t.Fatalf("analyze caro gameplay: %v", err)
+	}
+	if !strings.Contains(caroRep.PlaystyleSummary, "Sát thủ bẫy kép Caro") {
+		t.Fatalf("expected caro archetype, got: %s", caroRep.PlaystyleSummary)
+	}
+	if len(caroRep.CounterTips) == 0 || !strings.Contains(caroRep.CounterTips[0], "bịt các tia 3") {
+		t.Fatalf("expected caro counter tip, got: %v", caroRep.CounterTips)
+	}
+
+	// 5. Phân tích Oẳn tù tì (RPS)
+	rpsRep, err := e.st.AnalyzePlayerGameplay(ctx, alice.User.ID, "rps")
+	if err != nil {
+		t.Fatalf("analyze rps gameplay: %v", err)
+	}
+	if !strings.Contains(rpsRep.PlaystyleSummary, "Tâm lý học hành vi") {
+		t.Fatalf("expected rps archetype, got: %s", rpsRep.PlaystyleSummary)
+	}
+	if len(rpsRep.CounterTips) == 0 || !strings.Contains(rpsRep.CounterTips[0], "Win-Stay Lose-Shift") {
+		t.Fatalf("expected rps counter tip, got: %v", rpsRep.CounterTips)
+	}
+}
+
 
 

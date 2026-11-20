@@ -6,6 +6,7 @@ import {
   myTurn,
   type CaroState,
   type ChessState,
+  type XiangqiState,
   type RpsChoice,
   type RpsMe,
   type RpsState,
@@ -16,6 +17,7 @@ import {
   type WerewolfState,
 } from "../lib/games";
 import { ChessPiece } from "./ChessPiece";
+import { XiangqiGame } from "./XiangqiGame";
 import { useChat } from "../state/ChatProvider";
 import type { StationState } from "../lib/station";
 import { StationSummary } from "./Station";
@@ -224,6 +226,8 @@ export function GameCard({ message }: { message: Message }) {
         <Caro ctx={ctx} />
       ) : game.kind === "chess" ? (
         <Chess ctx={ctx} />
+      ) : game.kind === "xiangqi" ? (
+        <Xiangqi ctx={ctx} />
       ) : (
         <Rps ctx={ctx} />
       )}
@@ -294,6 +298,12 @@ const RULES: Record<GameKind, string[]> = {
     "Tuân thủ đầy đủ luật FIDE: nhập thành, bắt tốt qua đường (en passant), phong cấp tốt.",
     "Chiếu bí đối phương để giành chiến thắng. Hoà cờ khi hết nước đi (stalemate), luật 50 nước, không đủ lực lượng hoặc đôi bên đồng ý.",
   ],
+  xiangqi: [
+    "Cờ tướng 9×10, Đỏ đi trước, Đen đi sau (hệ thống chọn màu quân theo tuỳ chọn phòng).",
+    "Tuân thủ luật Cờ tướng chuẩn WXF: cản mắt tượng, cản chân mã, pháo nhảy ăn quân qua đúng 1 ngòi, tướng và sĩ không ra khỏi cung.",
+    "Luật Lộ diện tướng: hai tướng không được đối mặt trực tiếp trên cùng một cột.",
+    "Bên bị hết nước đi (bức tử / stalemate) bị xử thua cuộc.",
+  ],
   rps: ["Búa thắng Kéo, Kéo thắng Bao, Bao thắng Búa.", "Hai người ra cùng lúc, 30 giây mỗi ván."],
 };
 
@@ -346,6 +356,20 @@ function Lobby({ ctx }: { ctx: Ctx }) {
     setup = (
       <p className="game-setup">
         Bàn cờ 8×8 tiêu chuẩn · Luật FIDE · {mins} phút/nước · {firstStr}
+      </p>
+    );
+  } else if (game.kind === "xiangqi") {
+    const s = game.state as XiangqiState;
+    const mins = s?.opts?.turn_minutes || 3;
+    const firstStr =
+      s?.opts?.first === "host"
+        ? "chủ phòng cầm Đỏ"
+        : s?.opts?.first === "guest"
+        ? "khách cầm Đỏ"
+        : "ngẫu nhiên màu quân";
+    setup = (
+      <p className="game-setup">
+        Bàn cờ 9×10 chuẩn · Luật WXF · {mins} phút/nước · {firstStr}
       </p>
     );
   } else {
@@ -1634,6 +1658,18 @@ function Chess({ ctx }: { ctx: Ctx }) {
   );
 }
 
+/* ---------- Cờ tướng (Xiangqi) ---------- */
+
+function Xiangqi({ ctx }: { ctx: Ctx }) {
+  const [lbOpen, setLbOpen] = useState(false);
+  return (
+    <>
+      <XiangqiGame ctx={{ ...ctx, onOpenLeaderboard: () => setLbOpen(true) }} />
+      {lbOpen && <GameLeaderboardDialog initialKind="xiangqi" onClose={() => setLbOpen(false)} />}
+    </>
+  );
+}
+
 /* ---------- Oẳn tù tì ---------- */
 
 const RPS: { id: RpsChoice; icon: string; name: string }[] = [
@@ -1711,7 +1747,7 @@ function Rps({ ctx }: { ctx: Ctx }) {
 
 export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number; dm: boolean; onClose: () => void }) {
   const { createGame } = useChat();
-  const kinds = (Object.keys(GAME_INFO) as GameKind[]).filter((k) => !dm || k === "caro" || k === "rps" || k === "chess");
+  const kinds = (Object.keys(GAME_INFO) as GameKind[]).filter((k) => !dm || k === "caro" || k === "rps" || k === "chess" || k === "xiangqi");
   const [kind, setKind] = useState<GameKind>(kinds[0]);
   const [day, setDay] = useState(120);
   const [night, setNight] = useState(45);
@@ -1720,6 +1756,8 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
   const [blockRule, setBlockRule] = useState(true);
   const [chessMinutes, setChessMinutes] = useState(3);
   const [chessFirst, setChessFirst] = useState<"random" | "host" | "guest">("random");
+  const [xiangqiMinutes, setXiangqiMinutes] = useState(3);
+  const [xiangqiFirst, setXiangqiFirst] = useState<"random" | "host" | "guest">("random");
   const [bestOf, setBestOf] = useState(3);
   const [st, setSt] = useState({
     traitors: 0,
@@ -1745,6 +1783,7 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
       spy: { spies },
       caro: { free_style: !blockRule },
       chess: { turn_minutes: chessMinutes, first: chessFirst },
+      xiangqi: { turn_minutes: xiangqiMinutes, first: xiangqiFirst },
       rps: { best_of: bestOf },
     };
     try {
@@ -1923,6 +1962,27 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
             </label>
           </>
         )}
+        {kind === "xiangqi" && (
+          <>
+            <label className="field">
+              <span>Thời gian mỗi nước đi</span>
+              <select value={xiangqiMinutes} onChange={(e) => setXiangqiMinutes(Number(e.target.value))}>
+                <option value={1}>1 phút (Chớp)</option>
+                <option value={3}>3 phút (Tiêu chuẩn)</option>
+                <option value={5}>5 phút (Nhanh)</option>
+                <option value={10}>10 phút (Dài)</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Cầm quân Đỏ (đi trước)</span>
+              <select value={xiangqiFirst} onChange={(e) => setXiangqiFirst(e.target.value as any)}>
+                <option value="random">Ngẫu nhiên (50/50)</option>
+                <option value="host">Chủ phòng cầm Đỏ</option>
+                <option value="guest">Khách cầm Đỏ</option>
+              </select>
+            </label>
+          </>
+        )}
         {kind === "rps" && (
           <label className="field">
             <span>Thể thức</span>
@@ -1998,6 +2058,7 @@ export function GameLeaderboardDialog({
   const tabs: { id: string; label: string }[] = [
     { id: "caro", label: "Cờ caro" },
     { id: "chess", label: "Cờ vua" },
+    { id: "xiangqi", label: "Cờ tướng" },
     { id: "all", label: "Tất cả game" },
     { id: "rps", label: "Oẳn tù tì" },
     { id: "werewolf", label: "Ma Sói" },

@@ -2,10 +2,13 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"math"
 	"sort"
 
+	"chat/game"
 	"chat/model"
 )
 
@@ -114,15 +117,21 @@ func (s *Store) ActiveGamesByChannel(ctx context.Context, channelID int64) ([]Ga
 }
 
 type MemberGameStats struct {
-	UserID      int64   `json:"user_id"`
-	Username    string  `json:"username"`
-	DisplayName string  `json:"display_name"`
-	Avatar      *string `json:"avatar"`
-	Wins        int     `json:"wins"`
-	Losses      int     `json:"losses"`
-	Draws       int     `json:"draws"`
-	TotalGames  int     `json:"total_games"`
-	WinRate     float64 `json:"win_rate"`
+	UserID        int64   `json:"user_id"`
+	Username      string  `json:"username"`
+	DisplayName   string  `json:"display_name"`
+	Avatar        *string `json:"avatar"`
+	Rating        int     `json:"rating"`
+	PeakRating    int     `json:"peak_rating"`
+	RankTier      string  `json:"rank_tier"`
+	TierBadge     string  `json:"tier_badge"`
+	Wins          int     `json:"wins"`
+	Losses        int     `json:"losses"`
+	Draws         int     `json:"draws"`
+	TotalGames    int     `json:"total_games"`
+	WinRate       float64 `json:"win_rate"`
+	CurrentStreak int     `json:"current_streak"`
+	BestStreak    int     `json:"best_streak"`
 }
 
 type LeaderboardResponse struct {
@@ -248,6 +257,31 @@ func (s *Store) GetGameLeaderboard(ctx context.Context, kind string) (Leaderboar
 		}
 	}
 
+	type ratingStats struct {
+		rating        int
+		peakRating    int
+		currentStreak int
+		bestStreak    int
+	}
+	ratingsMap := make(map[int64]ratingStats)
+	rQuery := `SELECT user_id, rating, peak_rating, current_streak, best_streak FROM game_ratings`
+	var rArgs []any
+	if kind != "" && kind != "all" {
+		rQuery += " WHERE kind = ?"
+		rArgs = append(rArgs, kind)
+	}
+	rRows, err := s.db.QueryContext(ctx, rQuery, rArgs...)
+	if err == nil {
+		defer rRows.Close()
+		for rRows.Next() {
+			var uid int64
+			var r, peak, curS, bestS int
+			if err := rRows.Scan(&uid, &r, &peak, &curS, &bestS); err == nil {
+				ratingsMap[uid] = ratingStats{rating: r, peakRating: peak, currentStreak: curS, bestStreak: bestS}
+			}
+		}
+	}
+
 	members := make([]MemberGameStats, 0, len(statsMap))
 	for id, st := range statsMap {
 		dn := st.fallback
@@ -268,20 +302,40 @@ func (s *Store) GetGameLeaderboard(ctx context.Context, kind string) (Leaderboar
 			wr = math.Round((float64(st.wins)/float64(st.total)*100)*10) / 10
 		}
 
+		r := game.DefaultEloRating
+		peak := game.DefaultEloRating
+		var curS, bestS int
+		if rs, ok := ratingsMap[id]; ok {
+			r = rs.rating
+			peak = rs.peakRating
+			curS = rs.currentStreak
+			bestS = rs.bestStreak
+		}
+		tier := game.GetRankTier(r)
+
 		members = append(members, MemberGameStats{
-			UserID:      id,
-			Username:    un,
-			DisplayName: dn,
-			Avatar:      av,
-			Wins:        st.wins,
-			Losses:      st.losses,
-			Draws:       st.draws,
-			TotalGames:  st.total,
-			WinRate:     wr,
+			UserID:        id,
+			Username:      un,
+			DisplayName:   dn,
+			Avatar:        av,
+			Rating:        r,
+			PeakRating:    peak,
+			RankTier:      tier.Name,
+			TierBadge:     tier.Badge,
+			Wins:          st.wins,
+			Losses:        st.losses,
+			Draws:         st.draws,
+			TotalGames:    st.total,
+			WinRate:       wr,
+			CurrentStreak: curS,
+			BestStreak:    bestS,
 		})
 	}
 
 	sort.Slice(members, func(i, j int) bool {
+		if members[i].Rating != members[j].Rating {
+			return members[i].Rating > members[j].Rating
+		}
 		if members[i].Wins != members[j].Wins {
 			return members[i].Wins > members[j].Wins
 		}
@@ -326,4 +380,133 @@ func (s *Store) GetGameLeaderboard(ctx context.Context, kind string) (Leaderboar
 		Members:    members,
 		TotalEnded: totalEnded,
 	}, nil
+}
+
+// RecordSoloGameResult cập nhật điểm Elo và thành tích cho 2 người chơi trong game đối kháng.
+func (s *Store) RecordSoloGameResult(ctx context.Context, kind string, playerAID, playerBID int64, scoreA float64) (deltaA, deltaB int, err error) {
+	if playerAID == playerBID {
+		return 0, 0, nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer tx.Rollback()
+
+	// Đọc stats của player A
+	var ratingA, peakA, winsA, lossesA, drawsA, cStreakA, bStreakA int
+	errA := tx.QueryRowContext(ctx,
+		`SELECT rating, peak_rating, wins, losses, draws, current_streak, best_streak FROM game_ratings WHERE user_id = ? AND kind = ?`,
+		playerAID, kind).Scan(&ratingA, &peakA, &winsA, &lossesA, &drawsA, &cStreakA, &bStreakA)
+	if errors.Is(errA, sql.ErrNoRows) {
+		ratingA = game.DefaultEloRating
+		peakA = game.DefaultEloRating
+	} else if errA != nil {
+		return 0, 0, errA
+	}
+	totA := winsA + lossesA + drawsA
+
+	// Đọc stats của player B
+	var ratingB, peakB, winsB, lossesB, drawsB, cStreakB, bStreakB int
+	errB := tx.QueryRowContext(ctx,
+		`SELECT rating, peak_rating, wins, losses, draws, current_streak, best_streak FROM game_ratings WHERE user_id = ? AND kind = ?`,
+		playerBID, kind).Scan(&ratingB, &peakB, &winsB, &lossesB, &drawsB, &cStreakB, &bStreakB)
+	if errors.Is(errB, sql.ErrNoRows) {
+		ratingB = game.DefaultEloRating
+		peakB = game.DefaultEloRating
+	} else if errB != nil {
+		return 0, 0, errB
+	}
+	totB := winsB + lossesB + drawsB
+
+	// Tính toán Elo mới qua game.CalculateElo
+	newRatingA, dA, newRatingB, dB := game.CalculateElo(ratingA, totA, ratingB, totB, scoreA)
+
+	// Cập nhật stats A
+	if scoreA == 1.0 {
+		winsA++
+		cStreakA++
+		if cStreakA > bStreakA {
+			bStreakA = cStreakA
+		}
+	} else if scoreA == 0.0 {
+		lossesA++
+		cStreakA = 0
+	} else {
+		drawsA++
+	}
+	if newRatingA > peakA {
+		peakA = newRatingA
+	}
+
+	// Cập nhật stats B
+	scoreB := 1.0 - scoreA
+	if scoreB == 1.0 {
+		winsB++
+		cStreakB++
+		if cStreakB > bStreakB {
+			bStreakB = cStreakB
+		}
+	} else if scoreB == 0.0 {
+		lossesB++
+		cStreakB = 0
+	} else {
+		drawsB++
+	}
+	if newRatingB > peakB {
+		peakB = newRatingB
+	}
+
+	// Upsert A vào game_ratings
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO game_ratings (user_id, kind, rating, peak_rating, wins, losses, draws, current_streak, best_streak, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT (user_id, kind) DO UPDATE SET
+			rating = excluded.rating,
+			peak_rating = excluded.peak_rating,
+			wins = excluded.wins,
+			losses = excluded.losses,
+			draws = excluded.draws,
+			current_streak = excluded.current_streak,
+			best_streak = excluded.best_streak,
+			updated_at = CURRENT_TIMESTAMP`,
+		playerAID, kind, newRatingA, peakA, winsA, lossesA, drawsA, cStreakA, bStreakA)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	// Upsert B vào game_ratings
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO game_ratings (user_id, kind, rating, peak_rating, wins, losses, draws, current_streak, best_streak, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT (user_id, kind) DO UPDATE SET
+			rating = excluded.rating,
+			peak_rating = excluded.peak_rating,
+			wins = excluded.wins,
+			losses = excluded.losses,
+			draws = excluded.draws,
+			current_streak = excluded.current_streak,
+			best_streak = excluded.best_streak,
+			updated_at = CURRENT_TIMESTAMP`,
+		playerBID, kind, newRatingB, peakB, winsB, lossesB, drawsB, cStreakB, bStreakB)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, 0, err
+	}
+
+	return dA, dB, nil
+}
+
+// GetUserRating đọc điểm Elo của người chơi cho một loại game.
+func (s *Store) GetUserRating(ctx context.Context, userID int64, kind string) (int, error) {
+	var rating int
+	err := s.db.QueryRowContext(ctx, `SELECT rating FROM game_ratings WHERE user_id = ? AND kind = ?`, userID, kind).Scan(&rating)
+	if errors.Is(err, sql.ErrNoRows) {
+		return game.DefaultEloRating, nil
+	}
+	return rating, err
 }

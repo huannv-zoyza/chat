@@ -4,6 +4,8 @@ import (
 	"chat/controller"
 	"testing"
 	"time"
+
+	"github.com/coder/websocket"
 )
 
 type gameResp struct {
@@ -123,6 +125,7 @@ func TestGameLeaderboard(t *testing.T) {
 	e.do("POST", "/api/messages/"+itoa(m.ID)+"/game", bob.Token, map[string]any{"action": "join"}, &g)
 
 	e.do("POST", "/api/messages/"+itoa(m.ID)+"/game", alice.Token, map[string]any{"action": "resign"}, nil)
+	time.Sleep(100 * time.Millisecond)
 
 	var lb struct {
 		Kind      string `json:"kind"`
@@ -130,6 +133,9 @@ func TestGameLeaderboard(t *testing.T) {
 		TopLosses []any  `json:"top_losses"`
 		Members   []struct {
 			UserID     int64   `json:"user_id"`
+			Rating     int     `json:"rating"`
+			RankTier   string  `json:"rank_tier"`
+			TierBadge  string  `json:"tier_badge"`
 			Wins       int     `json:"wins"`
 			Losses     int     `json:"losses"`
 			TotalGames int     `json:"total_games"`
@@ -146,6 +152,14 @@ func TestGameLeaderboard(t *testing.T) {
 	}
 	if len(lb.Members) != 2 {
 		t.Fatalf("members count want 2, got %d", len(lb.Members))
+	}
+	// Bob thắng: nhận +16 -> 1216 (Rank Bạc)
+	if lb.Members[0].UserID != bob.User.ID || lb.Members[0].Rating != 1216 || lb.Members[0].TierBadge != "🥈" {
+		t.Fatalf("expected bob to be top 1 with 1216 Elo 🥈, got: %+v", lb.Members[0])
+	}
+	// Alice thua: mất 16 -> 1184 (Rank Đồng)
+	if lb.Members[1].UserID != alice.User.ID || lb.Members[1].Rating != 1184 || lb.Members[1].TierBadge != "🥉" {
+		t.Fatalf("expected alice to be rank 2 with 1184 Elo 🥉, got: %+v", lb.Members[1])
 	}
 }
 
@@ -483,4 +497,82 @@ func TestListLiveGames(t *testing.T) {
 		t.Fatalf("expected 0 live games after game ended, got %d", len(liveList))
 	}
 }
+
+func TestGameSpectators(t *testing.T) {
+	e := newEnv(t)
+	alice := e.register("alice_spec", "Alice")
+	bob := e.register("bob_spec", "Bob")
+	carol := e.register("carol_spec", "Carol")
+	dave := e.register("dave_spec", "Dave")
+
+	var ch channel
+	e.do("POST", "/api/channels", alice.Token, map[string]any{"name": "spectator-test"}, &ch)
+	e.do("POST", "/api/channels/"+itoa(ch.ID)+"/join", bob.Token, nil, nil)
+	e.do("POST", "/api/channels/"+itoa(ch.ID)+"/join", carol.Token, nil, nil)
+	e.do("POST", "/api/channels/"+itoa(ch.ID)+"/join", dave.Token, nil, nil)
+
+	var m gameMsg
+	if code := e.do("POST", "/api/channels/"+itoa(ch.ID)+"/games", alice.Token, map[string]any{"kind": "caro"}, &m); code != 201 {
+		t.Fatalf("create game status: %d", code)
+	}
+
+	wc := e.dial(carol.Token)
+	defer wc.conn.Close(websocket.StatusNormalClosure, "")
+
+	wd := e.dial(dave.Token)
+
+	// Carol spectates game
+	wc.send(map[string]any{
+		"type":       "game.spectate",
+		"message_id": m.ID,
+	})
+
+	ev := wc.waitFor("game.spectators")
+	if count, ok := ev["count"].(float64); !ok || int(count) != 1 {
+		t.Fatalf("expected 1 spectator, got %v", ev["count"])
+	}
+
+	// Dave also spectates
+	wd.send(map[string]any{
+		"type":       "game.spectate",
+		"message_id": m.ID,
+	})
+	ev2 := wc.waitFor("game.spectators")
+	if count, ok := ev2["count"].(float64); !ok || int(count) != 2 {
+		t.Fatalf("expected 2 spectators, got %v", ev2["count"])
+	}
+
+	// Check LiveGameSummary API reflects viewer_count
+	var liveList []controller.LiveGameSummary
+	e.do("GET", "/api/channels/"+itoa(ch.ID)+"/live-games", alice.Token, nil, &liveList)
+	if len(liveList) != 1 || liveList[0].ViewerCount != 2 {
+		t.Fatalf("expected viewer_count = 2 in API, got: %+v", liveList)
+	}
+
+	// Carol unspectates
+	wc.send(map[string]any{
+		"type":       "game.unspectate",
+		"message_id": m.ID,
+	})
+	ev3 := wc.waitFor("game.spectators")
+	if count, ok := ev3["count"].(float64); !ok || int(count) != 1 {
+		t.Fatalf("expected 1 spectator after unspectate, got %v", ev3["count"])
+	}
+
+	// Dave disconnects socket unexpectedly
+	wd.conn.Close(websocket.StatusGoingAway, "bye")
+	ev4 := wc.waitFor("game.spectators")
+	if count, ok := ev4["count"].(float64); !ok || int(count) != 0 {
+		t.Fatalf("expected 0 spectators after dave disconnect, got %v", ev4["count"])
+	}
+
+	// Carol sends typing in thread with parent_id
+	wc.send(map[string]any{
+		"type":       "typing",
+		"channel_id": ch.ID,
+		"parent_id":  m.ID,
+	})
+	// typing sent without errors
+}
+
 

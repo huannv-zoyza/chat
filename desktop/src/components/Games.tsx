@@ -53,6 +53,7 @@ function Countdown({ deadline, label }: { deadline?: string; label?: string }) {
 }
 
 type Ctx = {
+  messageId: number;
   game: GameView;
   meId: number;
   isPlayer: boolean;
@@ -63,6 +64,10 @@ type Ctx = {
   nameOf: (id: number) => string;
   /** Mở hộp thoại chia sẻ phòng chơi sang kênh / tin nhắn riêng khác. */
   invite: () => void;
+  /** Mở luồng bình luận / khán đài của ván đấu */
+  openThread: () => void;
+  replyCount: number;
+  viewerCount: number;
 };
 
 /** Ô người chơi: avatar, tên, nhãn phụ; bấm được nếu có onClick. */
@@ -164,12 +169,19 @@ function VoterDots({ ctx, ids }: { ctx: Ctx; ids: number[] }) {
 /* ---------- Thẻ ván chơi trong tin nhắn ---------- */
 
 export function GameCard({ message }: { message: Message }) {
-  const { state, gameAction } = useChat();
+  const { state, gameAction, openThread } = useChat();
   const game = message.game!;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const meId = state.me.id;
   const isPlayer = game.players.some((p) => p.id === meId);
+
+  const threadMeta = message.thread;
+  const replyCount = threadMeta?.reply_count ?? 0;
+  const participantIds = threadMeta?.participant_ids ?? [];
+  const playerIds = new Set(game.players.map((p) => p.id));
+  const viewerIds = participantIds.filter((id) => !playerIds.has(id));
+  const viewerCount = viewerIds.length;
 
   const act = (action: string, data?: unknown) => {
     if (busy) return;
@@ -183,7 +195,20 @@ export function GameCard({ message }: { message: Message }) {
   const user = (id: number): PublicUser =>
     state.users[id] ?? { id, username: nameOf(id), display_name: nameOf(id), avatar: null, status_text: "" };
   const [sharing, setSharing] = useState(false);
-  const ctx: Ctx = { game, meId, isPlayer, busy, act, user, nameOf, invite: () => setSharing(true) };
+  const ctx: Ctx = {
+    messageId: message.id,
+    game,
+    meId,
+    isPlayer,
+    busy,
+    act,
+    user,
+    nameOf,
+    invite: () => setSharing(true),
+    openThread: () => openThread(message.id),
+    replyCount,
+    viewerCount,
+  };
   const info = GAME_INFO[game.kind];
   const turn = myTurn(game, meId);
   const night = game.kind === "werewolf" && (game.state as WerewolfState | undefined)?.phase === "night";
@@ -231,6 +256,31 @@ export function GameCard({ message }: { message: Message }) {
       ) : (
         <Rps ctx={ctx} />
       )}
+
+      {/* Thanh Khán giả & Bình luận của ván cờ */}
+      <div className="game-spectator-bar">
+        <div className="game-spectator-info">
+          <span className="game-spectator-count">
+            💬 {replyCount > 0 ? `${replyCount} bình luận` : "Chưa có bình luận"}
+            {viewerCount > 0 && ` · 👁️ ${viewerCount} Khán giả`}
+          </span>
+          {viewerIds.length > 0 && (
+            <span className="game-viewer-avatars" aria-hidden>
+              {viewerIds.slice(0, 5).map((id) => (
+                <Avatar key={id} user={state.users[id]} size={20} />
+              ))}
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          className="btn btn-xs btn-secondary"
+          onClick={() => openThread(message.id)}
+          title="Mở luồng bình luận và xem ý kiến khán giả"
+        >
+          💬 {replyCount > 0 ? "Mở Khán đài" : "Bình luận (Khán đài)"}
+        </button>
+      </div>
 
       {game.status === "ended" && game.result && (
         <p className={`game-result${game.winners?.includes(meId) ? " is-win" : ""}`}>
@@ -1601,6 +1651,14 @@ function Chess({ ctx }: { ctx: Ctx }) {
           <button
             type="button"
             className="btn btn-secondary btn-sm"
+            onClick={ctx.openThread}
+            title="Mở luồng bình luận / Khán đài"
+          >
+            💬 Khán đài {ctx.replyCount ? `(${ctx.replyCount})` : ""}
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
             onClick={() => setLbOpen(true)}
           >
             🏆 Xếp hạng
@@ -1664,7 +1722,13 @@ function Xiangqi({ ctx }: { ctx: Ctx }) {
   const [lbOpen, setLbOpen] = useState(false);
   return (
     <>
-      <XiangqiGame ctx={{ ...ctx, onOpenLeaderboard: () => setLbOpen(true) }} />
+      <XiangqiGame
+        ctx={{
+          ...ctx,
+          onOpenLeaderboard: () => setLbOpen(true),
+          onOpenThread: ctx.openThread,
+        }}
+      />
       {lbOpen && <GameLeaderboardDialog initialKind="xiangqi" onClose={() => setLbOpen(false)} />}
     </>
   );

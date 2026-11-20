@@ -120,12 +120,147 @@ func (a *API) saveAndBroadcast(ctx context.Context, s *gameSession) {
 	}
 }
 
+// GameUserRole mô tả vai trò của người dùng đối với một ván game: "host", "player", hoặc "viewer".
+type GameUserRole string
+
+const (
+	RoleHost   GameUserRole = "host"
+	RolePlayer GameUserRole = "player"
+	RoleViewer GameUserRole = "viewer"
+)
+
+// GetGameUserRole xác định vai trò của userID trong ván game (player, host hoặc viewer/khán giả).
+func GetGameUserRole(g *game.Game, hostID, userID int64) GameUserRole {
+	if g != nil {
+		for _, p := range g.Players() {
+			if p.ID == userID {
+				return RolePlayer
+			}
+		}
+	}
+	if hostID == userID {
+		return RoleHost
+	}
+	return RoleViewer
+}
+
 func asPlayer(u model.User) game.Player {
 	name := u.DisplayName
 	if name == "" {
 		name = u.Username
 	}
 	return game.Player{ID: u.ID, Name: name}
+}
+
+// LiveGameSummary chứa thông tin tóm tắt của một ván game đang hoạt động để hiển thị trên Topbar.
+type LiveGameSummary struct {
+	MessageID   int64            `json:"message_id"`
+	ChannelID   int64            `json:"channel_id"`
+	Kind        string           `json:"kind"`        // "xiangqi", "chess", "caro", "werewolf", v.v.
+	Title       string           `json:"title"`       // Tiêu đề game: "Cờ tướng", "Cờ vua"...
+	Status      string           `json:"status"`      // "lobby" | "playing"
+	CreatedAt   time.Time        `json:"created_at"`
+	Host        model.PublicUser `json:"host"`
+	Players     []game.Player    `json:"players"`
+	TurnUserID  *int64           `json:"turn_user_id,omitempty"` // ID người đang tới lượt đi
+	IsMyTurn    bool             `json:"is_my_turn"`             // True nếu tới lượt của người gọi API
+	ReplyCount  int              `json:"reply_count"`            // Số lượng bình luận trong luồng
+	ViewerCount int              `json:"viewer_count"`           // Số lượng khán giả đang theo dõi
+	Game        json.RawMessage  `json:"game"`                   // View JSON đầy đủ (tuỳ biến theo viewer)
+}
+
+// GET /api/channels/{id}/live-games: danh sách ván game đang hoạt động trong kênh.
+func (a *API) listLiveGames(w http.ResponseWriter, r *http.Request) {
+	ch, ok := a.loadChannel(w, r)
+	if !ok || !a.requireMember(w, r, ch.ID) {
+		return
+	}
+	me := currentUser(r)
+	rows, err := a.store.ActiveGamesByChannel(r.Context(), ch.ID)
+	if err != nil {
+		internalError(w, r, err)
+		return
+	}
+	out := make([]LiveGameSummary, 0, len(rows))
+	for _, row := range rows {
+		sess, err := a.gameSession(r.Context(), row.MessageID)
+		if err != nil {
+			continue
+		}
+		sess.mu.Lock()
+		st := sess.g.Status()
+		if st == game.Ended || sess.deleted {
+			sess.mu.Unlock()
+			continue
+		}
+		gView := sess.g.View(me.ID)
+		vJSON := viewJSON(sess.g, me.ID)
+		watchersCount := len(sess.watchers)
+		sess.mu.Unlock()
+
+		msg, err := a.store.GetMessage(r.Context(), row.MessageID)
+		if err != nil {
+			continue
+		}
+
+		var turnUserID *int64
+		if bState, err := json.Marshal(gView.State); err == nil {
+			var stateMap map[string]any
+			if err := json.Unmarshal(bState, &stateMap); err == nil {
+				if val, ok := stateMap["turn_player_id"]; ok {
+					if f, ok := val.(float64); ok && f > 0 {
+						id := int64(f)
+						turnUserID = &id
+					}
+				} else if val, ok := stateMap["turn"]; ok {
+					if f, ok := val.(float64); ok && f > 0 {
+						id := int64(f)
+						turnUserID = &id
+					}
+				} else if val, ok := stateMap["speaker"]; ok {
+					if f, ok := val.(float64); ok && f > 0 {
+						id := int64(f)
+						turnUserID = &id
+					}
+				}
+			}
+		}
+
+		replyCount := 0
+		if msg.Thread != nil {
+			replyCount = msg.Thread.ReplyCount
+		}
+
+		var host model.PublicUser
+		if msg.User != nil {
+			host = *msg.User
+		} else if u, err := a.store.GetUserByID(r.Context(), msg.UserID); err == nil {
+			host = u.Public()
+		}
+
+		isMyTurn := turnUserID != nil && *turnUserID == me.ID
+		title := gView.Title
+		if title == "" {
+			title = game.Title(row.Kind)
+		}
+
+		out = append(out, LiveGameSummary{
+			MessageID:   row.MessageID,
+			ChannelID:   ch.ID,
+			Kind:        row.Kind,
+			Title:       title,
+			Status:      string(st),
+			CreatedAt:   msg.CreatedAt,
+			Host:        host,
+			Players:     gView.Players,
+			TurnUserID:  turnUserID,
+			IsMyTurn:    isMyTurn,
+			ReplyCount:  replyCount,
+			ViewerCount: watchersCount,
+			Game:        vJSON,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 /* ---------- POST /api/channels/{id}/games ---------- */

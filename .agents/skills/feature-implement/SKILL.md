@@ -33,7 +33,7 @@ This skill guides Antigravity through implementing full-stack features methodica
 
 ### Step 1: Pre-implementation Check
 1. **Read the Specification**:
-   - Locate and read the relevant `*_SPEC.md` file completely before writing code.
+   - Locate and read the relevant `specs/*_SPEC.md` file completely before writing code.
    - Note all data structures, rule constraints, API paths, and WebSocket event names.
 2. **Verify Git Hygiene**:
    - Check `git status` to ensure working directory is clean.

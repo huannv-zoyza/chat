@@ -393,4 +393,16 @@ func TestXiangqiCheckmate(t *testing.T) {
 	if len(xq.Winners) != 1 || xq.Winners[0] != 1 {
 		t.Errorf("expected Red to be winner, got %v", xq.Winners)
 	}
+
+	v, _ := xq.view(1)
+	pub, ok := v.(xiangqiPublic)
+	if !ok {
+		t.Fatalf("expected xiangqiPublic, got %T", v)
+	}
+	if !pub.IsCheckmate {
+		t.Errorf("expected pub.IsCheckmate to be true")
+	}
+	if pub.CheckSquare != "e9" {
+		t.Errorf("expected pub.CheckSquare to be e9, got %s", pub.CheckSquare)
+	}
 }

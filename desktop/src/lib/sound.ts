@@ -166,3 +166,76 @@ export function playPieceCapture() {
     // ignore
   }
 }
+
+/**
+ * Phát âm thanh chúc mừng chiến thắng (Triumphant Victory Fanfare)
+ * khi ván đấu kết thúc (chiếu bí hoặc có người thắng).
+ */
+export function playVictorySound() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  try {
+    const now = ctx.currentTime;
+
+    // 1. Tiếng chiêng/trống dội nhẹ ở đầu (Decisive strike)
+    const strikeOsc = ctx.createOscillator();
+    const strikeGain = ctx.createGain();
+    strikeOsc.type = "triangle";
+    strikeOsc.frequency.setValueAtTime(130.81, now); // C3
+    strikeOsc.frequency.exponentialRampToValueAtTime(65.41, now + 0.25);
+    strikeGain.gain.setValueAtTime(0.001, now);
+    strikeGain.gain.exponentialRampToValueAtTime(0.25, now + 0.015);
+    strikeGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+    strikeOsc.connect(strikeGain).connect(ctx.destination);
+    strikeOsc.start(now);
+    strikeOsc.stop(now + 0.38);
+
+    // 2. Chuỗi nốt kèn đồng / chuông khải hoàn (C5 -> E5 -> G5)
+    const arpeggio = [
+      { f: 523.25, t: 0.08, d: 0.14, g: 0.18 }, // C5
+      { f: 659.25, t: 0.20, d: 0.14, g: 0.20 }, // E5
+      { f: 783.99, t: 0.32, d: 0.16, g: 0.22 }, // G5
+    ];
+
+    arpeggio.forEach((n) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(n.f, now + n.t);
+
+      gain.gain.setValueAtTime(0.001, now + n.t);
+      gain.gain.exponentialRampToValueAtTime(n.g, now + n.t + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + n.t + n.d);
+
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now + n.t);
+      osc.stop(now + n.t + n.d + 0.02);
+    });
+
+    // 3. Hợp âm ngân vang cực đại ở cao trào (C6 kết hợp E5 + G5 + C5)
+    const climaxTime = 0.46;
+    const chord = [
+      { f: 1046.50, type: "sine" as OscillatorType, g: 0.28, d: 0.9 }, // C6 (ngân cao sáng)
+      { f: 783.99, type: "triangle" as OscillatorType, g: 0.18, d: 0.75 }, // G5
+      { f: 659.25, type: "triangle" as OscillatorType, g: 0.16, d: 0.75 }, // E5
+      { f: 523.25, type: "sine" as OscillatorType, g: 0.16, d: 0.8 }, // C5
+    ];
+
+    chord.forEach((n) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = n.type;
+      osc.frequency.setValueAtTime(n.f, now + climaxTime);
+
+      gain.gain.setValueAtTime(0.001, now + climaxTime);
+      gain.gain.exponentialRampToValueAtTime(n.g, now + climaxTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + climaxTime + n.d);
+
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now + climaxTime);
+      osc.stop(now + climaxTime + n.d + 0.05);
+    });
+  } catch (err) {
+    console.warn("không phát được âm thanh chiến thắng:", err);
+  }
+}

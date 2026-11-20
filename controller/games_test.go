@@ -1,6 +1,7 @@
 package controller_test
 
 import (
+	"chat/controller"
 	"testing"
 	"time"
 )
@@ -338,5 +339,148 @@ func TestGamesChess(t *testing.T) {
 
 	// WebSocket receives game.updated on end
 	wsAlice.waitFor("game.updated")
+}
+
+func TestGetGameUserRole(t *testing.T) {
+	e := newEnv(t)
+	alice := e.register("alice2", "Alice 2")
+	bob := e.register("bob2", "Bob 2")
+	carol := e.register("carol2", "Carol 2") // viewer
+
+	var ch channel
+	e.do("POST", "/api/channels", alice.Token, map[string]any{"name": "test-roles"}, &ch)
+	e.do("POST", "/api/channels/"+itoa(ch.ID)+"/join", bob.Token, nil, nil)
+	e.do("POST", "/api/channels/"+itoa(ch.ID)+"/join", carol.Token, nil, nil)
+
+	var m gameMsg
+	if code := e.do("POST", "/api/channels/"+itoa(ch.ID)+"/games", alice.Token, map[string]any{"kind": "caro"}, &m); code != 201 {
+		t.Fatalf("create caro game: %d", code)
+	}
+
+	// Bob joins
+	e.do("POST", "/api/messages/"+itoa(m.ID)+"/game", bob.Token, map[string]any{"action": "join"}, nil)
+
+	// Carol sends a reply comment in the game thread
+	wc := e.dial(carol.Token)
+	wc.send(map[string]any{
+		"type":       "message.send",
+		"channel_id": ch.ID,
+		"parent_id":  m.ID,
+		"content":    "Trận này căng quá!",
+		"client_id":  "c-comment-1",
+	})
+	ev := wc.waitFor("message.new")
+	msgObj := ev["message"].(map[string]any)
+	if msgObj["parent_id"].(float64) != float64(m.ID) {
+		t.Fatalf("expected message to have parent_id %d", m.ID)
+	}
+
+	// Fetch thread
+	var th struct {
+		Parent  map[string]any   `json:"parent"`
+		Replies []map[string]any `json:"replies"`
+	}
+	if code := e.do("GET", "/api/messages/"+itoa(m.ID)+"/thread", carol.Token, nil, &th); code != 200 {
+		t.Fatalf("get thread: %d", code)
+	}
+	if len(th.Replies) != 1 {
+		t.Fatalf("expected 1 reply, got %d", len(th.Replies))
+	}
+	replyUserID := int64(th.Replies[0]["user_id"].(float64))
+	if replyUserID != carol.User.ID {
+		t.Fatalf("expected reply from carol, got %d", replyUserID)
+	}
+
+	// Verify roles
+	if role := controller.GetGameUserRole(nil, alice.User.ID, alice.User.ID); role != controller.RoleHost {
+		t.Fatalf("expected alice to be RoleHost, got %v", role)
+	}
+	if role := controller.GetGameUserRole(nil, alice.User.ID, carol.User.ID); role != controller.RoleViewer {
+		t.Fatalf("expected carol to be RoleViewer, got %v", role)
+	}
+}
+
+func TestListLiveGames(t *testing.T) {
+	e := newEnv(t)
+	alice := e.register("alice", "Alice")
+	bob := e.register("bob", "Bob")
+	eve := e.register("eve", "Eve") // không join channel
+
+	var ch channel
+	e.do("POST", "/api/channels", alice.Token, map[string]any{"name": "test-live"}, &ch)
+	e.do("POST", "/api/channels/"+itoa(ch.ID)+"/join", bob.Token, nil, nil)
+
+	// 1. Kênh chưa có game nào
+	var liveList []controller.LiveGameSummary
+	if code := e.do("GET", "/api/channels/"+itoa(ch.ID)+"/live-games", alice.Token, nil, &liveList); code != 200 {
+		t.Fatalf("list live games: %d", code)
+	}
+	if len(liveList) != 0 {
+		t.Fatalf("expected 0 live games, got %d", len(liveList))
+	}
+
+	// 2. Eve không ở trong channel
+	if code := e.do("GET", "/api/channels/"+itoa(ch.ID)+"/live-games", eve.Token, nil, nil); code != 404 && code != 403 {
+		t.Fatalf("expected 403/404 for non-member, got %d", code)
+	}
+
+	// 3. Alice tạo ván xiangqi (chọn first: host)
+	var m gameMsg
+	if code := e.do("POST", "/api/channels/"+itoa(ch.ID)+"/games", alice.Token, map[string]any{
+		"kind": "xiangqi",
+		"options": map[string]any{"first": "host"},
+	}, &m); code != 201 {
+		t.Fatalf("create xiangqi: %d", code)
+	}
+
+	if code := e.do("GET", "/api/channels/"+itoa(ch.ID)+"/live-games", bob.Token, nil, &liveList); code != 200 {
+		t.Fatalf("list live games: %d", code)
+	}
+	if len(liveList) != 1 {
+		t.Fatalf("expected 1 live game, got %d", len(liveList))
+	}
+	item := liveList[0]
+	if item.MessageID != m.ID || item.Kind != "xiangqi" || item.Status != "lobby" {
+		t.Fatalf("unexpected live game item: %+v", item)
+	}
+	if item.Host.ID != alice.User.ID {
+		t.Fatalf("expected host alice, got %d", item.Host.ID)
+	}
+	if item.IsMyTurn {
+		t.Fatalf("expected is_my_turn = false for bob in lobby")
+	}
+
+	// 4. Bob join ván -> chuyển sang playing
+	var g gameResp
+	e.do("POST", "/api/messages/"+itoa(m.ID)+"/game", bob.Token, map[string]any{"action": "join"}, &g)
+	if g.Status != "playing" {
+		t.Fatalf("expected playing status, got %s", g.Status)
+	}
+
+	// 5. Kiểm tra live games khi playing
+	var aliceLiveList []controller.LiveGameSummary
+	e.do("GET", "/api/channels/"+itoa(ch.ID)+"/live-games", alice.Token, nil, &aliceLiveList)
+	if len(aliceLiveList) != 1 || aliceLiveList[0].Status != "playing" {
+		t.Fatalf("expected 1 playing game for alice: %+v", aliceLiveList)
+	}
+	// Xiangqi: Red đi trước (Host là Red: Alice)
+	if !aliceLiveList[0].IsMyTurn {
+		t.Fatalf("expected is_my_turn = true for alice (first turn red)")
+	}
+
+	var bobLiveList []controller.LiveGameSummary
+	e.do("GET", "/api/channels/"+itoa(ch.ID)+"/live-games", bob.Token, nil, &bobLiveList)
+	if len(bobLiveList) != 1 || bobLiveList[0].IsMyTurn {
+		t.Fatalf("expected is_my_turn = false for bob (black)")
+	}
+
+	// 6. Alice resign -> ván kết thúc (ended)
+	e.do("POST", "/api/messages/"+itoa(m.ID)+"/game", alice.Token, map[string]any{"action": "resign"}, nil)
+
+	// 7. Gọi lại live games -> phải rỗng (0 ván)
+	e.do("GET", "/api/channels/"+itoa(ch.ID)+"/live-games", alice.Token, nil, &liveList)
+	if len(liveList) != 0 {
+		t.Fatalf("expected 0 live games after game ended, got %d", len(liveList))
+	}
 }
 

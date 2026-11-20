@@ -68,20 +68,31 @@ Before proposing new architecture or libraries:
    - Audio feedback (synthesized Web Audio or sound assets).
    - Perspective and accessibility (e.g., flip board, high-contrast markers).
 
-### Step 5: Write the Technical Specification (`SPEC.md`)
-Always create the specification file directly at the **repository root** (e.g., `FEATURE_NAME_SPEC.md` or `docs/FEATURE_NAME_SPEC.md` as requested by the user):
+### Step 5: Write the Technical Specification into `specs/`
+All technical specifications **MUST** be created inside the **`specs/`** directory (e.g., `specs/<FEATURE_NAME>_SPEC.md`). Do not place SPEC files in the project root.
+
+#### Quick Generation with the Included Script:
+You can use the bundled script to scaffold a new specification file with the standard 7-section structure:
+```bash
+./scripts/create-spec.sh <feature_slug> ["Tiêu đề tính năng tiếng Việt"]
+# Example:
+./scripts/create-spec.sh live-topbar "Ghim Game Đang Live Ở Topbar Kênh Chat"
+```
+The script normalizes the filename, prevents accidental overwrites, and populates the standard template.
 
 #### Required SPEC Sections:
 1. **Mục tiêu & Phạm vi (Goals & Scope)**: Goals, non-goals, user benefits.
-2. **Kiến trúc & Luồng hoạt động (Architecture & Flow)**: Mermaid diagram, event loop.
+2. **Kiến trúc & Luồng hoạt động (Architecture & Flow)**: Mermaid sequence diagram, state machine.
 3. **Mô hình dữ liệu & API Contracts**: Structs, REST APIs, WebSocket schemas.
-4. **Quy tắc nghiệp vụ & Xử lý trường hợp biên (Domain Rules & Edge Cases)**: Full rules, illegal states.
-5. **Thiết kế Giao diện Người dùng (UI / UX)**: Component architecture, visual/audio feedback.
+4. **Quy tắc nghiệp vụ & Xử lý trường hợp biên (Domain Rules & Edge Cases)**: Full rules matrix, boundary handling.
+5. **Thiết kế Giao diện Người dùng (UI / UX)**: Component architecture, visual/audio feedback, responsive layout.
 6. **Tích hợp Bảng xếp hạng / Thống kê (Leaderboard & Stats)**: If applicable.
 7. **Kế hoạch triển khai từng bước (Step-by-Step Implementation Plan)**: Checkboxes for tracking progress.
+
+After creating a SPEC, update the index in `specs/README.md` if necessary.
 
 ### Step 6: User Alignment & Decision Points
 After creating the SPEC:
 - Do not paste the entire SPEC into the chat.
-- Create a clickable markdown link to the SPEC file: `[FEATURE_NAME_SPEC.md](file:///path/to/FEATURE_NAME_SPEC.md)`.
+- Create a clickable markdown link to the SPEC file: `[specs/<FEATURE_NAME>_SPEC.md](file:///Users/hoang.nguyen3/tidebird/chat/specs/<FEATURE_NAME>_SPEC.md)`.
 - Highlight **2-3 key architectural decisions or design choices** that need user confirmation (e.g., UI styles, rule interpretations, default settings) using direct questions or the `ask_question` tool.

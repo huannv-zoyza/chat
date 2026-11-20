@@ -2,6 +2,7 @@ import type {
   Channel,
   Embed,
   GameView,
+  LiveGameItem,
   Message,
   Poll,
   Reminder,
@@ -89,6 +90,8 @@ export type ChatState = {
   linkPrompt: LinkPrompt | null;
   /** channelId -> userId -> id tin đã xem tới (để hiện "đã xem"). */
   reads: Record<number, Record<number, number>>;
+  /** channelId -> danh sách các ván game đang hoạt động */
+  liveGames: Record<number, LiveGameItem[]>;
 };
 
 export function initialState(me: User): ChatState {
@@ -115,6 +118,7 @@ export function initialState(me: User): ChatState {
     ai: null,
     linkPrompt: null,
     reads: {},
+    liveGames: {},
   };
 }
 
@@ -161,6 +165,9 @@ export type Action =
   /** mine: phản hồi riêng cho mình (my_votes đầy đủ); không có: sự kiện chung, giữ my_votes cũ. */
   | { type: "poll.set"; messageId: number; poll: Poll; mine?: boolean }
   | { type: "game.set"; messageId: number; game: GameView }
+  | { type: "liveGames.loaded"; channelId: number; games: LiveGameItem[] }
+  | { type: "liveGames.upsert"; channelId: number; game: LiveGameItem }
+  | { type: "liveGames.remove"; channelId: number; messageId: number }
   | { type: "link.prompt"; prompt: LinkPrompt | null }
   | { type: "reaction.toggleLocal"; messageId: number; emoji: string }
   | { type: "reads.set"; channelId: number; reads: ReadState[] }
@@ -599,6 +606,49 @@ export function reducer(s: ChatState, a: Action): ChatState {
         reads,
         channels: c ? { ...s.channels, [c.id]: { ...c, member_count: Math.max(0, c.member_count - 1) } } : s.channels,
         members: list ? { ...s.members, [a.channelId]: list.filter((id) => id !== a.userId) } : s.members,
+      };
+    }
+
+    case "liveGames.loaded": {
+      return {
+        ...s,
+        liveGames: {
+          ...s.liveGames,
+          [a.channelId]: a.games,
+        },
+      };
+    }
+
+    case "liveGames.upsert": {
+      const list = s.liveGames[a.channelId] ?? [];
+      const idx = list.findIndex((g) => g.message_id === a.game.message_id);
+      let nextList: LiveGameItem[];
+      if (idx >= 0) {
+        nextList = [...list];
+        nextList[idx] = a.game;
+      } else {
+        nextList = [a.game, ...list];
+      }
+      return {
+        ...s,
+        liveGames: {
+          ...s.liveGames,
+          [a.channelId]: nextList,
+        },
+      };
+    }
+
+    case "liveGames.remove": {
+      const list = s.liveGames[a.channelId];
+      if (!list) return s;
+      const nextList = list.filter((g) => g.message_id !== a.messageId);
+      if (nextList.length === list.length) return s;
+      return {
+        ...s,
+        liveGames: {
+          ...s.liveGames,
+          [a.channelId]: nextList,
+        },
       };
     }
   }

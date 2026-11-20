@@ -87,6 +87,7 @@ export type ChessState = {
   last_move?: ChessMove;
   in_check: boolean;
   check_square?: string;
+  is_checkmate?: boolean;
   draw_offered: boolean;
   draw_offered_by?: number;
   legal_moves?: Record<string, string[]>;
@@ -111,6 +112,7 @@ export type XiangqiState = {
   last_move?: XiangqiMove;
   in_check: boolean;
   check_square?: string;
+  is_checkmate?: boolean;
   draw_offered: boolean;
   draw_offered_by?: number;
   legal_moves?: Record<string, string[]>;

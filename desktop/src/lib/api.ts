@@ -99,6 +99,22 @@ export type GameLeaderboard = {
   total_ended: number;
 };
 
+export type LiveGameItem = {
+  message_id: number;
+  channel_id: number;
+  kind: GameKind;
+  title: string;
+  status: "lobby" | "playing";
+  created_at: string;
+  host: PublicUser;
+  players: GamePlayer[];
+  turn_user_id?: number | null;
+  is_my_turn: boolean;
+  reply_count: number;
+  viewer_count: number;
+  game: GameView;
+};
+
 /** Ván chơi trong kênh, theo góc nhìn của mình (me: phần bí mật của riêng mình nếu mình đang chơi). */
 export type GameView<S = Record<string, unknown>, M = Record<string, unknown>> = {
   kind: GameKind;
@@ -370,6 +386,7 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     ) => request<Message>("POST", `/api/channels/${channelId}/polls`, b),
     createGame: (channelId: number, b: { kind: GameKind; options?: Record<string, unknown>; client_id: string }) =>
       request<Message>("POST", `/api/channels/${channelId}/games`, b),
+    liveGames: (channelId: number) => request<LiveGameItem[]>("GET", `/api/channels/${channelId}/live-games`),
     gameLeaderboard: (kind?: string) =>
       request<GameLeaderboard>("GET", `/api/games/leaderboard${kind ? `?kind=${encodeURIComponent(kind)}` : ""}`),
     gameAction: (messageId: number, action: string, data?: unknown) =>

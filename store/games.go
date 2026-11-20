@@ -86,6 +86,33 @@ func (s *Store) ActiveGames(ctx context.Context) ([]GameRow, error) {
 	return out, rows.Err()
 }
 
+// ActiveGamesByChannel trả về danh sách các ván game chưa kết thúc trong một kênh cụ thể.
+func (s *Store) ActiveGamesByChannel(ctx context.Context, channelID int64) ([]GameRow, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT g.message_id, m.channel_id, g.kind, g.state 
+		FROM games g 
+		JOIN messages m ON m.id = g.message_id
+		WHERE m.channel_id = ? 
+		  AND g.status IN ('lobby', 'playing') 
+		  AND m.deleted_at IS NULL
+		ORDER BY m.id DESC`, channelID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []GameRow
+	for rows.Next() {
+		var g GameRow
+		var state string
+		if err := rows.Scan(&g.MessageID, &g.ChannelID, &g.Kind, &state); err != nil {
+			return nil, err
+		}
+		g.State = []byte(state)
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}
+
 type MemberGameStats struct {
 	UserID      int64   `json:"user_id"`
 	Username    string  `json:"username"`

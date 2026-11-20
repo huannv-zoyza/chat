@@ -118,6 +118,7 @@ type ChatContextValue = {
   notifyTyping: (channelId: number) => void;
   loadOlder: (channelId: number) => Promise<void>;
   loadMembers: (channelId: number) => Promise<void>;
+  loadLiveGames: (channelId: number) => Promise<void>;
   reconnectNow: () => void;
   onLogout: () => void;
 };
@@ -369,6 +370,18 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
     [api],
   );
 
+  const loadLiveGames = useCallback(
+    async (channelId: number) => {
+      try {
+        const games = await api.liveGames(channelId);
+        dispatch({ type: "liveGames.loaded", channelId, games });
+      } catch (err) {
+        console.error("loadLiveGames:", err);
+      }
+    },
+    [api],
+  );
+
   // để các hành động gọi lẫn nhau (chuyển tiếp -> gửi tin) mà không phụ thuộc vòng
   const actionsRef = useRef<Omit<ChatContextValue, "state" | "calls" | "groupCalls"> | null>(null);
 
@@ -437,6 +450,9 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       sock.on("message.new", (ev) => {
         const viewing = isViewing(ev.message.channel_id);
         dispatch({ type: "message.new", message: ev.message, clientId: ev.client_id, countUnread: !viewing });
+        if (ev.message.embed?.type === "game") {
+          void loadLiveGames(ev.message.channel_id);
+        }
         if (viewing && ev.message.user_id !== stateRef.current.me.id) {
           sock.markRead(ev.message.channel_id, ev.message.id);
         }
@@ -444,7 +460,12 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
         playSoundForMessage(ev.message);
       }),
 
-      sock.on("message.updated", (ev) => dispatch({ type: "message.updated", message: ev.message })),
+      sock.on("message.updated", (ev) => {
+        dispatch({ type: "message.updated", message: ev.message });
+        if (ev.message.deleted_at) {
+          dispatch({ type: "liveGames.remove", channelId: ev.message.channel_id, messageId: ev.message.id });
+        }
+      }),
       sock.on("key.updated", (ev) => e2ee.onKeyUpdated(ev.user_id, ev.public_key)),
       sock.on("poll.updated", (ev) => dispatch({ type: "poll.set", messageId: ev.message_id, poll: ev.poll })),
       sock.on("game.map", (ev) => stationStore.onMap(ev.message_id, ev.map)),
@@ -453,6 +474,29 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
         const s = stateRef.current;
         const prev = findMessage(s, ev.message_id)?.game;
         dispatch({ type: "game.set", messageId: ev.message_id, game: ev.game });
+
+        if (ev.game.status === "ended") {
+          dispatch({ type: "liveGames.remove", channelId: ev.channel_id, messageId: ev.message_id });
+        } else {
+          const existing = s.liveGames[ev.channel_id]?.find((g) => g.message_id === ev.message_id);
+          if (existing) {
+            const isMyTurn = myTurn(ev.game, s.me.id) !== null;
+            dispatch({
+              type: "liveGames.upsert",
+              channelId: ev.channel_id,
+              game: {
+                ...existing,
+                status: ev.game.status === "playing" ? "playing" : "lobby",
+                players: ev.game.players,
+                is_my_turn: isMyTurn,
+                game: ev.game,
+              },
+            });
+          } else {
+            void loadLiveGames(ev.channel_id);
+          }
+        }
+
         // Trạm Vũ Trụ vừa bắt đầu mà mình có chơi: mở luôn màn hình chơi
         if (
           ev.game.kind === "station" &&
@@ -836,9 +880,11 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
         dispatch({ type: "members.loaded", channelId, members });
       },
 
+      loadLiveGames,
+
       reconnectNow: () => socketRef.current?.reconnectNow(),
     }),
-    [api, serverUrl, onLogout, deliver, loadThread, loadOlder, loadLatest, refreshChannels],
+    [api, serverUrl, onLogout, deliver, loadThread, loadOlder, loadLiveGames, loadLatest, refreshChannels],
   );
 
   actionsRef.current = actions;

@@ -97,6 +97,7 @@ func (a *API) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("GET /api/channels/{id}/pins", a.requireAuth(a.listPins))
 	mux.HandleFunc("GET /api/search", a.requireAuth(a.search))
 	mux.HandleFunc("POST /api/messages/{id}/votes", a.requireAuth(a.vote))
+	mux.HandleFunc("GET /api/channels/{id}/live-games", a.requireAuth(a.listLiveGames))
 	mux.HandleFunc("POST /api/channels/{id}/games", a.requireAuth(a.createGame))
 	mux.HandleFunc("GET /api/games/leaderboard", a.requireAuth(a.gameLeaderboard))
 	mux.HandleFunc("POST /api/messages/{id}/game", a.requireAuth(a.gameAction))

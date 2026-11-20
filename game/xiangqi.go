@@ -808,6 +808,7 @@ type xiangqiPublic struct {
 	LastMove      *xiangqiMove        `json:"last_move,omitempty"`
 	InCheck       bool                `json:"in_check"`
 	CheckSquare   string              `json:"check_square,omitempty"`
+	IsCheckmate   bool                `json:"is_checkmate,omitempty"`
 	DrawOffered   bool                `json:"draw_offered"`
 	DrawOfferedBy int64               `json:"draw_offered_by,omitempty"`
 	LegalMoves    map[string][]string `json:"legal_moves,omitempty"` // from -> []to
@@ -831,6 +832,8 @@ func (x *xiangqi) view(viewer int64) (any, any) {
 			}
 		}
 	}
+
+	isCheckmate := x.Status == Ended && strings.Contains(x.Result, "Chiếu bí")
 
 	// Đếm quân bị ăn so với quân xuất phát chuẩn
 	initialCount := map[string]int{
@@ -857,6 +860,7 @@ func (x *xiangqi) view(viewer int64) (any, any) {
 		TurnColor:     string(x.TurnColor),
 		InCheck:       inCheck,
 		CheckSquare:   checkSquare,
+		IsCheckmate:   isCheckmate,
 		LastMove:      x.LastMove,
 		DrawOffered:   x.DrawOfferedBy != 0,
 		DrawOfferedBy: x.DrawOfferedBy,

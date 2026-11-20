@@ -7974,3 +7974,437 @@ button.game-player:disabled {
 .xiangqi-piece:hover {
   transform: scale(1.06);
 }
+
+/* Hiệu ứng Chiếu bí & Kết thúc trận đấu (Checkmate & Victory Effects) */
+@keyframes xqCheckmateGlow {
+  0% {
+    r: 22px;
+    opacity: 0.85;
+    stroke-width: 3px;
+  }
+  50% {
+    r: 28px;
+    opacity: 0.3;
+    stroke-width: 5px;
+  }
+  100% {
+    r: 22px;
+    opacity: 0.85;
+    stroke-width: 3px;
+  }
+}
+.xiangqi-checkmate-ring {
+  animation: xqCheckmateGlow 1s infinite cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+@keyframes xqVictoryPop {
+  0% {
+    opacity: 0;
+    transform: scale(0.85) translateY(12px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.03) translateY(-2px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+.xiangqi-victory-overlay {
+  animation: xqVictoryPop 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 90%;
+  max-width: 360px;
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 2px solid #eab308;
+  border-radius: 14px;
+  padding: 1.25rem 1rem;
+  color: #f8fafc;
+  box-shadow: 0 15px 35px -5px rgba(0, 0, 0, 0.65), 0 0 25px rgba(234, 179, 8, 0.35);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.75rem;
+}
+
+@keyframes xqGoldShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.xiangqi-winner-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  background: linear-gradient(90deg, #f59e0b, #fef08a, #f59e0b);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: xqGoldShimmer 2.5s linear infinite;
+  text-transform: uppercase;
+}
+
+.xiangqi-board-wrapper {
+  position: relative;
+  display: inline-block;
+  user-select: none;
+}
+
+.xiangqi-confetti-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 25;
+}
+
+/* Thanh Khán giả & Bình luận (Game Spectator & Viewer Thread) */
+.game-spectator-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 0.65rem;
+  margin-top: 0.5rem;
+  background: var(--bg-secondary, #f1f5f9);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 8px;
+  font-size: var(--step--1);
+  gap: 0.5rem;
+}
+.game-spectator-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.game-spectator-count {
+  font-weight: 500;
+  color: var(--fg-muted, #64748b);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.game-viewer-avatars {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.25rem;
+}
+.game-viewer-avatars .avatar {
+  margin-left: -6px;
+  border: 2px solid var(--bg, #ffffff);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+.game-viewer-avatars .avatar:first-child {
+  margin-left: 0;
+}
+
+/* Huy hiệu vai trò trong luồng game (Viewer vs Player vs Host) */
+.game-role-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.08rem 0.38rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  margin-left: 0.35rem;
+  vertical-align: middle;
+  line-height: 1.2;
+  user-select: none;
+}
+.game-role-badge.is-viewer {
+  background: #e0e7ff;
+  color: #4338ca;
+  border: 1px solid #c7d2fe;
+}
+.game-role-badge.is-player {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+.game-role-badge.is-player-red {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+}
+.game-role-badge.is-player-black {
+  background: #334155;
+  color: #f8fafc;
+  border: 1px solid #475569;
+}
+.game-role-badge.is-player-white {
+  background: #f1f5f9;
+  color: #0f172a;
+  border: 1px solid #cbd5e1;
+}
+.game-role-badge.is-host {
+  background: #fef9c3;
+  color: #854d0e;
+  border: 1px solid #fef08a;
+}
+
+/* Thanh cổ vũ nhanh (Quick Cheering Chips) trong Khán đài */
+.game-cheering-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.6rem;
+  overflow-x: auto;
+  background: var(--bg-secondary, #f8fafc);
+  border-top: 1px solid var(--border, #e2e8f0);
+  scrollbar-width: none;
+}
+.game-cheering-bar::-webkit-scrollbar {
+  display: none;
+}
+.game-cheer-chip {
+  flex-shrink: 0;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.75rem;
+  border-radius: 9999px;
+  background: var(--bg, #ffffff);
+  border: 1px solid var(--border, #cbd5e1);
+  color: var(--fg, #1e293b);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.game-cheer-chip:hover {
+  background: var(--primary-light, #eff6ff);
+  border-color: var(--primary, #3b82f6);
+  color: var(--primary, #1d4ed8);
+  transform: translateY(-1px);
+}
+.game-cheer-chip:active {
+  transform: translateY(0);
+}
+
+/* ---------- Highlight Game Card when Jumped ---------- */
+.msg.is-highlight .game-card {
+  box-shadow: 0 0 0 2px var(--signal), 0 0 24px color-mix(in srgb, var(--signal) 45%, transparent);
+  border-color: var(--signal);
+  transform: translateY(-1px);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ---------- LIVE GAMES TOPBAR ---------- */
+.live-games-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.4rem 0.85rem;
+  background: color-mix(in srgb, var(--canvas) 92%, var(--ink));
+  border-bottom: 1px solid var(--line);
+  position: relative;
+  z-index: 5;
+  min-height: 48px;
+}
+
+.live-games-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  font-size: var(--step--2);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  user-select: none;
+}
+
+.live-games-label-icon {
+  font-size: 1rem;
+}
+
+.live-games-scroll {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 2px;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+  flex: 1;
+}
+
+.live-games-scroll::-webkit-scrollbar {
+  height: 4px;
+}
+.live-games-scroll::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 9999px;
+}
+
+.live-game-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.35rem 0.75rem;
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: 9999px;
+  cursor: pointer;
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--step--1);
+  text-align: left;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+  user-select: none;
+}
+
+.live-game-chip:hover {
+  transform: translateY(-1.5px);
+  border-color: var(--signal);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--signal) 15%, transparent);
+}
+
+.live-game-chip:active {
+  transform: translateY(0);
+}
+
+.live-game-chip.is-my-turn {
+  border-color: #f59e0b;
+  background: color-mix(in srgb, #f59e0b 8%, var(--canvas));
+  box-shadow: 0 0 0 1px #f59e0b, 0 2px 10px rgba(245, 158, 11, 0.2);
+}
+
+.live-game-chip.is-jumping {
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.live-game-icon {
+  font-size: 1.15rem;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+}
+
+.live-game-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.live-game-header {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  line-height: 1.2;
+}
+
+.live-game-title {
+  font-size: var(--step--1);
+  font-weight: 700;
+  color: var(--text);
+}
+
+.live-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.live-status-dot.dot-playing {
+  background-color: #ef4444;
+  box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  animation: live-pulse 2s infinite;
+}
+
+.live-status-dot.dot-lobby {
+  background-color: #f59e0b;
+}
+
+@keyframes live-pulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 5px rgba(239, 68, 68, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+.live-status-text {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.live-game-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  line-height: 1.1;
+}
+
+.live-game-players {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-turn-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.35rem;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.68rem;
+  font-weight: 700;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.live-jump-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-left: 0.2rem;
+}
+
+.live-spinner {
+  animation: spin 1s linear infinite;
+  color: var(--signal);
+}
+
+@media (max-width: 640px) {
+  .live-games-bar {
+    padding: 0.3rem 0.5rem;
+    min-height: 42px;
+  }
+  .live-games-label {
+    display: none;
+  }
+  .live-game-chip {
+    padding: 0.25rem 0.55rem;
+    gap: 0.4rem;
+  }
+  .live-game-players {
+    max-width: 100px;
+  }
+}

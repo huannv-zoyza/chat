@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import type { Attachment, Channel, Message } from "../lib/api";
 import { channelMessages, type PendingMessage } from "../state/chat";
 import { useChat } from "../state/ChatProvider";
@@ -26,6 +26,7 @@ import { GameCard } from "./Games";
 import { AIText, isAIUser } from "./AI";
 import { CallButtons } from "./CallOverlay";
 import { GroupCallBanner, GroupCallButtons } from "./GroupCall";
+import { LiveGamesBar } from "./LiveGamesBar";
 import { PinsDialog, QuoteBlock, previewText } from "./MessageExtras";
 import { ShareDialog } from "./Share";
 import { findMessage } from "../state/chat";
@@ -201,6 +202,7 @@ export function ChannelView({ channel, membersOpen, onToggleMembers, onOpenSetti
       )}
 
       {!direct && <GroupCallBanner channel={channel} />}
+      <LiveGamesBar channelId={channel.id} />
       <MessageList channel={channel} />
       <TypingIndicator channelId={channel.id} />
       {direct && <E2EEBanner channel={channel} />}
@@ -524,10 +526,12 @@ type RowProps = {
   message?: Message;
   /** Có ở dòng chính: mở luồng trả lời của tin này. */
   onOpenThread?: () => void;
+  /** Huy hiệu vai trò bổ sung (ví dụ: Khán giả, Kỳ thủ...). */
+  roleBadge?: ReactNode;
 };
 
 export function MessageRow(props: RowProps) {
-  const { mine, mentioned, grouped, name, avatarUser, time, content, attachments, pending, message } = props;
+  const { mine, mentioned, grouped, name, avatarUser, time, content, attachments, pending, message, roleBadge } = props;
   const { state, dispatch, setReply, pinMessage } = useChat();
   const compact = useMediaQuery(COMPACT_QUERY);
   const [pickerAnchor, setPickerAnchor] = useState<HTMLElement | null>(null);
@@ -611,6 +615,7 @@ export function MessageRow(props: RowProps) {
             <span className="msg-user" style={{ color: avatarUser ? `var(--u${(avatarUser.id % 6) + 1})` : undefined }}>
               {name}
               {isAIUser(avatarUser) && <span className="bot-tag">AI</span>}
+              {roleBadge}
             </span>
             <time className="msg-time" dateTime={time} title={formatFull(time)}>
               {formatTime(time)}

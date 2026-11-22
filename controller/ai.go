@@ -41,7 +41,11 @@ var aiMentionRe = regexp.MustCompile(`(?i)(^|[^\p{L}\p{N}_.@])@ai\b`)
 
 // Yêu cầu vẽ: "@ai vẽ …", "@ai tạo ảnh …", "@ai /img …", "@ai draw …"; thêm --ngang / --doc để đổi khung.
 // (\b của Go chỉ hiểu chữ ASCII nên sau từ khoá phải là khoảng trắng / dấu câu / hết chuỗi.)
-var aiDrawRe = regexp.MustCompile(`(?is)^\s*(?:/(?:ve|vẽ|img|anh|ảnh|image)|vẽ|ve|tạo\s+ảnh|tao\s+anh|tạo\s+hình|draw|generate\s+(?:an?\s+)?image(?:\s+of)?)(?:[\s:,-]+|$)(.*)$`)
+var aiDrawRe = regexp.MustCompile(`(?is)^\s*(?:/(?:ve|vẽ|img|anh|ảnh|image)|vẽ|ve|gen\s*(?:ảnh|anh|hình|hinh|image)?|tạo\s+(?:ảnh|hình)|tao\s+(?:anh|hinh)|làm\s+ảnh|lam\s+anh|draw|generate\s+(?:an?\s+)?image(?:\s+of)?)(?:[\s:,-]+|$)(.*)$`)
+
+// aiLeadURLRe: người ta hay dán link ảnh trước rồi mới nhờ vẽ ("@ai <link> hãy gen ảnh …").
+// Bỏ các URL đứng đầu đi rồi mới so khớp ý định, chứ không nới neo ^ (nới ra là "ai vẽ bìa?" cũng thành lệnh vẽ).
+var aiLeadURLRe = regexp.MustCompile(`^\s*(?:https?://\S+\s*)+`)
 
 // Có ảnh gốc kèm theo: các lời nhờ sửa / vẽ lại ảnh ("@ai biến ảnh này thành …", "@ai cho nhân vật này đội mũ").
 var aiEditRe = regexp.MustCompile(`(?i)^\s*(?:biến|chuyển|sửa|chỉnh|đổi|làm|thêm|xoá|xóa|bỏ|cho|vẽ\s+lại|tạo\s+lại|phong\s+cách|style|make|turn|edit|redraw)(?:[\s:,-]|$)`)
@@ -158,11 +162,12 @@ func (a *API) answerAI(q model.Message, asker model.User) {
 	text := strings.TrimSpace(aiMentionRe.ReplaceAllString(q.Content, "$1"))
 	refs := a.aiRefs(ctx, q)
 
-	if m := aiDrawRe.FindStringSubmatch(text); m != nil {
+	intent := aiLeadURLRe.ReplaceAllString(text, "")
+	if m := aiDrawRe.FindStringSubmatch(intent); m != nil {
 		a.drawAI(ctx, ch, q, asker, m[1], refs, reply)
 		return
 	}
-	if len(refs) > 0 && aiEditRe.MatchString(text) {
+	if len(refs) > 0 && aiEditRe.MatchString(intent) {
 		a.drawAI(ctx, ch, q, asker, text, refs, reply)
 		return
 	}
@@ -225,6 +230,11 @@ func (a *API) answerAI(q model.Message, asker model.User) {
 		}
 		answer += "\n\n_— " + source + "_"
 		log.Printf("ai: trả lời %s ở kênh %d bằng %s/%s (%s, agent=%v)", asker.Username, ch.ID, res.Provider, res.Model, got, ok)
+	}
+	// Muse vừa viết vừa vẽ được: ảnh sinh ra ngay trong lượt trả lời thì đính vào tin luôn.
+	// Các model API thuần không bao giờ điền res.Images nên nhánh này không ảnh hưởng gì tới chúng.
+	if n := a.attachAIImages(ctx, m, res.Images, text); n > 0 {
+		log.Printf("ai: đính %d ảnh %s tự vẽ vào tin ở kênh %d", n, res.Provider, ch.ID)
 	}
 	a.finishAI(ctx, m, clip(answer))
 	go a.compactMemory(ch) // kênh dài ra: gộp tin cũ vào trí nhớ (chạy nền, không bắt người hỏi đợi)
@@ -494,3 +504,34 @@ var slugBase = func() map[rune]rune {
 	}
 	return m
 }()
+
+// attachAIImages lưu các ảnh nhà cung cấp tự sinh ra rồi gắn vào tin trả lời của bot.
+// Trả về số ảnh đã gắn. Lỗi của một ảnh không làm hỏng câu trả lời.
+func (a *API) attachAIImages(ctx context.Context, m model.Message, imgs []ai.Ref, prompt string) int {
+	if len(imgs) == 0 {
+		return 0
+	}
+	if len(imgs) > maxAIRefs {
+		imgs = imgs[:maxAIRefs]
+	}
+	var atts []model.Attachment
+	for _, im := range imgs {
+		att, err := a.saveBytes(im.Data, "ai-"+fileSlug(prompt))
+		if err != nil {
+			log.Printf("ai image save: %v", err)
+			continue
+		}
+		atts = append(atts, att)
+	}
+	if len(atts) == 0 {
+		return 0
+	}
+	if err := a.store.AddAttachments(ctx, m.ID, atts); err != nil {
+		for _, at := range atts {
+			a.removeUpload(at.StorageKey)
+		}
+		log.Printf("ai image attach: %v", err)
+		return 0
+	}
+	return len(atts)
+}

@@ -347,14 +347,21 @@ func TestAIRedrawFromImage(t *testing.T) {
 		t.Fatalf("edit requests: %v", edits)
 	}
 
-	// 3. có ảnh nhưng chỉ hỏi (không nhờ sửa): trả lời bằng chữ, báo là không xem được ảnh
+	// 3. có ảnh nhưng chỉ hỏi (không nhờ sửa): model đọc được ảnh thì nhận thẳng ảnh,
+	// không cần một lượt riêng mô tả hộ nữa.
 	e.upload(ch.ID, alice.Token, "@ai đây là ai?", "u3", upFile{"x.png", src})
 	nextMsg(t, wa, "message.updated", func(m wsMsg) bool { return m.UserID == botID && strings.Contains(m.Content, "fake-1") })
 	f.mu.Lock()
-	lastAsk := f.asks[len(f.asks)-1]
+	lastAsk, lastSys := f.asks[len(f.asks)-1], f.systems[len(f.systems)-1]
 	f.mu.Unlock()
-	if !strings.Contains(lastAsk, "Ảnh x.png: Một hình chữ nhật đỏ nhỏ") {
+	if !strings.Contains(lastAsk, "ảnh gửi kèm câu hỏi, bạn xem trực tiếp") {
 		t.Fatalf("ask with image: %q", lastAsk)
+	}
+	if !strings.Contains(lastSys, "Bạn nhìn thấy trực tiếp ảnh gửi kèm") {
+		t.Fatalf("prompt phải nói model nhìn thấy ảnh: %q", lastSys[max(0, len(lastSys)-200):])
+	}
+	if strings.Contains(lastAsk, "chưa xem được") {
+		t.Fatalf("không được báo chưa xem được khi model nhìn được: %q", lastAsk)
 	}
 }
 

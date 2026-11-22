@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -184,6 +185,18 @@ func Groq(key, model string) *Provider {
 	}
 }
 
+// Muse: tài khoản Muse (Meta) qua cầu nối cục bộ trong cùng tiến trình (xem package muse).
+// baseURL do muse.StartLoopback cấp lúc chạy, key là khoá ngẫu nhiên của lần chạy đó.
+// Đặt cuối chuỗi: một lượt phải đánh thức máy ảo nên chậm hơn hẳn các bên khác.
+func Muse(baseURL, key string) *Provider {
+	return &Provider{
+		Name: "muse", BaseURL: baseURL, Key: key, Model: "muse",
+		// Cầu nối dịch `tools` thành giao thức JSON trong prompt rồi đọc ngược thành tool_calls
+		// (muse/tools.go), nên Muse chạy được agent — chỉ chậm hơn vì mỗi vòng là một lượt Muse.
+		Vision: true, // nhận ảnh đính kèm: cầu nối đổi image_url (data URI) thành mục ảnh của Muse
+	}
+}
+
 func OpenRouter(key, model string) *Provider {
 	if model == "" {
 		model = "openrouter/free" // bộ định tuyến tự chọn một model miễn phí đang chạy
@@ -235,6 +248,9 @@ func (c *Chat) Names() []string {
 type Result struct {
 	Provider string
 	Model    string
+	// Images: ảnh nhà cung cấp tự sinh ra ngay trong lượt trả lời (Muse vừa viết vừa vẽ được).
+	// Các model API thuần không bao giờ điền trường này.
+	Images []Ref
 }
 
 // Stream gửi hội thoại, gọi onDelta cho từng đoạn chữ. Bên đầu tiên lỗi trước khi trả chữ nào
@@ -253,9 +269,18 @@ func (c *Chat) StreamTools(ctx context.Context, msgs []Message, tools []Tool, on
 		b, _ := json.Marshal(tools)
 		need += len(b) / 3
 	}
+	// Tin có ảnh thì chỉ bên nào đọc được ảnh mới nhận; gửi image_url cho model mù
+	// là chắc chắn hỏng hoặc bị bỏ qua âm thầm.
+	hasImages := false
+	for _, m := range msgs {
+		if len(m.Images) > 0 {
+			hasImages = true
+			break
+		}
+	}
 	usable := make([]*Provider, 0, len(c.Providers))
 	for _, p := range c.Providers {
-		if (len(tools) == 0 || !p.NoTools) && !p.paused() {
+		if (len(tools) == 0 || !p.NoTools) && (!hasImages || p.Vision) && !p.paused() {
 			usable = append(usable, p)
 		}
 	}
@@ -270,16 +295,21 @@ func (c *Chat) StreamTools(ctx context.Context, msgs []Message, tools []Tool, on
 			got = true
 			onDelta(s)
 		}
-		model, calls, err := c.streamOne(ctx, p, msgs, tools, emit)
+		// Bên nào có model riêng cho ảnh thì dùng model đó cho lượt có ảnh (giống Describe).
+		use := p
+		if hasImages && p.VisionModel != "" {
+			use = &Provider{Name: p.Name, BaseURL: p.BaseURL, Key: p.Key, Model: p.VisionModel, Header: p.Header}
+		}
+		model, calls, imgs, err := c.streamOne(ctx, use, msgs, tools, emit)
 		// quá tải / giới hạn tốc độ: đợi rồi thử lại bên này một lần nữa
 		if d, ok := retryWait(err, 15*time.Second); ok && !got && sleepCtx(ctx, d) {
-			model, calls, err = c.streamOne(ctx, p, msgs, tools, emit)
+			model, calls, imgs, err = c.streamOne(ctx, use, msgs, tools, emit)
 		}
 		if err == nil {
 			if len(errs) > 0 {
 				log.Printf("ai: bỏ qua %s", strings.Join(errs, "; "))
 			}
-			return Result{Provider: p.Name, Model: model}, calls, nil
+			return Result{Provider: p.Name, Model: model, Images: imgs}, calls, nil
 		}
 		if got || ctx.Err() != nil {
 			return Result{Provider: p.Name, Model: model}, nil, err
@@ -314,10 +344,10 @@ type apiError struct {
 	} `json:"error"`
 }
 
-func (c *Chat) streamOne(ctx context.Context, p *Provider, msgs []Message, tools []Tool, onDelta func(string)) (string, []ToolCall, error) {
+func (c *Chat) streamOne(ctx context.Context, p *Provider, msgs []Message, tools []Tool, onDelta func(string)) (string, []ToolCall, []Ref, error) {
 	model, err := c.model(ctx, p)
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 	reqBody := map[string]any{
 		"model": model, "messages": msgs, "stream": true, "max_tokens": c.MaxTokens, "temperature": 0.6,
@@ -328,17 +358,18 @@ func (c *Chat) streamOne(ctx context.Context, p *Provider, msgs []Message, tools
 	body, _ := json.Marshal(reqBody)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.BaseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return model, nil, err
+		return model, nil, nil, err
 	}
+	var imgs []Ref
 	p.headers(req)
 	req.Header.Set("Accept", "text/event-stream")
 	res, err := c.HTTP.Do(req)
 	if err != nil {
-		return model, nil, err
+		return model, nil, nil, err
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return model, nil, readError(res)
+		return model, nil, nil, readError(res)
 	}
 	// lệnh gọi công cụ đến từng mảnh theo index: gom lại
 	var calls []ToolCall
@@ -407,7 +438,7 @@ func (c *Chat) streamOne(ctx context.Context, p *Provider, msgs []Message, tools
 		data = strings.TrimSpace(data)
 		if data == "[DONE]" {
 			flush()
-			return model, finish(), nil
+			return model, finish(), imgs, nil
 		}
 		var chunk struct {
 			Model   string `json:"model"`
@@ -425,21 +456,37 @@ func (c *Chat) streamOne(ctx context.Context, p *Provider, msgs []Message, tools
 				} `json:"delta"`
 				FinishReason string `json:"finish_reason"`
 			} `json:"choices"`
+			// Muse: phần mở rộng ngoài chuẩn OpenAI — ảnh nhà cung cấp sinh ra trong lượt này.
+			Muse struct {
+				Images []struct {
+					Mime string `json:"mime"`
+					B64  string `json:"b64"`
+				} `json:"images"`
+			} `json:"muse"`
 			apiError
 		}
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue
 		}
 		if chunk.Error != nil {
-			return model, nil, errors.New(chunk.Error.Message)
+			return model, nil, nil, errors.New(chunk.Error.Message)
 		}
 		if chunk.Model != "" {
 			model = chunk.Model
 		}
+		for _, im := range chunk.Muse.Images {
+			if b, err := base64.StdEncoding.DecodeString(im.B64); err == nil && len(b) > 0 {
+				mime := im.Mime
+				if mime == "" {
+					mime = "image/png"
+				}
+				imgs = append(imgs, Ref{Data: b, Type: mime})
+			}
+		}
 		for _, ch := range chunk.Choices {
 			if ch.Delta.Content != "" {
 				if err := emit(ch.Delta.Content); err != nil {
-					return model, nil, err
+					return model, nil, nil, err
 				}
 			}
 			for j, tc := range ch.Delta.ToolCalls {
@@ -453,10 +500,10 @@ func (c *Chat) streamOne(ctx context.Context, p *Provider, msgs []Message, tools
 	}
 	if err := sc.Err(); err != nil {
 		flush()
-		return model, nil, err
+		return model, nil, nil, err
 	}
 	flush()
-	return model, finish(), nil
+	return model, finish(), imgs, nil
 }
 
 // creditHold: số byte đầu giữ lại để nhận ra thông báo hết tiền (thông báo dài ~300 byte,
@@ -675,7 +722,7 @@ func (c *Chat) Describe(ctx context.Context, prompt string, refs []Ref) (string,
 		}
 		vp := &Provider{Name: p.Name, BaseURL: p.BaseURL, Key: p.Key, Model: model, Header: p.Header}
 		var b strings.Builder
-		model, _, err := c.streamOne(ctx, vp, []Message{{Role: "user", Content: prompt, Images: refs}}, nil, func(s string) { b.WriteString(s) })
+		model, _, _, err := c.streamOne(ctx, vp, []Message{{Role: "user", Content: prompt, Images: refs}}, nil, func(s string) { b.WriteString(s) })
 		if err == nil && strings.TrimSpace(b.String()) != "" {
 			return strings.TrimSpace(b.String()), Result{Provider: p.Name, Model: model}, nil
 		}

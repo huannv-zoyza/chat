@@ -4,6 +4,8 @@ import (
 	"chat/ai"
 	"chat/controller"
 	"chat/database"
+	"chat/env"
+	"chat/muse"
 	"chat/rtc"
 	"chat/socket"
 	"chat/store"
@@ -25,6 +27,12 @@ import (
 )
 
 func main() {
+	// Nạp .env trước tiên: các flag bên dưới lấy giá trị mặc định từ biến môi trường,
+	// mà mặc định của flag được tính ngay lúc khai báo chứ không phải lúc Parse.
+	if p, err := env.LoadDefault(); err != nil {
+		log.Printf("đọc %s: %v", p, err)
+	}
+
 	addr := flag.String("addr", ":4000", "địa chỉ HTTP server lắng nghe, ví dụ :8080")
 	// localhost / tauri.localhost: origin của app desktop Tauri sau khi build
 	// (tauri://localhost trên Linux/macOS, http://tauri.localhost trên Windows).
@@ -100,6 +108,51 @@ func main() {
 	// Trợ lý AI: nhà cung cấp nào có key thì dùng (xem ai/config.go), Pollinations miễn phí làm dự phòng.
 	aiChat, aiImages := ai.FromEnv(os.Getenv)
 	aiSearch := ai.SearchFromEnv(os.Getenv)
+	// Muse: có MUSE_COOKIE thì dựng cầu nối nội bộ và nối vào cuối chuỗi nhà cung cấp.
+	if cookie := os.Getenv("MUSE_COOKIE"); cookie != "" {
+		if mc, err := muse.New(muse.Config{
+			Cookie:     cookie,
+			Origin:     os.Getenv("MUSE_ORIGIN"),
+			GatewayURL: os.Getenv("MUSE_GATEWAY"),
+			UserAgent:  os.Getenv("MUSE_UA"),
+			ProxyURL:   os.Getenv("MUSE_PROXY"),
+		}); err != nil {
+			log.Printf("Muse tắt: %v", err)
+		} else if lb, err := muse.StartLoopback(mc); err != nil {
+			mc.Close()
+			log.Printf("Muse tắt: %v", err)
+		} else {
+			defer lb.Close()
+			defer mc.Close()
+			// Mặc định Muse đứng ĐẦU cả hai chuỗi: nó làm được cả chữ lẫn ảnh, nên để nó
+			// nhận việc trước, các bên khác lùi về làm dự phòng. MUSE_ORDER=last để đảo lại.
+			last := strings.EqualFold(os.Getenv("MUSE_ORDER"), "last")
+			if aiChat == nil {
+				aiChat = ai.NewChat()
+			}
+			cp := ai.Muse(lb.BaseURL, lb.Key)
+			if last {
+				aiChat.Providers = append(aiChat.Providers, cp)
+			} else {
+				aiChat.Providers = append([]*ai.Provider{cp}, aiChat.Providers...)
+			}
+			if aiImages == nil {
+				aiImages = &ai.Images{}
+			}
+			var ip ai.ImageProvider = museEditor{muse.NewImageProvider(mc)}
+			if last {
+				aiImages.Providers = append(aiImages.Providers, ip)
+			} else {
+				aiImages.Providers = append([]ai.ImageProvider{ip}, aiImages.Providers...)
+			}
+			where := "đầu chuỗi"
+			if last {
+				where = "cuối chuỗi"
+			}
+			log.Printf("Muse bật: cầu nối nội bộ tại %s (chỉ loopback), đứng %s cho cả chat và vẽ ảnh", lb.BaseURL, where)
+		}
+	}
+
 	if err := api.SetAI(ctx, aiChat, aiImages, aiSearch); err != nil {
 		log.Printf("AI tắt: %v", err)
 	} else if aiChat != nil || aiImages != nil {

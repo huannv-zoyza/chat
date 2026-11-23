@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Attachment, Channel } from "../lib/api";
 import { displayName } from "../lib/format";
 import { useChat } from "../state/ChatProvider";
-import { buildRows, MessageRow } from "./ChannelView";
+import { buildRows, MessageRow, TypingIndicator } from "./ChannelView";
 import { Composer } from "./Composer";
 import { ImageViewer } from "./MessageParts";
 import { Icon } from "./ui";
@@ -209,6 +209,7 @@ export function ThreadPanel({ channel, parentId, onClose }: Props) {
         </div>
       )}
 
+      <TypingIndicator channelId={channel.id} parentId={parentId} />
       {parent && <Composer channel={channel} parentId={parentId} />}
       {viewing && <ImageViewer attachment={viewing} onClose={() => setViewing(null)} />}
     </aside>

@@ -29,7 +29,7 @@ import { GroupCallBanner, GroupCallButtons } from "./GroupCall";
 import { LiveGamesBar } from "./LiveGamesBar";
 import { PinsDialog, QuoteBlock, previewText } from "./MessageExtras";
 import { ShareDialog } from "./Share";
-import { findMessage } from "../state/chat";
+import { findMessage, typingKey } from "../state/chat";
 import { RemindDialog } from "./Reminders";
 import { EncryptedAttachments } from "./EncryptedAttachments";
 import { E2EEBanner, SafetyDialog, useDMEncryption } from "./E2EEDialogs";
@@ -783,9 +783,10 @@ function DMIntro({ channel }: { channel: Channel }) {
 
 /* ---------- Đang gõ ---------- */
 
-function TypingIndicator({ channelId }: { channelId: number }) {
+/** Ai đang gõ ở dòng chính của kênh, hoặc trong một luồng nếu truyền parentId. */
+export function TypingIndicator({ channelId, parentId }: { channelId: number; parentId?: number }) {
   const { state } = useChat();
-  const ids = Object.keys(state.typing[channelId] ?? {}).map(Number);
+  const ids = Object.keys(state.typing[typingKey(channelId, parentId)] ?? {}).map(Number);
   const names = ids.map((id) => displayName(state.users[id]));
 
   let text = "";

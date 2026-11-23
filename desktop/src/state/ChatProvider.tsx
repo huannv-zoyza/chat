@@ -44,6 +44,7 @@ import {
   findMessage,
   initialState,
   reducer,
+  typingKey,
 } from "./chat";
 
 const TYPING_TTL_MS = 6_000;
@@ -560,7 +561,13 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       sock.onSendFailed((clientId, reason) => dispatch({ type: "pending.failed", clientId, error: reason })),
 
       sock.on("typing", (ev) =>
-        dispatch({ type: "typing", channelId: ev.channel_id, userId: ev.user_id, until: Date.now() + TYPING_TTL_MS }),
+        dispatch({
+          type: "typing",
+          channelId: ev.channel_id,
+          parentId: ev.parent_id,
+          userId: ev.user_id,
+          until: Date.now() + TYPING_TTL_MS,
+        }),
       ),
       sock.on("presence", (ev) => dispatch({ type: "presence", userId: ev.user_id, online: ev.online })),
       sock.on("user.updated", (ev) => {
@@ -661,7 +668,7 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
         };
         dispatch({ type: "pending.add", pending: p });
         void deliver(p);
-        lastTypingSent.current[channelId] = 0;
+        lastTypingSent.current[typingKey(channelId, parentId)] = 0;
       },
 
       sendEmbed: (channelId, embed, parentId, extra) => {
@@ -785,7 +792,7 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       },
 
       notifyTyping: (channelId, parentId) => {
-        const key = parentId ? `${channelId}_${parentId}` : `${channelId}`;
+        const key = typingKey(channelId, parentId);
         const now = Date.now();
         if (now - (lastTypingSent.current[key] ?? 0) < TYPING_THROTTLE_MS) return;
         lastTypingSent.current[key] = now;

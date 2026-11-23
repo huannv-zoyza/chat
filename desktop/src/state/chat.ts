@@ -65,8 +65,9 @@ export type ChatState = {
   pending: PendingMessage[];
   users: Record<number, PublicUser>;
   online: Record<number, true>;
-  /** channelId -> userId -> thời điểm hết hiệu lực (ms) */
-  typing: Record<number, Record<number, number>>;
+  /** typingKey(channelId, parentId) -> userId -> thời điểm hết hiệu lực (ms).
+   *  Gõ ở dòng chính và gõ trong từng luồng được tách riêng. */
+  typing: Record<string, Record<number, number>>;
   /** channelId -> danh sách userId (chỉ có khi đã mở panel thành viên) */
   members: Record<number, number[]>;
   /** parentId -> luồng đã tải */
@@ -155,7 +156,7 @@ export type Action =
   | { type: "pending.retry"; clientId: string }
   | { type: "pending.progress"; clientId: string; progress: number }
   | { type: "pending.remove"; clientId: string }
-  | { type: "typing"; channelId: number; userId: number; until: number }
+  | { type: "typing"; channelId: number; parentId?: number; userId: number; until: number }
   | { type: "typing.expire"; now: number }
   | { type: "presence"; userId: number; online: boolean }
   | { type: "user.updated"; user: PublicUser }
@@ -394,11 +395,12 @@ export function reducer(s: ChatState, a: Action): ChatState {
         }
       }
       // người vừa gửi tin thì không còn "đang gõ"
-      const t = s.typing[m.channel_id];
+      const tk = typingKey(m.channel_id, m.parent_id);
+      const t = s.typing[tk];
       let typing = s.typing;
       if (t?.[m.user_id]) {
         const { [m.user_id]: _x, ...rest } = t;
-        typing = { ...s.typing, [m.channel_id]: rest };
+        typing = { ...s.typing, [tk]: rest };
       }
       // người gửi một tin ở dòng chính hiển nhiên đã xem tới tin đó
       const reads = m.parent_id ? s.reads : advanceRead(s, m.channel_id, m.user_id, m.id);
@@ -529,23 +531,25 @@ export function reducer(s: ChatState, a: Action): ChatState {
     case "pending.remove":
       return { ...s, pending: s.pending.filter((p) => p.clientId !== a.clientId) };
 
-    case "typing":
+    case "typing": {
       if (a.userId === s.me.id) return s;
+      const tk = typingKey(a.channelId, a.parentId);
       return {
         ...s,
-        typing: { ...s.typing, [a.channelId]: { ...s.typing[a.channelId], [a.userId]: a.until } },
+        typing: { ...s.typing, [tk]: { ...s.typing[tk], [a.userId]: a.until } },
       };
+    }
 
     case "typing.expire": {
       let changed = false;
       const typing: ChatState["typing"] = {};
-      for (const [cid, users] of Object.entries(s.typing)) {
+      for (const [key, users] of Object.entries(s.typing)) {
         const keep: Record<number, number> = {};
         for (const [uid, until] of Object.entries(users)) {
           if (until > a.now) keep[Number(uid)] = until;
           else changed = true;
         }
-        typing[Number(cid)] = keep;
+        if (Object.keys(keep).length) typing[key] = keep;
       }
       return changed ? { ...s, typing } : s;
     }
@@ -688,4 +692,9 @@ export function reducer(s: ChatState, a: Action): ChatState {
       };
     }
   }
+}
+
+/** Khoá trạng thái "đang gõ": dòng chính của kênh, hoặc một luồng (id tin gốc). */
+export function typingKey(channelId: number, parentId?: number | null): string {
+  return parentId ? `${channelId}_${parentId}` : `${channelId}`;
 }

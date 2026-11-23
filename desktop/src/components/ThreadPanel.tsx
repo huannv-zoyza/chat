@@ -7,6 +7,7 @@ import { Composer } from "./Composer";
 import { ImageViewer } from "./MessageParts";
 import { Icon } from "./ui";
 import { channelLabel } from "../lib/channel";
+import { useWheelScrollX } from "../lib/useWheelScrollX";
 import type { ChessState, XiangqiState } from "../lib/games";
 
 type Props = {
@@ -20,6 +21,8 @@ export function ThreadPanel({ channel, parentId, onClose }: Props) {
   const { state, openThread, retryMessage, discardMessage, sendMessage, spectateGame, unspectateGame } = useChat();
   const thread = state.threads[parentId];
   const [viewing, setViewing] = useState<Attachment | null>(null);
+  const [cheerRow, setCheerRow] = useState<HTMLDivElement | null>(null);
+  useWheelScrollX(cheerRow);
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
 
@@ -191,7 +194,7 @@ export function ThreadPanel({ channel, parentId, onClose }: Props) {
       </div>
 
       {isGameThread && (
-        <div className="game-cheering-bar" role="toolbar" aria-label="Cổ vũ nhanh">
+        <div className="game-cheering-bar" role="toolbar" aria-label="Cổ vũ nhanh" ref={setCheerRow}>
           {["👏 Hay quá!", "🔥 Căng thẳng!", "🤔 Nước cờ hiểm!", "☕ Ngồi xem cao thủ!", "🍿 Hóng kết quả!"].map((text) => (
             <button
               key={text}

@@ -19,6 +19,7 @@ import {
 import { ChessPiece } from "./ChessPiece";
 import { XiangqiGame } from "./XiangqiGame";
 import { useChat } from "../state/ChatProvider";
+import { useWheelScrollX } from "../lib/useWheelScrollX";
 import type { StationState } from "../lib/station";
 import { StationSummary } from "./Station";
 import { ShareDialog } from "./Share";
@@ -2085,7 +2086,9 @@ export function GameLeaderboardDialog({
   const [data, setData] = useState<GameLeaderboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const tabsRef = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef<HTMLDivElement | null>(null);
+  const [tabsEl, setTabsEl] = useState<HTMLDivElement | null>(null);
+  useWheelScrollX(tabsEl);
 
   useEffect(() => {
     let cancelled = false;
@@ -2122,7 +2125,14 @@ export function GameLeaderboardDialog({
   return (
     <Dialog title="Bảng xếp hạng" onClose={onClose} wide>
       <div className="lb">
-        <div className="lb-tabs" role="tablist" ref={tabsRef}>
+        <div
+          className="lb-tabs"
+          role="tablist"
+          ref={(el) => {
+            tabsRef.current = el;
+            setTabsEl(el);
+          }}
+        >
           {LB_TABS.map((t) => (
             <button
               key={t.id}

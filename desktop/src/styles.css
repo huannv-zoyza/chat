@@ -8259,6 +8259,23 @@ button.game-player:disabled {
   -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 2rem), transparent);
   mask-image: linear-gradient(to right, #000 calc(100% - 2rem), transparent);
 }
+/* máy tính (chuột): hiện thanh cuộn mảnh khi rê vào hàng cuộn ngang */
+@media (hover: hover) and (pointer: fine) {
+  .game-cheering-bar:hover,
+  .lb-tabs:hover {
+    scrollbar-width: thin;
+  }
+  .game-cheering-bar:hover::-webkit-scrollbar,
+  .lb-tabs:hover::-webkit-scrollbar {
+    display: block;
+    height: 4px;
+  }
+  .game-cheering-bar:hover::-webkit-scrollbar-thumb,
+  .lb-tabs:hover::-webkit-scrollbar-thumb {
+    border-radius: 2px;
+    background: var(--line);
+  }
+}
 .game-cheering-bar::-webkit-scrollbar {
   display: none;
 }

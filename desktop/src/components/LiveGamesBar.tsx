@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import type { LiveGameItem, GameKind } from "../lib/api";
 import { useChat } from "../state/ChatProvider";
+import { useWheelScrollX } from "../lib/useWheelScrollX";
 
 function getGameIcon(kind: GameKind): string {
   switch (kind) {
@@ -43,6 +44,8 @@ function formatGamePlayers(g: LiveGameItem): string {
 export function LiveGamesBar({ channelId }: { channelId: number }) {
   const { state, loadLiveGames, jumpToMessage } = useChat();
   const [jumpingId, setJumpingId] = useState<number | null>(null);
+  const [row, setRow] = useState<HTMLDivElement | null>(null);
+  useWheelScrollX(row);
 
   // Load live games on channel change
   useEffect(() => {
@@ -91,7 +94,7 @@ export function LiveGamesBar({ channelId }: { channelId: number }) {
         <span className="live-games-label-icon" aria-hidden>🎮</span>
         <span className="live-games-label-text">Đang diễn ra</span>
       </div>
-      <div className="live-games-scroll">
+      <div className="live-games-scroll" ref={setRow}>
         {games.map((g) => {
           const isJumping = jumpingId === g.message_id;
           return (

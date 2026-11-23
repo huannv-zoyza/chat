@@ -22,11 +22,14 @@ export type XiangqiCtx = {
 // Tọa độ bàn cờ:
 // 9 cột dọc (files: 0..8 tương ứng 'a'..'i')
 // 10 hàng ngang (ranks: 0..9, 0 ở dưới Đỏ, 9 ở trên Đen)
-const CELL_SIZE = 44;
-const PADDING_X = 28;
-const PADDING_Y = 28;
-const BOARD_WIDTH = PADDING_X * 2 + 8 * CELL_SIZE; // 28*2 + 352 = 408
-const BOARD_HEIGHT = PADDING_Y * 2 + 9 * CELL_SIZE; // 28*2 + 396 = 452
+const CELL_SIZE = 48;
+/** Đường kính quân cờ trên bàn (vừa khít ô, chừa 2px). */
+const PIECE = 46;
+const PIECE_R = PIECE / 2;
+const PADDING_X = 30;
+const PADDING_Y = 30;
+const BOARD_WIDTH = PADDING_X * 2 + 8 * CELL_SIZE; // 30*2 + 384 = 444
+const BOARD_HEIGHT = PADDING_Y * 2 + 9 * CELL_SIZE; // 30*2 + 432 = 492
 
 function useSecondsLeft(deadline: string | undefined): number | null {
   const [now, setNow] = useState(() => Date.now());
@@ -604,7 +607,7 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
                       <circle
                         cx={cx}
                         cy={cy}
-                        r="23"
+                        r={PIECE_R + 2}
                         fill="#ef4444"
                         opacity="0.45"
                         className="xiangqi-check-pulse"
@@ -614,13 +617,13 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
                           <circle
                             cx={cx}
                             cy={cy}
-                            r="26"
+                            r={PIECE_R + 3}
                             fill="none"
                             stroke="#ef4444"
                             strokeWidth="3.5"
                             className="xiangqi-checkmate-ring"
                           />
-                          <g transform={`translate(${cx}, ${cy - 22})`}>
+                          <g transform={`translate(${cx}, ${cy - PIECE_R - 1})`}>
                             <rect
                               x="-26"
                               y="-9"
@@ -653,7 +656,7 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
                     <circle
                       cx={cx}
                       cy={cy}
-                      r="25"
+                      r={PIECE_R + 2}
                       fill="none"
                       stroke="#eab308"
                       strokeWidth="3"
@@ -667,7 +670,7 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
                     <circle
                       cx={cx}
                       cy={cy}
-                      r="24"
+                      r={PIECE_R + 1}
                       fill="none"
                       stroke="#eab308"
                       strokeWidth="3.5"
@@ -677,14 +680,14 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
                   {/* Quân cờ nếu có */}
                   {pieceChar !== "." && (
                     <g
-                      transform={`translate(${cx - 21}, ${cy - 21})`}
+                      transform={`translate(${cx - PIECE_R}, ${cy - PIECE_R})`}
                       {...((isMyTurn && isMyPiece(pieceChar) ? { draggable: true } : {}) as Record<string, unknown>)}
                       onDragStart={(e) => {
                         e.dataTransfer.setData("text/plain", sq);
                         setSelectedSquare(sq);
                       }}
                     >
-                      <XiangqiPiece piece={pieceChar} size={42} />
+                      <XiangqiPiece piece={pieceChar} size={PIECE} />
                     </g>
                   )}
 
@@ -695,7 +698,7 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
                         <circle
                           cx={cx}
                           cy={cy}
-                          r="22"
+                          r={PIECE_R}
                           fill="none"
                           stroke="#ef4444"
                           strokeWidth="3"

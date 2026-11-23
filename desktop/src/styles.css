@@ -115,6 +115,29 @@
 
 * {
   box-sizing: border-box;
+  /* thanh cuộn mảnh, không mũi tên, màu theo theme (thay thanh mặc định to của hệ điều hành) */
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+/* WebKit (app desktop trên Linux/macOS, Safari) chưa hiểu scrollbar-width */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 4px;
+  background: var(--line) padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--muted);
+}
+::-webkit-scrollbar-button {
+  display: none;
 }
 
 html,
@@ -8242,61 +8265,35 @@ button.game-player:disabled {
   border: 1px solid #fef08a;
 }
 
-/* Thanh cổ vũ nhanh (Quick Cheering Chips) trong Khán đài */
+/* Gợi ý cổ vũ nhanh trong Khán đài: chip nhỏ, tự xuống dòng, không cuộn */
 .game-cheering-bar {
   display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.35rem 0.6rem;
-  overflow-x: auto;
-  background: var(--raised);
-  border-top: 1px solid var(--line);
-  scrollbar-width: none;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  padding: 0.45rem 0.75rem 0;
 }
-.game-cheering-bar,
 .live-games-scroll {
   /* mờ dần ở mép phải: báo là còn nội dung, cuộn ngang được */
   -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 2rem), transparent);
   mask-image: linear-gradient(to right, #000 calc(100% - 2rem), transparent);
 }
-/* máy tính (chuột): hiện thanh cuộn mảnh khi rê vào hàng cuộn ngang */
-@media (hover: hover) and (pointer: fine) {
-  .game-cheering-bar:hover,
-  .lb-tabs:hover {
-    scrollbar-width: thin;
-  }
-  .game-cheering-bar:hover::-webkit-scrollbar,
-  .lb-tabs:hover::-webkit-scrollbar {
-    display: block;
-    height: 4px;
-  }
-  .game-cheering-bar:hover::-webkit-scrollbar-thumb,
-  .lb-tabs:hover::-webkit-scrollbar-thumb {
-    border-radius: 2px;
-    background: var(--line);
-  }
-}
-.game-cheering-bar::-webkit-scrollbar {
-  display: none;
-}
 .game-cheer-chip {
-  flex-shrink: 0;
-  padding: 0.2rem 0.55rem;
-  font-size: 0.75rem;
-  border-radius: 9999px;
-  background: var(--surface);
+  padding: 0.15rem 0.5rem;
   border: 1px solid var(--line);
-  color: var(--text);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--step--2);
+  white-space: nowrap;
   cursor: pointer;
-  transition: all 0.15s ease;
   -webkit-user-select: none;
   user-select: none;
 }
 .game-cheer-chip:hover {
+  border-color: var(--signal);
   background: var(--signal-soft);
-  border-color: var(--focus);
-  color: var(--focus);
-  transform: translateY(-1px);
+  color: var(--text);
 }
 .game-cheer-chip:active {
   transform: translateY(0);

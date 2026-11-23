@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { GameView, PublicUser } from "../lib/api";
 import type { XiangqiState } from "../lib/games";
 import { XiangqiPiece } from "./XiangqiPiece";
@@ -296,55 +296,17 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
       )}
 
       {/* Thanh thông tin người chơi phía trên (Đối thủ) */}
-      <div
-        className="xiangqi-player-bar"
-        style={{
-          width: BOARD_WIDTH,
-          maxWidth: "100%",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "0.25rem 0.5rem",
-          borderRadius: "6px",
-          backgroundColor: "var(--raised)",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <span
-            style={{
-              display: "inline-block",
-              width: "12px",
-              height: "12px",
-              borderRadius: "50%",
-              backgroundColor: topColor === "red" ? "#dc2626" : "#1e293b",
-            }}
-          />
-          <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>
-            {topPlayer?.name || (topColor === "red" ? "Phe Đỏ" : "Phe Đen")}
-            {topPlayer?.id === meId ? " (Bạn)" : ""}
-          </span>
-          {topAdvantage > 0 && (
-            <span style={{ fontSize: "0.75rem", color: "#16a34a", fontWeight: "bold" }}>
-              +{topAdvantage}
-            </span>
-          )}
-
-          {/* Quân bị ăn */}
-          <div style={{ display: "flex", gap: "2px", marginLeft: "0.3rem" }}>
-            {Object.entries(s.captured || {}).map(([p, count]) => {
-              const isThisSide = topColor === "red" ? p >= "a" && p <= "z" : p >= "A" && p <= "Z";
-              if (!isThisSide) return null;
-              return Array.from({ length: count }).map((_, i) => (
-                <XiangqiPiece key={`${p}-${i}`} piece={p} size={20} />
-              ));
-            })}
-          </div>
-        </div>
-
-        {game.status === "playing" && s.turn_color === (topColor === "red" ? "r" : "b") && (
-          <Countdown deadline={game.deadline} label="Thời gian nước đi" />
-        )}
-      </div>
+      <XqPlayerBar
+        name={(topPlayer?.name || (topColor === "red" ? "Phe Đỏ" : "Phe Đen")) + (topPlayer?.id === meId ? " (Bạn)" : "")}
+        color={topColor}
+        advantage={topAdvantage}
+        captured={s.captured}
+        clock={
+          game.status === "playing" && s.turn_color === (topColor === "red" ? "r" : "b") ? (
+            <Countdown deadline={game.deadline} label="Thời gian nước đi" />
+          ) : null
+        }
+      />
 
       {/* Bàn cờ Cờ Tướng SVG */}
       <div
@@ -717,55 +679,17 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
       </div>
 
       {/* Thanh thông tin người chơi phía dưới (Bạn) */}
-      <div
-        className="xiangqi-player-bar"
-        style={{
-          width: BOARD_WIDTH,
-          maxWidth: "100%",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "0.25rem 0.5rem",
-          borderRadius: "6px",
-          backgroundColor: "var(--raised)",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <span
-            style={{
-              display: "inline-block",
-              width: "12px",
-              height: "12px",
-              borderRadius: "50%",
-              backgroundColor: bottomColor === "red" ? "#dc2626" : "#1e293b",
-            }}
-          />
-          <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>
-            {bottomPlayer?.name || (bottomColor === "red" ? "Phe Đỏ" : "Phe Đen")}
-            {bottomPlayer?.id === meId ? " (Bạn)" : ""}
-          </span>
-          {bottomAdvantage > 0 && (
-            <span style={{ fontSize: "0.75rem", color: "#16a34a", fontWeight: "bold" }}>
-              +{bottomAdvantage}
-            </span>
-          )}
-
-          {/* Quân bị ăn */}
-          <div style={{ display: "flex", gap: "2px", marginLeft: "0.3rem" }}>
-            {Object.entries(s.captured || {}).map(([p, count]) => {
-              const isThisSide = bottomColor === "red" ? p >= "a" && p <= "z" : p >= "A" && p <= "Z";
-              if (!isThisSide) return null;
-              return Array.from({ length: count }).map((_, i) => (
-                <XiangqiPiece key={`${p}-${i}`} piece={p} size={20} />
-              ));
-            })}
-          </div>
-        </div>
-
-        {game.status === "playing" && s.turn_color === (bottomColor === "red" ? "r" : "b") && (
-          <Countdown deadline={game.deadline} label="Thời gian nước đi" />
-        )}
-      </div>
+      <XqPlayerBar
+        name={(bottomPlayer?.name || (bottomColor === "red" ? "Phe Đỏ" : "Phe Đen")) + (bottomPlayer?.id === meId ? " (Bạn)" : "")}
+        color={bottomColor}
+        advantage={bottomAdvantage}
+        captured={s.captured}
+        clock={
+          game.status === "playing" && s.turn_color === (bottomColor === "red" ? "r" : "b") ? (
+            <Countdown deadline={game.deadline} label="Thời gian nước đi" />
+          ) : null
+        }
+      />
 
       {/* Các nút chức năng điều khiển */}
       <div className="xq-actions">
@@ -830,6 +754,44 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
             </div>
           </div>
         </Dialog>
+      )}
+    </div>
+  );
+}
+
+/** Thanh người chơi trên/dưới bàn cờ: tên 1 dòng (dài thì "…"), quân đã ăn được tự xuống dòng,
+ * không bao giờ đẩy thẻ rộng hơn bàn cờ. */
+function XqPlayerBar({
+  name,
+  color,
+  advantage,
+  captured,
+  clock,
+}: {
+  name: string;
+  color: "red" | "black";
+  advantage: number;
+  captured?: Record<string, number>;
+  clock: ReactNode;
+}) {
+  // quân phe kia mà người này đã ăn được
+  const pieces = Object.entries(captured || {}).flatMap(([p, count]) =>
+    (color === "red" ? p >= "a" && p <= "z" : p >= "A" && p <= "Z") ? Array.from({ length: count }, () => p) : [],
+  );
+  return (
+    <div className="xq-player" style={{ width: BOARD_WIDTH }}>
+      <span className={`xq-side is-${color}`} aria-label={color === "red" ? "Phe Đỏ" : "Phe Đen"} />
+      <span className="xq-player-name" title={name}>
+        {name}
+      </span>
+      {advantage > 0 && <span className="xq-adv">+{advantage}</span>}
+      {clock}
+      {pieces.length > 0 && (
+        <span className="xq-captured" aria-label={`Đã ăn ${pieces.length} quân`}>
+          {pieces.map((p, i) => (
+            <XiangqiPiece key={i} piece={p} size={18} />
+          ))}
+        </span>
       )}
     </div>
   );

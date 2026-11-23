@@ -824,6 +824,8 @@ button {
 .messages {
   flex: 1;
   overflow-y: auto;
+  /* chat không bao giờ cuộn ngang: nội dung rộng (bàn cờ, bảng…) phải tự co trong tin */
+  overflow-x: hidden;
   padding: 0.5rem 0 1rem;
   /* Tải tin cũ chèn lên đầu: MessageList tự bù scrollTop để giữ chỗ đang đọc.
      Tắt scroll anchoring của trình duyệt, nếu không nó bù thêm lần nữa và đẩy màn hình xuống. */
@@ -2724,6 +2726,7 @@ button {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 1.75rem 0 1rem;
 }
 .thread-scroll .msg {
@@ -5192,9 +5195,18 @@ button.game-player:disabled {
 }
 .chess-player-info {
   display: flex;
+  flex: 1;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
   font-weight: 600;
+}
+.chess-player-name {
+  flex: 0 1 auto;
+  min-width: 2.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .chess-color-badge {
   display: inline-flex;
@@ -5224,8 +5236,10 @@ button.game-player:disabled {
 }
 .chess-captured-list {
   display: flex;
+  flex: 1 1 0;
   align-items: center;
   gap: 0.15rem;
+  min-width: 0;
   margin-left: 0.3rem;
   flex-wrap: wrap;
 }
@@ -8183,6 +8197,60 @@ button.game-player:disabled {
   font-size: var(--step--2);
 }
 
+/* Cờ tướng: thanh người chơi trên/dưới bàn cờ */
+.xq-player {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0.3rem 0.55rem;
+  border-radius: var(--radius);
+  background: var(--raised);
+  font-size: var(--step--1);
+}
+.xq-side {
+  flex: none;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+}
+.xq-side.is-red {
+  background: #d02a2a;
+}
+.xq-side.is-black {
+  background: #1e293b;
+  box-shadow: 0 0 0 1px var(--muted);
+}
+.xq-player-name {
+  /* basis 0: tên co lại (cắt "…") chứ không đẩy điểm lợi thế / đồng hồ xuống dòng */
+  flex: 1 1 0;
+  min-width: 2.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.xq-adv {
+  flex: none;
+  color: var(--ok);
+  font-size: var(--step--2);
+  font-weight: 700;
+}
+/* quân đã ăn: dòng riêng bên dưới tên, trải hết bề ngang */
+.xq-captured {
+  display: flex;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  gap: 1px;
+  min-width: 0;
+}
+.xq-player .game-clock {
+  flex: none;
+  margin-left: auto;
+}
+
 /* Cờ tướng: dải báo chiếu tướng / cầu hoà, hàng nút */
 .xq-banner {
   display: flex;
@@ -8270,7 +8338,9 @@ button.game-player:disabled {
   display: flex;
   flex-wrap: wrap;
   gap: 0.3rem;
-  padding: 0.45rem 0.75rem 0;
+  /* chừa khoảng với ô soạn tin bên dưới */
+  padding: 0.5rem 0.75rem 0.4rem;
+  border-top: 1px solid var(--line-soft);
 }
 .live-games-scroll {
   /* mờ dần ở mép phải: báo là còn nội dung, cuộn ngang được */

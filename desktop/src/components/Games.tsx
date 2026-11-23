@@ -1468,7 +1468,7 @@ function Chess({ ctx }: { ctx: Ctx }) {
           <span className={`chess-color-badge ${topColor}`} aria-hidden>
             {topColor === "white" ? "⚪" : "⚫"}
           </span>
-          <span>
+          <span className="chess-player-name">
             {topPlayer?.name || (topColor === "white" ? "Quân Trắng" : "Quân Đen")}
             {topPlayer?.id === meId ? " (Bạn)" : ""}
           </span>
@@ -1618,7 +1618,7 @@ function Chess({ ctx }: { ctx: Ctx }) {
           <span className={`chess-color-badge ${bottomColor}`} aria-hidden>
             {bottomColor === "white" ? "⚪" : "⚫"}
           </span>
-          <span>
+          <span className="chess-player-name">
             {bottomPlayer?.name || (bottomColor === "white" ? "Quân Trắng" : "Quân Đen")}
             {bottomPlayer?.id === meId ? " (Bạn)" : ""}
           </span>

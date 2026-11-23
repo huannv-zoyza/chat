@@ -211,6 +211,23 @@ func (a *API) handleGroupCall(ctx context.Context, client *socket.Client, user m
 	}
 }
 
+// dropFromGroupCall đưa mọi kết nối của userID ra khỏi cuộc gọi nhóm của kênh (khi bị mời ra khỏi kênh).
+func (a *API) dropFromGroupCall(channelID, userID int64) {
+	a.groups.mu.Lock()
+	var clients []*socket.Client
+	if room := a.groups.rooms[channelID]; room != nil {
+		for _, p := range room.peers {
+			if p.user.ID == userID {
+				clients = append(clients, p.client)
+			}
+		}
+	}
+	a.groups.mu.Unlock()
+	for _, c := range clients {
+		a.leaveGroup(channelID, c)
+	}
+}
+
 // leaveGroup: client rời cuộc gọi nhóm ở channelID (0 = mọi cuộc gọi của client đó).
 func (a *API) leaveGroup(channelID int64, client *socket.Client) {
 	g := &a.groups

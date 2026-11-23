@@ -21,7 +21,7 @@ import (
 //	presence         {user_id, online}                       ai đó vừa online/offline
 //	user.updated     {user}                                  ai đó đổi hồ sơ
 //	channel.joined   {channel}                               mình vừa tham gia/tạo kênh (từ máy khác)
-//	channel.left     {channel_id}                            mình vừa rời kênh (từ máy khác)
+//	channel.left     {channel_id, kicked?}                   mình vừa rời kênh (từ máy khác), hoặc bị chủ kênh mời ra
 //	channel.updated  {channel}                               kênh đổi tên/mô tả
 //	channel.deleted  {channel_id}                            kênh bị xoá
 //	member.joined    {channel_id, user}                      có người vào kênh
@@ -102,6 +102,12 @@ type memberJoinedEvent struct {
 	Type      string           `json:"type"`
 	ChannelID int64            `json:"channel_id"`
 	User      model.PublicUser `json:"user"`
+}
+
+type channelLeftEvent struct {
+	Type      string `json:"type"`
+	ChannelID int64  `json:"channel_id"`
+	Kicked    bool   `json:"kicked,omitempty"`
 }
 
 type memberLeftEvent struct {

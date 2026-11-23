@@ -1,3 +1,4 @@
+import { channelLabel } from "../lib/channel";
 import type {
   Channel,
   Embed,
@@ -96,6 +97,8 @@ export type ChatState = {
   liveGames: Record<number, LiveGameItem[]>;
   /** messageId -> danh sách khán giả đang xem ván đấu */
   spectators: Record<number, SpectatorInfo[]>;
+  /** Thông báo ngắn hiện ở góc màn hình (vd. bị mời ra khỏi kênh). */
+  notice: string | null;
 };
 
 export function initialState(me: User): ChatState {
@@ -124,6 +127,7 @@ export function initialState(me: User): ChatState {
     reads: {},
     liveGames: {},
     spectators: {},
+    notice: null,
   };
 }
 
@@ -135,7 +139,8 @@ export type Action =
   | { type: "me.updated"; me: User }
   | { type: "channels.loaded"; channels: Channel[] }
   | { type: "channel.upsert"; channel: Channel; keepUnread?: boolean }
-  | { type: "channel.removed"; channelId: number }
+  | { type: "channel.removed"; channelId: number; kicked?: boolean }
+  | { type: "notice"; text: string | null }
   | { type: "channel.select"; channelId: number | null; auto?: boolean }
   | { type: "channel.read"; channelId: number }
   | { type: "messages.loaded"; channelId: number; messages: Message[]; hasMore: boolean; older: boolean }
@@ -310,12 +315,13 @@ export function reducer(s: ChatState, a: Action): ChatState {
     }
 
     case "channel.removed": {
-      const { [a.channelId]: _gone, ...channels } = s.channels;
+      const { [a.channelId]: gone, ...channels } = s.channels;
       const { [a.channelId]: _msgs, ...messages } = s.messages;
       return {
         ...s,
         channels,
         messages,
+        notice: a.kicked && gone ? `Chủ kênh đã mời bạn ra khỏi ${channelLabel(gone, s.users, s.me.id)}.` : s.notice,
         activeId: s.activeId === a.channelId ? null : s.activeId,
         pending: s.pending.filter((p) => p.channelId !== a.channelId),
       };
@@ -600,6 +606,9 @@ export function reducer(s: ChatState, a: Action): ChatState {
       const reads = advanceRead(s, a.channelId, a.userId, a.messageId);
       return reads === s.reads ? s : { ...s, reads };
     }
+
+    case "notice":
+      return { ...s, notice: a.text };
 
     case "member.left": {
       const c = s.channels[a.channelId];

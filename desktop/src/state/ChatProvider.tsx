@@ -576,7 +576,7 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
 
       sock.on("channel.joined", (ev) => dispatch({ type: "channel.upsert", channel: ev.channel })),
       sock.on("channel.updated", (ev) => dispatch({ type: "channel.upsert", channel: ev.channel, keepUnread: true })),
-      sock.on("channel.left", (ev) => dispatch({ type: "channel.removed", channelId: ev.channel_id })),
+      sock.on("channel.left", (ev) => dispatch({ type: "channel.removed", channelId: ev.channel_id, kicked: ev.kicked })),
       sock.on("channel.deleted", (ev) => dispatch({ type: "channel.removed", channelId: ev.channel_id })),
       sock.on("member.joined", (ev) => dispatch({ type: "member.joined", channelId: ev.channel_id, user: ev.user })),
       sock.on("member.left", (ev) => dispatch({ type: "member.left", channelId: ev.channel_id, userId: ev.user_id })),

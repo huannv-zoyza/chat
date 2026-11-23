@@ -58,7 +58,7 @@ export type ServerEvent =
   | { type: "presence"; user_id: number; online: boolean }
   | { type: "user.updated"; user: PublicUser }
   | { type: "channel.joined"; channel: Channel }
-  | { type: "channel.left"; channel_id: number }
+  | { type: "channel.left"; channel_id: number; kicked?: boolean }
   | { type: "channel.updated"; channel: Channel }
   | { type: "channel.deleted"; channel_id: number }
   | { type: "member.joined"; channel_id: number; user: PublicUser }

@@ -1,13 +1,32 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Channel } from "../lib/api";
+import { ApiError, type Channel } from "../lib/api";
+import { isDM } from "../lib/channel";
 import { useChat } from "../state/ChatProvider";
 import { displayName } from "../lib/format";
 import { Avatar, Icon } from "./ui";
 
 export function MembersPanel({ channel, onClose }: { channel: Channel; onClose: () => void }) {
-  const { state, loadMembers, openDM } = useChat();
+  const { state, api, loadMembers, openDM } = useChat();
   const [error, setError] = useState<string | null>(null);
   const ids = state.members[channel.id];
+  // Chủ kênh mời người khác ra: bấm lần đầu hỏi lại ngay trên dòng đó.
+  const canKick = !isDM(channel) && channel.owner_id === state.me.id;
+  const [confirmKick, setConfirmKick] = useState<number | null>(null);
+  const [kicking, setKicking] = useState(false);
+  useEffect(() => setConfirmKick(null), [channel.id]);
+
+  const kick = async (userId: number) => {
+    setKicking(true);
+    setError(null);
+    try {
+      await api.kickMember(channel.id, userId);
+      setConfirmKick(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Không mời được người này ra khỏi kênh.");
+    } finally {
+      setKicking(false);
+    }
+  };
 
   useEffect(() => {
     setError(null);
@@ -53,6 +72,29 @@ export function MembersPanel({ channel, onClose }: { channel: Channel; onClose: 
           <ul className="member-list">
             {members.map((m) => {
               const online = isOnline(m.id);
+              if (confirmKick === m.id) {
+                return (
+                  <li key={m.id} className="member member-kick-confirm">
+                    <span className="member-text">
+                      Mời <strong>{displayName(m)}</strong> ra khỏi kênh?
+                    </span>
+                    <span className="member-kick-actions">
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-danger"
+                        disabled={kicking}
+                        onClick={() => void kick(m.id)}
+                        autoFocus
+                      >
+                        Mời ra
+                      </button>
+                      <button type="button" className="btn btn-sm" disabled={kicking} onClick={() => setConfirmKick(null)}>
+                        Huỷ
+                      </button>
+                    </span>
+                  </li>
+                );
+              }
               return (
                 <li key={m.id} className={`member${online ? "" : " is-away"}`}>
                   <Avatar user={m} size={32} online={online} />
@@ -73,6 +115,17 @@ export function MembersPanel({ channel, onClose }: { channel: Channel; onClose: 
                       onClick={() => void openDM(m.id).catch(() => setError("Không mở được cuộc trò chuyện."))}
                     >
                       <Icon name="send" size={16} />
+                    </button>
+                  )}
+                  {canKick && m.id !== state.me.id && (
+                    <button
+                      type="button"
+                      className="icon-btn member-kick"
+                      title={`Mời ${displayName(m)} ra khỏi kênh`}
+                      aria-label={`Mời ${displayName(m)} ra khỏi kênh`}
+                      onClick={() => setConfirmKick(m.id)}
+                    >
+                      <Icon name="x" size={16} />
                     </button>
                   )}
                 </li>

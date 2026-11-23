@@ -81,3 +81,30 @@ func TestGroupCalls(t *testing.T) {
 		}
 	}
 }
+
+func TestKickDropsFromGroupCall(t *testing.T) {
+	e := newEnv(t)
+	alice := e.register("alice", "Alice")
+	bob := e.register("bob", "Bob")
+	var ch channel
+	e.do("POST", "/api/channels", alice.Token, map[string]any{"name": "goi-nhom"}, &ch)
+	e.do("POST", "/api/channels/"+itoa(ch.ID)+"/join", bob.Token, nil, nil)
+	wa, wb := e.dial(alice.Token), e.dial(bob.Token)
+	wa.waitFor("ready")
+	wb.waitFor("ready")
+
+	wa.send(map[string]any{"type": "groupcall.join", "channel_id": ch.ID})
+	wa.waitFor("groupcall.welcome")
+	wb.send(map[string]any{"type": "groupcall.join", "channel_id": ch.ID})
+	wb.waitFor("groupcall.welcome")
+	for len(wa.waitFor("groupcall.state")["participants"].([]any)) != 2 {
+	}
+
+	if code := e.do("DELETE", "/api/channels/"+itoa(ch.ID)+"/members/"+itoa(bob.User.ID), alice.Token, nil, nil); code != 204 {
+		t.Fatalf("kick: %d", code)
+	}
+	ps := wa.waitFor("groupcall.state")["participants"].([]any)
+	if len(ps) != 1 || ps[0].(map[string]any)["user"].(map[string]any)["username"] != "alice" {
+		t.Fatalf("bob still in call after kick: %v", ps)
+	}
+}

@@ -83,6 +83,7 @@ func (a *API) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("DELETE /api/channels/{id}", a.requireAuth(a.deleteChannel))
 	mux.HandleFunc("POST /api/channels/{id}/join", a.requireAuth(a.joinChannel))
 	mux.HandleFunc("POST /api/channels/{id}/leave", a.requireAuth(a.leaveChannel))
+	mux.HandleFunc("DELETE /api/channels/{id}/members/{userId}", a.requireAuth(a.kickMember))
 	mux.HandleFunc("POST /api/channels/{id}/invite", a.requireAuth(a.regenerateInvite))
 	mux.HandleFunc("GET /api/invites/{code}", a.requireAuth(a.previewInvite))
 	mux.HandleFunc("POST /api/invites/{code}/join", a.requireAuth(a.joinByInvite))

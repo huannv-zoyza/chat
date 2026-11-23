@@ -3164,14 +3164,36 @@ body.is-col-resizing video {
   opacity: 0;
   transition: opacity 0.12s;
 }
+.member-kick {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.member-kick:hover {
+  color: var(--warn);
+}
 .member:hover .member-dm,
-.member-dm:focus-visible {
+.member-dm:focus-visible,
+.member:hover .member-kick,
+.member-kick:focus-visible {
   opacity: 1;
 }
 @media (hover: none) {
-  .member-dm {
+  .member-dm,
+  .member-kick {
     opacity: 1;
   }
+}
+.member-kick-confirm {
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.member-kick-confirm .member-text {
+  font-size: var(--step--1);
+}
+.member-kick-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-left: auto;
 }
 
 .people-list {

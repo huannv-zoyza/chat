@@ -25,12 +25,19 @@ import { takePendingMessage } from "../lib/platform";
 import { isDM } from "../lib/channel";
 import { load, save } from "../lib/storage";
 import { COMPACT_QUERY, useMediaQuery } from "../lib/useMedia";
+import { Icon } from "./ui";
 
 type DialogName =
   "create" | "browse" | "channel" | "user" | "invite" | "joinLink" | "dm" | "search" | "reminders" | null;
 
 export function Workspace() {
-  const { state, api, openThread, openMessageLink } = useChat();
+  const { state, dispatch, api, openThread, openMessageLink } = useChat();
+  // Thông báo ngắn (vd. bị mời ra khỏi kênh): tự tắt sau vài giây.
+  useEffect(() => {
+    if (!state.notice) return;
+    const t = window.setTimeout(() => dispatch({ type: "notice", text: null }), 8_000);
+    return () => window.clearTimeout(t);
+  }, [state.notice, dispatch]);
   const prefs = usePrefs();
   useEffect(() => {
     if (api) initPrefs(api, state.me.id);
@@ -154,6 +161,19 @@ export function Workspace() {
       style={prefs.thread_width ? ({ "--thread-w": `${prefs.thread_width}px` } as CSSProperties) : undefined}
     >
       <UpdateBanner />
+      {state.notice && (
+        <div className="gc-toast" role="status">
+          <span className="gc-toast-text">{state.notice}</span>
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={() => dispatch({ type: "notice", text: null })}
+            aria-label="Đóng"
+          >
+            <Icon name="x" size={15} />
+          </button>
+        </div>
+      )}
       <Sidebar
         onOpenChannel={openRoom}
         onCreateChannel={() => setDialog("create")}

@@ -475,6 +475,8 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     },
     messageLink: (id: number) => request<MessageLinkInfo>("GET", `/api/messages/${id}/link`),
     deleteChannel: (id: number) => request<void>("DELETE", `/api/channels/${id}`),
+    kickMember: (channelId: number, userId: number) =>
+      request<void>("DELETE", `/api/channels/${channelId}/members/${userId}`),
     joinChannel: (id: number) => request<Channel>("POST", `/api/channels/${id}/join`),
     leaveChannel: (id: number) => request<void>("POST", `/api/channels/${id}/leave`),
     members: (id: number) => request<PublicUser[]>("GET", `/api/channels/${id}/members`),

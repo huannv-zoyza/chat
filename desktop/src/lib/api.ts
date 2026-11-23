@@ -373,6 +373,10 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     me: () => request<User>("GET", "/api/me"),
     updateMe: (b: { display_name?: string; avatar?: string; status_text?: string }) =>
       request<User>("PATCH", "/api/me", b),
+    /** Cấu hình giao diện riêng (xem lib/prefs.ts). */
+    getPrefs: () => request<{ thread_width?: number }>("GET", "/api/me/prefs"),
+    updatePrefs: (patch: Record<string, number | null>) =>
+      request<{ thread_width?: number }>("PATCH", "/api/me/prefs", patch),
     /** Tải ảnh đại diện lên (server lưu và đặt luôn làm ảnh đại diện). */
     uploadAvatar: (file: File) => {
       const fd = new FormData();

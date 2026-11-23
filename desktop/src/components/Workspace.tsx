@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { useChat } from "../state/ChatProvider";
+import { initPrefs, usePrefs } from "../lib/prefs";
 import { Sidebar } from "./Sidebar";
 import { ChannelView } from "./ChannelView";
 import { MembersPanel } from "./MembersPanel";
@@ -29,7 +30,11 @@ type DialogName =
   "create" | "browse" | "channel" | "user" | "invite" | "joinLink" | "dm" | "search" | "reminders" | null;
 
 export function Workspace() {
-  const { state, openThread, openMessageLink } = useChat();
+  const { state, api, openThread, openMessageLink } = useChat();
+  const prefs = usePrefs();
+  useEffect(() => {
+    if (api) initPrefs(api, state.me.id);
+  }, [api, state.me.id]);
   // Bản web mở bằng link …/m/<id>: kết nối xong thì mở tin đó (một lần).
   const pendingLink = useRef<number | null | undefined>(undefined);
   if (pendingLink.current === undefined) pendingLink.current = takePendingMessage();
@@ -144,7 +149,10 @@ export function Workspace() {
     .join(" ");
 
   return (
-    <div className={cls}>
+    <div
+      className={cls}
+      style={prefs.thread_width ? ({ "--thread-w": `${prefs.thread_width}px` } as CSSProperties) : undefined}
+    >
       <UpdateBanner />
       <Sidebar
         onOpenChannel={openRoom}

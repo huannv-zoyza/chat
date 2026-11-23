@@ -69,6 +69,8 @@ func (a *API) Handler(ui http.Handler) http.Handler {
 
 	mux.HandleFunc("GET /api/me", a.requireAuth(a.getMe))
 	mux.HandleFunc("PATCH /api/me", a.requireAuth(a.updateMe))
+	mux.HandleFunc("GET /api/me/prefs", a.requireAuth(a.getPrefs))
+	mux.HandleFunc("PATCH /api/me/prefs", a.requireAuth(a.updatePrefs))
 	mux.HandleFunc("PUT /api/me/password", a.requireAuth(a.changePassword))
 	mux.HandleFunc("POST /api/me/avatar", a.requireAuth(a.uploadAvatar))
 	mux.HandleFunc("GET /api/avatars/{key}", a.serveAvatar)

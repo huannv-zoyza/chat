@@ -7,6 +7,7 @@ import { Composer } from "./Composer";
 import { ImageViewer } from "./MessageParts";
 import { Icon } from "./ui";
 import { channelLabel } from "../lib/channel";
+import { setPrefs, THREAD_WIDTH_MAX, THREAD_WIDTH_MIN } from "../lib/prefs";
 import type { ChessState, XiangqiState } from "../lib/games";
 
 type Props = {
@@ -17,7 +18,7 @@ type Props = {
 
 /** Panel bên phải: tin gốc, các trả lời và ô trả lời. Trên điện thoại phủ toàn màn hình. */
 export function ThreadPanel({ channel, parentId, onClose }: Props) {
-  const { state, openThread, retryMessage, discardMessage, sendMessage, spectateGame, unspectateGame } = useChat();
+  const { state, api, openThread, retryMessage, discardMessage, sendMessage, spectateGame, unspectateGame } = useChat();
   const thread = state.threads[parentId];
   const [viewing, setViewing] = useState<Attachment | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -96,6 +97,7 @@ export function ThreadPanel({ channel, parentId, onClose }: Props) {
 
   return (
     <aside className="thread-panel" aria-label="Luồng trả lời">
+      {api && <ThreadResizer onDone={(w) => setPrefs(api, { thread_width: w })} />}
       <header className="thread-header">
         <div>
           <h3>{isGameThread ? `Khán đài: ${game?.title || parent?.embed?.title || "Trò chơi"}` : "Luồng"}</h3>
@@ -210,5 +212,84 @@ export function ThreadPanel({ channel, parentId, onClose }: Props) {
       {parent && <Composer channel={channel} parentId={parentId} />}
       {viewing && <ImageViewer attachment={viewing} onClose={() => setViewing(null)} />}
     </aside>
+  );
+}
+
+/** Bề rộng tối thiểu chừa cho khung chat chính khi kéo rộng khung luồng. */
+const MAIN_MIN = 360;
+
+/**
+ * Tay kéo ở mép trái khung luồng (máy tính): kéo để đổi độ rộng, phím ←/→ cũng được,
+ * bấm đúp để về mặc định. Trong lúc kéo chỉ đổi biến CSS trên .app (không vẽ lại React),
+ * thả tay mới lưu (onDone, null = mặc định).
+ */
+function ThreadResizer({ onDone }: { onDone: (width: number | null) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  const limits = () => {
+    const panel = ref.current?.parentElement;
+    const app = panel?.closest<HTMLElement>(".app");
+    if (!panel || !app) return null;
+    const sidebar = app.querySelector(".sidebar")?.getBoundingClientRect().width ?? 264;
+    const max = Math.max(THREAD_WIDTH_MIN, Math.min(THREAD_WIDTH_MAX, app.clientWidth - sidebar - MAIN_MIN));
+    return { panel, app, max, width: panel.getBoundingClientRect().width };
+  };
+  const apply = (app: HTMLElement, w: number) => app.style.setProperty("--thread-w", `${w}px`);
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    const l = limits();
+    if (!l) return;
+    e.preventDefault();
+    const el = e.currentTarget;
+    el.setPointerCapture(e.pointerId);
+    const startX = e.clientX;
+    let w = l.width;
+    document.body.classList.add("is-col-resizing");
+    const move = (ev: PointerEvent) => {
+      w = Math.round(Math.min(l.max, Math.max(THREAD_WIDTH_MIN, l.width + startX - ev.clientX)));
+      apply(l.app, w);
+    };
+    const end = () => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", end);
+      el.removeEventListener("pointercancel", end);
+      document.body.classList.remove("is-col-resizing");
+      if (w !== Math.round(l.width)) onDone(w);
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", end);
+    el.addEventListener("pointercancel", end);
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    const l = limits();
+    if (!l) return;
+    e.preventDefault();
+    const step = e.shiftKey ? 64 : 16;
+    const w = Math.round(Math.min(l.max, Math.max(THREAD_WIDTH_MIN, l.width + (e.key === "ArrowLeft" ? step : -step))));
+    apply(l.app, w);
+    onDone(w);
+  };
+
+  const onDoubleClick = () => {
+    ref.current?.closest<HTMLElement>(".app")?.style.removeProperty("--thread-w");
+    onDone(null);
+  };
+
+  return (
+    <div
+      ref={ref}
+      className="thread-resizer"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Kéo để đổi độ rộng khung luồng (bấm đúp: về mặc định)"
+      title="Kéo để đổi độ rộng · bấm đúp: về mặc định"
+      tabIndex={0}
+      onPointerDown={onPointerDown}
+      onKeyDown={onKeyDown}
+      onDoubleClick={onDoubleClick}
+    />
   );
 }

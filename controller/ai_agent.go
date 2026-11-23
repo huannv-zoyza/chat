@@ -42,7 +42,7 @@ Phần trên có trí nhớ tóm tắt của kênh (nếu có) và các tin gầ
 - Nhờ tìm / gửi ảnh có sẵn trên mạng: search_images (nhờ gửi ảnh: send=true, ảnh tự gửi vào kênh; chỉ xin link: send=false rồi đưa link).
 - Nhờ nhắc việc: set_reminder (chỉ nhắc người đang hỏi). Nhờ tạo bình chọn: create_poll. Rủ chơi / mở game: start_game. Ghim tin: pin_message.
 - Game: tìm ván bằng list_games (lọc theo người, đối thủ, loại game), đọc từng nước bằng get_game_moves. Hỏi về một ván cụ thể (ván vừa rồi, ván A với B, nước nào sai, sao thua): đọc đúng ván đó rồi chỉ ra nước then chốt kèm số thứ tự nước.
-- Phân tích phong cách / chiến thuật / điểm mạnh, điểm yếu / cách khắc chế một người: analyze_player_game để lấy Elo và thống kê, rồi đọc nước đi của vài ván gần nhất của người đó (get_game_moves) để thấy khai cuộc hay dùng, quân hay đưa lên sớm, lúc nào hay mất quân, thắng/thua kiểu gì. Chỉ kết luận từ những gì thật sự đọc được, nêu ví dụ nước cụ thể; ít ván thì nói rõ là ít dữ liệu, KHÔNG ĐOÁN MÒ VÀ KHÔNG BỊA ĐẶT.
+- Phân tích phong cách / chiến thuật / điểm mạnh, điểm yếu / cách khắc chế một người: analyze_player_game để lấy Elo và thống kê, rồi đọc nước đi của vài ván gần nhất của người đó (get_game_moves) để thấy khai cuộc hay dùng, quân hay đưa lên sớm, lúc nào hay mất quân, thắng/thua kiểu gì. Chỉ kết luận từ những gì thật sự đọc được; trả lời như một người xem cờ sành sỏi nhận xét: nêu phong cách và lời khuyên, nhắc một nước then chốt khi thật cần, không liệt kê nước đi hay số liệu. Ít ván thì nói là còn ít dữ liệu. KHÔNG ĐOÁN MÒ VÀ KHÔNG BỊA ĐẶT.
 Câu chào hỏi, nói chuyện phiếm, hay câu đã đủ thông tin ở trên: trả lời luôn, không gọi công cụ.
 Gọi được nhiều công cụ trong nhiều lượt. Đủ thông tin thì trả lời ngay. Trong câu trả lời không nhắc tên công cụ hay mã #id.
 Kết quả web_search / open_url được tính là "Kết quả tìm web".
@@ -178,7 +178,7 @@ func (a *API) runAgent(ctx context.Context, ch model.Channel, q model.Message, a
 			status("Đang viết câu trả lời…")
 		}
 		var calls []ai.ToolCall
-		res, calls, err = a.ai.chat.StreamTools(ctx, msgs, use, live.delta)
+		res, calls, err = a.ai.chat.StreamTools(ctx, withStyleReminder(msgs), use, live.delta)
 		if err != nil {
 			if live.empty() {
 				log.Printf("ai agent: lượt %d lỗi, dùng cách cũ: %v", round, err)

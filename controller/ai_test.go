@@ -24,6 +24,7 @@ import (
 type fakeAI struct {
 	mu         sync.Mutex
 	systems    []string
+	reminders  int // số tin có lời nhắc cách viết ở cuối
 	asks       []string
 	imagePro   []string
 	edits      []string
@@ -104,6 +105,13 @@ func newFakeAI(t *testing.T) *fakeAI {
 		// agent: ask là tin user cuối; ngữ cảnh gồm cả kết quả công cụ
 		var all []string
 		for _, m := range req.Messages {
+			// lời nhắc cách viết được ghép vào cuối tin cuối (withStyleReminder): tách ra như model đọc ghi chú
+			if i := strings.Index(m.Content, "\n\n(Nhắc cách trả lời"); i >= 0 {
+				f.mu.Lock()
+				f.reminders++
+				f.mu.Unlock()
+				m.Content = m.Content[:i]
+			}
 			if m.Role == "user" {
 				ask = m.Content
 			}
@@ -460,6 +468,13 @@ func TestAIAgentTools(t *testing.T) {
 	f.mu.Unlock()
 	if !strings.Contains(ctxText, "Luồng của tin #") || !strings.Contains(ctxText, "↳ [#") || !strings.Contains(ctxText, "đồng ý phở gà") {
 		t.Fatalf("read_thread result missing:\n%s", ctxText)
+	}
+	// lượt trả lời nào cũng có lời nhắc cách viết ở cuối
+	f.mu.Lock()
+	reminders := f.reminders
+	f.mu.Unlock()
+	if reminders == 0 {
+		t.Fatal("style reminder not sent with answer turns")
 	}
 	// nhắc việc: chỉ cho người hỏi
 	if got := ask("nhắc mình gửi báo cáo"); !strings.Contains(got, "Đã đặt nhắc Alice") {

@@ -211,7 +211,7 @@ func (a *API) answerAI(q model.Message, asker model.User) {
 		msgs, got = a.aiContext(ctx, ch, q, asker, text, status, false)
 		status("Đang viết câu trả lời…")
 		live.reset()
-		res, err = s.chat.Stream(ctx, msgs, live.delta)
+		res, err = s.chat.Stream(ctx, withStyleReminder(msgs), live.delta)
 	}
 	answer := strings.TrimSpace(live.text())
 	switch {
@@ -252,13 +252,49 @@ func (l *liveText) delta(d string) {
 	l.buf.WriteString(d)
 	if time.Since(l.last) >= aiFlushEvery {
 		l.last = time.Now()
-		l.flush(l.buf.String())
+		l.flush(stripThinking(l.buf.String()))
 	}
 }
 
 func (l *liveText) reset()       { l.buf.Reset() }
-func (l *liveText) text() string { return l.buf.String() }
-func (l *liveText) empty() bool  { return strings.TrimSpace(l.buf.String()) == "" }
+func (l *liveText) text() string { return stripThinking(l.buf.String()) }
+func (l *liveText) empty() bool  { return strings.TrimSpace(l.text()) == "" }
+
+// aiStyleReminder: nhắc lại cách viết, gắn vào CUỐI mỗi lượt trả lời người dùng. Lời dặn trong
+// prompt hệ thống dễ bị chìm sau hàng chục tin nhắn và kết quả công cụ (nhất là với Muse: cầu nối
+// dồn tất cả thành một khối chữ), model bám phần cuối mạnh nhất.
+const aiStyleReminder = "Nhắc cách trả lời: nói chuyện tự nhiên như người trong nhóm, kết luận trước, ngắn gọn. " +
+	"Không liệt kê số liệu, ngày giờ, số lần để chứng minh (cần thì lồng một chi tiết vào câu). " +
+	"Không kể bạn đã đọc, tra hay tính gì; không viết suy nghĩ hay nháp, chỉ đưa câu trả lời cuối. " +
+	"Gạch đầu dòng chỉ khi người hỏi cần một danh sách."
+
+// withStyleReminder: bản sao msgs có lời nhắc ở cuối (không đụng lịch sử hội thoại). Ghép vào tin
+// cuối (câu hỏi hoặc kết quả công cụ) thay vì thêm tin system mới: vài model báo lỗi khi gặp tin
+// system không nằm ở đầu.
+func withStyleReminder(msgs []ai.Message) []ai.Message {
+	out := make([]ai.Message, len(msgs), len(msgs)+1)
+	copy(out, msgs)
+	if n := len(out); n > 0 && (out[n-1].Role == "user" || out[n-1].Role == "tool") {
+		out[n-1].Content += "\n\n(" + aiStyleReminder + ")"
+		return out
+	}
+	return append(out, ai.Message{Role: "system", Content: aiStyleReminder})
+}
+
+// thinkRe: khối suy luận mà một số model (Qwen, DeepSeek-R1…) viết lẫn vào câu trả lời.
+var thinkRe = regexp.MustCompile(`(?is)<(think|thinking|reasoning)>.*?</(think|thinking|reasoning)>`)
+var thinkOpenRe = regexp.MustCompile(`(?is)<(think|thinking|reasoning)>.*$`)
+
+// stripThinking bỏ khối suy luận khỏi chữ hiện cho mọi người. Khối chưa đóng (đang stream) bị
+// ẩn tới cuối, để không thấy suy nghĩ hiện ra rồi mới biến mất.
+func stripThinking(s string) string {
+	if !strings.Contains(s, "<") {
+		return s
+	}
+	s = thinkRe.ReplaceAllString(s, "")
+	s = thinkOpenRe.ReplaceAllString(s, "")
+	return strings.TrimLeft(s, " \n")
+}
 
 // finishAI lưu nội dung cuối của tin bot và phát lại cho cả kênh.
 func (a *API) finishAI(ctx context.Context, m model.Message, content string) {

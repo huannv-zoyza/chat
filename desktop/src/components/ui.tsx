@@ -203,6 +203,8 @@ const paths: Record<string, ReactNode> = {
   reply: <path d="M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />,
   forward: <path d="m15 14 5-5-5-5M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />,
   pin: <path d="M9 4h6l-1 6 3 3H7l3-3-1-6ZM12 13v7" />,
+  expand: <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />,
+  shrink: <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />,
   more: (
     <>
       <circle cx="5.5" cy="12" r="1.3" fill="currentColor" />

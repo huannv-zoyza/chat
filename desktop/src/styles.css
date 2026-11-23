@@ -4345,6 +4345,8 @@ body.is-col-resizing video {
 }
 .call-local {
   position: absolute;
+  z-index: 2; /* khung nhỏ luôn nằm trên khung lớn, kể cả khi đổi chỗ */
+  cursor: pointer;
   right: 1rem;
   bottom: calc(7.5rem + env(safe-area-inset-bottom));
   width: min(26vw, 220px);
@@ -4404,6 +4406,19 @@ body.is-col-resizing video {
 }
 .call-btn.is-on:hover .icon {
   background: #4290e6;
+}
+/* khung nhỏ đang hiện người kia (đã đổi chỗ): không lật gương, không cắt hình */
+.call-local.is-peer {
+  object-fit: cover;
+  transform: none;
+}
+.call-remote.is-mirror {
+  transform: scaleX(-1);
+}
+.call-top,
+.call-controls,
+.call-notice {
+  z-index: 3;
 }
 .call-local.is-screen {
   aspect-ratio: 16 / 10;
@@ -4549,6 +4564,101 @@ body.is-col-resizing video {
 .gc-tile-name em {
   font-style: normal;
   opacity: 0.75;
+}
+.gc-tile {
+  cursor: pointer;
+}
+/* nút ghim / toàn màn hình ở góc ô: máy tính hiện khi rê chuột, điện thoại luôn hiện */
+.gc-tile-tools {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  z-index: 2;
+  display: flex;
+  gap: 0.25rem;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.gc-tile:hover .gc-tile-tools,
+.gc-tile:focus-within .gc-tile-tools,
+.gc-tile.is-pinned .gc-tile-tools {
+  opacity: 1;
+}
+@media (hover: none) {
+  .gc-tile-tools {
+    opacity: 0.9;
+  }
+}
+.gc-tile-btn {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  cursor: pointer;
+}
+.gc-tile-btn:hover {
+  background: rgb(0 0 0 / 0.75);
+}
+.gc-tile-btn.is-on {
+  background: var(--signal);
+  color: var(--signal-ink);
+}
+
+/* Ghim: ô ghim chiếm khung lớn (hiện trọn hình), những người khác thành cột bên phải */
+.gc-grid.is-pinned {
+  grid-template-columns: minmax(0, 1fr) clamp(9rem, 18vw, 14rem);
+  grid-template-rows: repeat(var(--strip-n), minmax(0, 1fr));
+}
+.gc-grid.is-pinned .gc-tile {
+  grid-column: 2;
+}
+.gc-grid.is-pinned .gc-tile.is-pinned {
+  grid-column: 1;
+  grid-row: 1 / -1;
+  background: #000;
+}
+.gc-grid.is-pinned .gc-tile.is-pinned video {
+  object-fit: contain;
+}
+.gc-grid.is-pinned .gc-tile:not(.is-pinned) .gc-tile-avatar .avatar {
+  transform: scale(0.6);
+}
+.gc-grid.is-pinned .gc-tile:not(.is-pinned) .gc-tile-name {
+  left: 0.3rem;
+  bottom: 0.3rem;
+  max-width: calc(100% - 0.6rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--step--2);
+}
+/* màn hình dọc (điện thoại): khung lớn ở trên, dải nhỏ ở dưới */
+@media (max-aspect-ratio: 1/1) {
+  .gc-grid.is-pinned {
+    grid-template-columns: repeat(var(--strip-n), minmax(0, 1fr));
+    grid-template-rows: minmax(0, 1fr) clamp(5rem, 16vh, 8rem);
+  }
+  .gc-grid.is-pinned .gc-tile {
+    grid-column: auto;
+    grid-row: 2;
+  }
+  .gc-grid.is-pinned .gc-tile.is-pinned {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+}
+/* một ô toàn màn hình: hiện trọn hình trên nền đen */
+.gc-tile:fullscreen {
+  border-radius: 0;
+  background: #000;
+}
+.gc-tile:fullscreen video {
+  object-fit: contain;
 }
 .gc-wait {
   margin: 0.5rem 0 0;

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useCallState } from "../lib/calls";
 import { useGroupCall } from "../lib/groupcall";
 import { canShareScreen } from "../lib/screenshare";
+import { fullscreenElement, toggleFullscreen } from "../lib/fullscreen";
 import { displayName } from "../lib/format";
 import { useChat } from "../state/ChatProvider";
 import { Avatar, Icon, Linkified } from "./ui";
@@ -18,12 +19,37 @@ function useTimer(startedAt?: number) {
   return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 }
 
-function Media({ stream, muted, className }: { stream?: MediaStream; muted?: boolean; className?: string }) {
+function Media({
+  stream,
+  muted,
+  className,
+  onClick,
+  onDoubleClick,
+  title,
+}: {
+  stream?: MediaStream;
+  muted?: boolean;
+  className?: string;
+  onClick?: () => void;
+  onDoubleClick?: () => void;
+  title?: string;
+}) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     if (ref.current && ref.current.srcObject !== (stream ?? null)) ref.current.srcObject = stream ?? null;
   }, [stream]);
-  return <video ref={ref} className={className} autoPlay playsInline muted={muted} />;
+  return (
+    <video
+      ref={ref}
+      className={className}
+      autoPlay
+      playsInline
+      muted={muted}
+      onClick={onClick}
+      onDoubleClick={onDoubleClick}
+      title={title}
+    />
+  );
 }
 
 /** Màn hình cuộc gọi (phủ lên app). */
@@ -31,6 +57,22 @@ export function CallOverlay() {
   const { calls, state } = useChat();
   const call = useCallState(calls);
   const timer = useTimer(call.phase === "active" ? call.startedAt : undefined);
+  // đổi chỗ khung lớn / khung nhỏ (vd. xem to màn hình mình đang chia sẻ)
+  const [swap, setSwap] = useState(false);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const [full, setFull] = useState(false);
+  useEffect(() => {
+    const on = () => setFull(!!fullscreenElement() && fullscreenElement() === overlayRef.current);
+    document.addEventListener("fullscreenchange", on);
+    document.addEventListener("webkitfullscreenchange", on);
+    return () => {
+      document.removeEventListener("fullscreenchange", on);
+      document.removeEventListener("webkitfullscreenchange", on);
+    };
+  }, []);
+  useEffect(() => {
+    if (call.phase === "idle" || call.phase === "ended") setSwap(false);
+  }, [call.phase]);
   if (!calls || call.phase === "idle") return null;
 
   const peer = (call.peer && state.users[call.peer.id]) ?? call.peer;
@@ -39,6 +81,10 @@ export function CallOverlay() {
   const remoteVideo = !!call.remote?.getVideoTracks().length && (call.video || !!call.remoteScreen);
   const localVideo = !!call.local?.getVideoTracks().length && !call.camOff;
   const inCall = call.phase === "connecting" || call.phase === "active";
+  const mineShown = !!call.screen || (localVideo && (inCall || call.phase === "outgoing"));
+  // chỉ đổi chỗ được khi cả hai bên đều có hình
+  const swapped = swap && inCall && remoteVideo && mineShown;
+  const goFull = () => overlayRef.current && toggleFullscreen(overlayRef.current);
 
   const status =
     call.phase === "incoming"
@@ -55,12 +101,21 @@ export function CallOverlay() {
 
   return (
     <div
+      ref={overlayRef}
       className={`call-overlay${remoteVideo && inCall ? " has-video" : ""}`}
       role="dialog"
       aria-label={`Cuộc gọi với ${name}`}
     >
       {/* âm thanh/hình của người kia: luôn gắn vào thẻ video (kể cả gọi thoại) để phát tiếng */}
-      {inCall && <Media stream={call.remote} className={remoteVideo ? "call-remote" : "call-remote is-audio"} />}
+      {inCall && (
+        <Media
+          stream={call.remote}
+          className={!remoteVideo ? "call-remote is-audio" : swapped ? "call-local is-peer" : "call-remote"}
+          onClick={swapped ? () => setSwap(false) : undefined}
+          onDoubleClick={!swapped && remoteVideo ? goFull : undefined}
+          title={swapped ? `Bấm để xem ${name} ở khung lớn` : remoteVideo ? "Bấm đúp: toàn màn hình" : undefined}
+        />
+      )}
 
       {call.notice && (
         <p className="call-notice" role="alert">
@@ -85,11 +140,18 @@ export function CallOverlay() {
         </div>
       )}
 
-      {call.screen ? (
-        <Media stream={call.screen} muted className="call-local is-screen" />
-      ) : (
-        localVideo &&
-        (inCall || call.phase === "outgoing") && <Media stream={call.local} muted className="call-local" />
+      {mineShown && (
+        <Media
+          stream={call.screen ?? call.local}
+          muted
+          className={
+            swapped
+              ? `call-remote${call.screen ? "" : " is-mirror"}`
+              : `call-local${call.screen ? " is-screen" : ""}`
+          }
+          onClick={remoteVideo && inCall && !swapped ? () => setSwap(true) : undefined}
+          title={remoteVideo && inCall && !swapped ? "Bấm để xem khung này to" : undefined}
+        />
       )}
 
       <div className="call-controls">
@@ -147,6 +209,18 @@ export function CallOverlay() {
               >
                 <Icon name={call.camOff ? "videoOff" : "video"} size={24} />
                 <span>Camera</span>
+              </button>
+            )}
+            {call.phase === "active" && (remoteVideo || mineShown) && (
+              <button
+                type="button"
+                className={`call-btn${full ? " is-on" : ""}`}
+                onClick={goFull}
+                aria-pressed={full}
+                aria-label={full ? "Thoát toàn màn hình" : "Toàn màn hình"}
+              >
+                <Icon name={full ? "shrink" : "expand"} size={24} />
+                <span>{full ? "Thu lại" : "Toàn màn hình"}</span>
               </button>
             )}
             {call.phase === "active" && canShareScreen() && (

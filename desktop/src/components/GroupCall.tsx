@@ -1,18 +1,30 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { Channel, PublicUser } from "../lib/api";
 import { useCallState } from "../lib/calls";
 import { channelLabel } from "../lib/channel";
 import { displayName } from "../lib/format";
 import { useGroupCall } from "../lib/groupcall";
 import { canShareScreen } from "../lib/screenshare";
+import { fullscreenElement, toggleFullscreen } from "../lib/fullscreen";
 import { useChat } from "../state/ChatProvider";
 import { Avatar, Icon, Linkified } from "./ui";
 
-function Media({ stream, muted, mirror }: { stream?: MediaStream; muted?: boolean; mirror?: boolean }) {
-  const ref = useRef<HTMLVideoElement>(null);
+function Media({
+  stream,
+  muted,
+  mirror,
+  videoRef,
+}: {
+  stream?: MediaStream;
+  muted?: boolean;
+  mirror?: boolean;
+  videoRef?: React.RefObject<HTMLVideoElement | null>;
+}) {
+  const own = useRef<HTMLVideoElement>(null);
+  const ref = videoRef ?? own;
   useEffect(() => {
     if (ref.current && ref.current.srcObject !== (stream ?? null)) ref.current.srcObject = stream ?? null;
-  }, [stream]);
+  }, [stream, ref]);
   return <video ref={ref} autoPlay playsInline muted={muted} className={mirror ? "is-mirror" : undefined} />;
 }
 
@@ -38,6 +50,8 @@ function Tile({
   camOff,
   state,
   screen,
+  pinned,
+  onPin,
 }: {
   user?: PublicUser;
   stream?: MediaStream;
@@ -46,6 +60,9 @@ function Tile({
   state?: string;
   /** Ô này đang hiện màn hình được chia sẻ (không lật gương, không cắt hình). */
   screen?: boolean;
+  /** Ô đang được ghim (khung lớn). */
+  pinned?: boolean;
+  onPin: () => void;
 }) {
   // có hình khi có track video đang bật; video vẫn được gắn (ẩn) để phát tiếng
   const [, force] = useState(0);
@@ -67,22 +84,68 @@ function Tile({
       });
     };
   });
+  const tileRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [full, setFull] = useState(false);
+  useEffect(() => {
+    const on = () => setFull(fullscreenElement() === tileRef.current);
+    document.addEventListener("fullscreenchange", on);
+    document.addEventListener("webkitfullscreenchange", on);
+    return () => {
+      document.removeEventListener("fullscreenchange", on);
+      document.removeEventListener("webkitfullscreenchange", on);
+    };
+  }, []);
   const hasVideo = !!stream?.getVideoTracks().some((t) => t.enabled && !t.muted) && (screen || !camOff);
+  const name = self ? "Bạn" : displayName(user);
+  const fullscreen = () => tileRef.current && toggleFullscreen(tileRef.current, videoRef.current);
   return (
-    <div className={`gc-tile${hasVideo ? " has-video" : ""}${screen ? " is-screen" : ""}`}>
-      <Media stream={stream} muted={self} mirror={self && !screen} />
+    <div
+      ref={tileRef}
+      className={`gc-tile${hasVideo ? " has-video" : ""}${screen ? " is-screen" : ""}${pinned ? " is-pinned" : ""}`}
+      onClick={onPin}
+      onDoubleClick={(e) => {
+        e.preventDefault();
+        if (hasVideo) fullscreen();
+      }}
+      title={pinned ? "Bấm để bỏ ghim · bấm đúp: toàn màn hình" : "Bấm để ghim lên khung lớn · bấm đúp: toàn màn hình"}
+    >
+      <Media stream={stream} muted={self} mirror={self && !screen} videoRef={videoRef} />
       {!hasVideo && (
         <div className="gc-tile-avatar">
           <Avatar user={user} size={72} />
         </div>
       )}
       <span className="gc-tile-name">
-        {self ? "Bạn" : displayName(user)}
+        {name}
         {screen && <em> · màn hình</em>}
         {state && state !== "connected" && state !== "new" && (
           <em> · {state === "failed" ? "lỗi kết nối" : "đang nối…"}</em>
         )}
         {state === "new" && <em> · đang nối…</em>}
+      </span>
+      <span className="gc-tile-tools" onClick={(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          className={`gc-tile-btn${pinned ? " is-on" : ""}`}
+          onClick={onPin}
+          aria-pressed={!!pinned}
+          aria-label={pinned ? `Bỏ ghim ${name}` : `Ghim ${name} lên khung lớn`}
+          title={pinned ? "Bỏ ghim" : "Ghim lên khung lớn"}
+        >
+          <Icon name="pin" size={16} />
+        </button>
+        {hasVideo && (
+          <button
+            type="button"
+            className="gc-tile-btn"
+            onClick={fullscreen}
+            aria-label={full ? "Thoát toàn màn hình" : `Xem ${name} toàn màn hình`}
+            title={full ? "Thoát toàn màn hình" : "Toàn màn hình"}
+          >
+            <Icon name={full ? "shrink" : "expand"} size={16} />
+          </button>
+        )}
       </span>
     </div>
   );
@@ -96,6 +159,12 @@ export function GroupCallOverlay() {
   const clock = useClock(
     a ? (gs.rooms[a.channelId]?.started_at ? Date.parse(gs.rooms[a.channelId].started_at!) : a.joinedAt) : undefined,
   );
+  // ghim: "self" | peerId | "grid" (người dùng đã bỏ ghim, kể cả ghim tự động) | null (tự động)
+  const [userPin, setUserPin] = useState<string | null>(null);
+  const sharing = a ? Object.values(a.peers).find((p) => p.screen)?.peerId : undefined;
+  useEffect(() => setUserPin(null), [a?.channelId]);
+  // có người mới chia sẻ màn hình: lại cho tự ghim người đó (trừ khi đang ghim tay một người)
+  useEffect(() => setUserPin((v) => (v === "grid" ? null : v)), [sharing]);
   if (!g) return null;
 
   const invite = gs.invite;
@@ -104,6 +173,11 @@ export function GroupCallOverlay() {
   const peers = a ? Object.values(a.peers) : [];
   const count = peers.length + (a ? 1 : 0);
   const label = ch ? channelLabel(ch, state.users, state.me.id) : "Cuộc gọi nhóm";
+  const present = (id: string) => id === "self" || peers.some((p) => p.peerId === id);
+  let pinId: string | null =
+    userPin === "grid" ? null : userPin && present(userPin) ? userPin : (sharing ?? null);
+  if (count < 2) pinId = null; // một mình trong cuộc gọi: không có gì để ghim
+  const togglePin = (id: string) => setUserPin(pinId === id ? "grid" : id);
 
   return (
     <>
@@ -150,13 +224,18 @@ export function GroupCallOverlay() {
               {clock} · {count} người
             </span>
           </div>
-          <div className={`gc-grid n${Math.min(count, 9)}`}>
+          <div
+            className={`gc-grid n${Math.min(count, 9)}${pinId ? " is-pinned" : ""}`}
+            style={{ "--strip-n": Math.max(1, count - 1) } as CSSProperties}
+          >
             <Tile
               user={state.users[state.me.id] ?? state.me}
               stream={a.screen ?? a.local}
               self
               camOff={a.camOff}
               screen={!!a.screen}
+              pinned={pinId === "self"}
+              onPin={() => count > 1 && togglePin("self")}
             />
             {peers.map((p) => (
               <Tile
@@ -165,6 +244,8 @@ export function GroupCallOverlay() {
                 stream={p.stream}
                 state={p.state}
                 screen={p.screen}
+                pinned={pinId === p.peerId}
+                onPin={() => togglePin(p.peerId)}
               />
             ))}
           </div>

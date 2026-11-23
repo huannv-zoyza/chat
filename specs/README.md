@@ -16,7 +16,10 @@ Mọi tính năng mới, trò chơi tương tác hoặc module kiến trúc ph�
 | 4 | [GAME_VIEWER_THREAD_SPEC.md](file:///Users/hoang.nguyen3/tidebird/chat/specs/GAME_VIEWER_THREAD_SPEC.md) | Feature | ✅ Đã triển khai | Luồng bình luận riêng cho ván cờ (Thread) và định danh Khán giả (`[Viewer]`). |
 | 5 | [LIVE_GAMES_TOPBAR_SPEC.md](file:///Users/hoang.nguyen3/tidebird/chat/specs/LIVE_GAMES_TOPBAR_SPEC.md) | Feature | ✅ Đã triển khai | Ghim thanh các ván cờ đang live ở Topbar và điều hướng cuộn `jumpToMessage`. |
 | 6 | [SCREEN_SHARE_SPEC.md](SCREEN_SHARE_SPEC.md) | Feature | ✅ Đã triển khai | Chia sẻ màn hình trong cuộc gọi 1-1 và nhóm, đàm phán lại SDP kiểu perfect negotiation. |
-| 7 | [BACKLOG.md](file:///Users/hoang.nguyen3/tidebird/chat/specs/BACKLOG.md) | Backlog | 📋 Đang theo dõi | Danh mục tính năng dự kiến (v2+), ý tưởng phát triển và nợ kỹ thuật (Tech Debt). |
+| 7 | [LIVE_GAME_SPECTATORS_SPEC.md](file:///Users/hoang.nguyen3/tidebird/chat/specs/LIVE_GAME_SPECTATORS_SPEC.md) | Feature | ✅ Đã triển khai | Đếm khán giả realtime & spectator presence khi xem/bình luận game qua WebSocket. |
+| 8 | [SOLO_GAMES_RATING_SPEC.md](file:///Users/hoang.nguyen3/tidebird/chat/specs/SOLO_GAMES_RATING_SPEC.md) | Feature | ✅ Đã triển khai | Hệ thống đánh giá điểm Elo & Bảng xếp hạng TOP cho Caro, Cờ Tướng, Cờ Vua, Kéo Búa Bao. |
+| 9 | [AI_GAMEPLAY_ANALYTICS_SPEC.md](file:///Users/hoang.nguyen3/tidebird/chat/specs/AI_GAMEPLAY_ANALYTICS_SPEC.md) | Feature | ✅ Đã triển khai | AI Agent phân tích lối chơi, khai cuộc & chiến thuật từng người theo game. |
+| 10 | [BACKLOG.md](file:///Users/hoang.nguyen3/tidebird/chat/specs/BACKLOG.md) | Backlog | 📋 Đang theo dõi | Danh mục tính năng dự kiến (v2+), ý tưởng phát triển và nợ kỹ thuật (Tech Debt). |
 
 ---
 

@@ -250,7 +250,21 @@ export type ReadState = { user_id: number; message_id: number; user?: PublicUser
 
 /** Giới hạn khớp với server (controller/files.go). */
 export const MAX_FILE_SIZE = 20 * 1024 * 1024;
+/** Video / âm thanh được gửi lớn hơn (vừa giới hạn 100 MB mỗi request của Cloudflare Tunnel). */
+export const MAX_MEDIA_SIZE = 95 * 1024 * 1024;
 export const MAX_FILES = 10;
+
+const MEDIA_EXT = /\.(mp4|m4v|mov|webm|mkv|avi|3gp|mp3|m4a|aac|wav|ogg|oga|opus|flac)$/i;
+
+/** File là video / âm thanh (theo loại trình duyệt báo, hoặc theo đuôi khi trình duyệt không biết). */
+export function isMediaFile(f: File): boolean {
+  return /^(video|audio)\//.test(f.type) || MEDIA_EXT.test(f.name);
+}
+
+/** Dung lượng tối đa được gửi cho file này. */
+export function maxSizeFor(f: File): number {
+  return isMediaFile(f) ? MAX_MEDIA_SIZE : MAX_FILE_SIZE;
+}
 
 /** Lấy mã mời từ link (".../invite/<mã>") hoặc từ chính mã người dùng dán vào. */
 export function parseInviteCode(input: string): string | null {
@@ -490,7 +504,13 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
           if (xhr.status >= 200 && xhr.status < 300) return resolve(data as Message);
           if (xhr.status === 401 && token) onUnauthorized?.();
           const serverMsg = (data as { error?: unknown } | null)?.error;
-          reject(new ApiError(xhr.status, typeof serverMsg === "string" ? serverMsg : `Server trả lỗi ${xhr.status}.`));
+          if (typeof serverMsg === "string") return reject(new ApiError(xhr.status, serverMsg));
+          // 413 không phải JSON: bị proxy (Cloudflare Tunnel, tối đa 100 MB mỗi lần gửi) chặn trước khi tới server
+          const fallback =
+            xhr.status === 413
+              ? "Tổng dung lượng file trong một tin quá lớn (tối đa khoảng 100 MB), hãy gửi bớt từng file."
+              : `Server trả lỗi ${xhr.status}.`;
+          reject(new ApiError(xhr.status, fallback));
         };
         xhr.onerror = () => reject(new ApiError(0, "Mất kết nối khi đang tải file lên."));
         xhr.send(form);

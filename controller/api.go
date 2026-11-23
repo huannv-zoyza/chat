@@ -26,6 +26,7 @@ type API struct {
 	hub            *socket.Hub
 	originPatterns []string
 	uploadsDir     string // thư mục lưu file người dùng gửi
+	minFreeDisk    uint64 // còn ít hơn chừng này byte trống thì không nhận file mới
 	logins         *loginLimiter
 	unfurlClient   *http.Client // xem trước link: chỉ kết nối được tới internet công khai
 	unfurls        unfurlCache
@@ -51,6 +52,7 @@ func (a *API) SetUIBuild(id string) { a.uiBuild = id }
 func NewAPI(st *store.Store, hub *socket.Hub, originPatterns []string, uploadsDir string) *API {
 	return &API{
 		store: st, hub: hub, originPatterns: originPatterns, uploadsDir: uploadsDir,
+		minFreeDisk:  defaultMinFreeDisk,
 		logins:       newLoginLimiter(10, 15*time.Minute),
 		unfurlClient: newUnfurlClient(),
 	}

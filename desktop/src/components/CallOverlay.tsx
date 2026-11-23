@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useCallState } from "../lib/calls";
 import { useGroupCall } from "../lib/groupcall";
+import { canShareScreen } from "../lib/screenshare";
 import { displayName } from "../lib/format";
 import { useChat } from "../state/ChatProvider";
 import { Avatar, Icon, Linkified } from "./ui";
@@ -34,7 +35,8 @@ export function CallOverlay() {
 
   const peer = (call.peer && state.users[call.peer.id]) ?? call.peer;
   const name = displayName(peer);
-  const remoteVideo = !!call.remote?.getVideoTracks().length;
+  // gọi thoại: chỉ hiện hình khi người kia chia sẻ màn hình
+  const remoteVideo = !!call.remote?.getVideoTracks().length && (call.video || !!call.remoteScreen);
   const localVideo = !!call.local?.getVideoTracks().length && !call.camOff;
   const inCall = call.phase === "connecting" || call.phase === "active";
 
@@ -60,6 +62,12 @@ export function CallOverlay() {
       {/* âm thanh/hình của người kia: luôn gắn vào thẻ video (kể cả gọi thoại) để phát tiếng */}
       {inCall && <Media stream={call.remote} className={remoteVideo ? "call-remote" : "call-remote is-audio"} />}
 
+      {call.notice && (
+        <p className="call-notice" role="alert">
+          {call.notice}
+        </p>
+      )}
+
       {!(remoteVideo && inCall) && (
         <div className="call-center">
           <span className={`call-avatar${call.phase === "incoming" || call.phase === "outgoing" ? " is-ringing" : ""}`}>
@@ -73,12 +81,15 @@ export function CallOverlay() {
       )}
       {remoteVideo && inCall && (
         <div className="call-top">
-          <strong>{name}</strong> <span>{status}</span>
+          <strong>{name}</strong> <span>{call.remoteScreen ? `đang chia sẻ màn hình · ${status}` : status}</span>
         </div>
       )}
 
-      {localVideo && (inCall || call.phase === "outgoing") && (
-        <Media stream={call.local} muted className="call-local" />
+      {call.screen ? (
+        <Media stream={call.screen} muted className="call-local is-screen" />
+      ) : (
+        localVideo &&
+        (inCall || call.phase === "outgoing") && <Media stream={call.local} muted className="call-local" />
       )}
 
       <div className="call-controls">
@@ -136,6 +147,18 @@ export function CallOverlay() {
               >
                 <Icon name={call.camOff ? "videoOff" : "video"} size={24} />
                 <span>Camera</span>
+              </button>
+            )}
+            {call.phase === "active" && canShareScreen() && (
+              <button
+                type="button"
+                className={`call-btn${call.screen ? " is-on" : ""}`}
+                onClick={() => void calls.toggleScreen()}
+                aria-pressed={!!call.screen}
+                aria-label={call.screen ? "Dừng chia sẻ màn hình" : "Chia sẻ màn hình"}
+              >
+                <Icon name={call.screen ? "screenOff" : "screen"} size={24} />
+                <span>{call.screen ? "Dừng chia sẻ" : "Màn hình"}</span>
               </button>
             )}
             <button

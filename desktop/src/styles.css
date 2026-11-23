@@ -4327,6 +4327,38 @@ button {
 .call-btn.is-danger:hover .icon {
   background: #e65a4d;
 }
+/* đang chia sẻ màn hình */
+.call-btn.is-on .icon {
+  background: #2f7fd8;
+}
+.call-btn.is-on:hover .icon {
+  background: #4290e6;
+}
+.call-local.is-screen {
+  aspect-ratio: 16 / 10;
+  object-fit: contain;
+  transform: none;
+}
+.call-notice {
+  position: absolute;
+  top: calc(3.75rem + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 2rem);
+  margin: 0;
+  padding: 0.45rem 0.9rem;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.6);
+  color: #fff;
+  font-size: 0.85rem;
+  text-align: center;
+}
+.gc-tile.is-screen {
+  background: #000;
+}
+.gc-tile.is-screen video {
+  object-fit: contain;
+}
 .call-log {
   display: inline-flex;
   align-items: center;

@@ -4,6 +4,7 @@ import { useCallState } from "../lib/calls";
 import { channelLabel } from "../lib/channel";
 import { displayName } from "../lib/format";
 import { useGroupCall } from "../lib/groupcall";
+import { canShareScreen } from "../lib/screenshare";
 import { useChat } from "../state/ChatProvider";
 import { Avatar, Icon, Linkified } from "./ui";
 
@@ -36,29 +37,40 @@ function Tile({
   self,
   camOff,
   state,
+  screen,
 }: {
   user?: PublicUser;
   stream?: MediaStream;
   self?: boolean;
   camOff?: boolean;
   state?: string;
+  /** Ô này đang hiện màn hình được chia sẻ (không lật gương, không cắt hình). */
+  screen?: boolean;
 }) {
   // có hình khi có track video đang bật; video vẫn được gắn (ẩn) để phát tiếng
   const [, force] = useState(0);
   useEffect(() => {
     if (!stream) return;
     const on = () => force((x) => x + 1);
+    // track có thể được thêm sau (đàm phán lại khi chia sẻ màn hình): gắn lại mỗi lần vẽ
+    const tracks = stream.getTracks();
     stream.addEventListener("addtrack", on);
-    stream.getTracks().forEach((t) => {
+    tracks.forEach((t) => {
       t.addEventListener("mute", on);
       t.addEventListener("unmute", on);
     });
-    return () => stream.removeEventListener("addtrack", on);
-  }, [stream]);
-  const hasVideo = !!stream?.getVideoTracks().some((t) => t.enabled && !t.muted) && !camOff;
+    return () => {
+      stream.removeEventListener("addtrack", on);
+      tracks.forEach((t) => {
+        t.removeEventListener("mute", on);
+        t.removeEventListener("unmute", on);
+      });
+    };
+  });
+  const hasVideo = !!stream?.getVideoTracks().some((t) => t.enabled && !t.muted) && (screen || !camOff);
   return (
-    <div className={`gc-tile${hasVideo ? " has-video" : ""}`}>
-      <Media stream={stream} muted={self} mirror={self} />
+    <div className={`gc-tile${hasVideo ? " has-video" : ""}${screen ? " is-screen" : ""}`}>
+      <Media stream={stream} muted={self} mirror={self && !screen} />
       {!hasVideo && (
         <div className="gc-tile-avatar">
           <Avatar user={user} size={72} />
@@ -66,6 +78,7 @@ function Tile({
       )}
       <span className="gc-tile-name">
         {self ? "Bạn" : displayName(user)}
+        {screen && <em> · màn hình</em>}
         {state && state !== "connected" && state !== "new" && (
           <em> · {state === "failed" ? "lỗi kết nối" : "đang nối…"}</em>
         )}
@@ -138,9 +151,21 @@ export function GroupCallOverlay() {
             </span>
           </div>
           <div className={`gc-grid n${Math.min(count, 9)}`}>
-            <Tile user={state.users[state.me.id] ?? state.me} stream={a.local} self camOff={a.camOff} />
+            <Tile
+              user={state.users[state.me.id] ?? state.me}
+              stream={a.screen ?? a.local}
+              self
+              camOff={a.camOff}
+              screen={!!a.screen}
+            />
             {peers.map((p) => (
-              <Tile key={p.peerId} user={state.users[p.user.id] ?? p.user} stream={p.stream} state={p.state} />
+              <Tile
+                key={p.peerId}
+                user={state.users[p.user.id] ?? p.user}
+                stream={p.stream}
+                state={p.state}
+                screen={p.screen}
+              />
             ))}
           </div>
           {peers.length === 0 && (
@@ -171,6 +196,18 @@ export function GroupCallOverlay() {
               >
                 <Icon name={a.camOff ? "videoOff" : "video"} size={22} />
                 <span>Camera</span>
+              </button>
+            )}
+            {canShareScreen() && (
+              <button
+                type="button"
+                className={`call-btn${a.screen ? " is-on" : ""}`}
+                onClick={() => void g.toggleScreen()}
+                aria-pressed={!!a.screen}
+                aria-label={a.screen ? "Dừng chia sẻ màn hình" : "Chia sẻ màn hình"}
+              >
+                <Icon name={a.screen ? "screenOff" : "screen"} size={22} />
+                <span>{a.screen ? "Dừng chia sẻ" : "Màn hình"}</span>
               </button>
             )}
             <button

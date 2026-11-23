@@ -99,6 +99,8 @@ export type ChatState = {
   spectators: Record<number, SpectatorInfo[]>;
   /** Thông báo ngắn hiện ở góc màn hình (vd. bị mời ra khỏi kênh). */
   notice: string | null;
+  /** Ví xu ảo của mình (null khi chưa tải). */
+  wallet: { balance: number; debt: number } | null;
 };
 
 export function initialState(me: User): ChatState {
@@ -128,6 +130,7 @@ export function initialState(me: User): ChatState {
     liveGames: {},
     spectators: {},
     notice: null,
+    wallet: null,
   };
 }
 
@@ -141,6 +144,7 @@ export type Action =
   | { type: "channel.upsert"; channel: Channel; keepUnread?: boolean }
   | { type: "channel.removed"; channelId: number; kicked?: boolean }
   | { type: "notice"; text: string | null }
+  | { type: "wallet.set"; balance: number; debt: number }
   | { type: "channel.select"; channelId: number | null; auto?: boolean }
   | { type: "channel.read"; channelId: number }
   | { type: "messages.loaded"; channelId: number; messages: Message[]; hasMore: boolean; older: boolean }
@@ -609,6 +613,9 @@ export function reducer(s: ChatState, a: Action): ChatState {
 
     case "notice":
       return { ...s, notice: a.text };
+
+    case "wallet.set":
+      return { ...s, wallet: { balance: a.balance, debt: a.debt } };
 
     case "member.left": {
       const c = s.channels[a.channelId];

@@ -19,7 +19,8 @@ Mọi tính năng mới, trò chơi tương tác hoặc module kiến trúc ph�
 | 7 | [LIVE_GAME_SPECTATORS_SPEC.md](file:///Users/hoang.nguyen3/tidebird/chat/specs/LIVE_GAME_SPECTATORS_SPEC.md) | Feature | ✅ Đã triển khai | Đếm khán giả realtime & spectator presence khi xem/bình luận game qua WebSocket. |
 | 8 | [SOLO_GAMES_RATING_SPEC.md](file:///Users/hoang.nguyen3/tidebird/chat/specs/SOLO_GAMES_RATING_SPEC.md) | Feature | ✅ Đã triển khai | Hệ thống đánh giá điểm Elo & Bảng xếp hạng TOP cho Caro, Cờ Tướng, Cờ Vua, Kéo Búa Bao. |
 | 9 | [AI_GAMEPLAY_ANALYTICS_SPEC.md](file:///Users/hoang.nguyen3/tidebird/chat/specs/AI_GAMEPLAY_ANALYTICS_SPEC.md) | Feature | ✅ Đã triển khai | AI Agent phân tích lối chơi, khai cuộc & chiến thuật từng người theo game. |
-| 10 | [BACKLOG.md](file:///Users/hoang.nguyen3/tidebird/chat/specs/BACKLOG.md) | Backlog | 📋 Đang theo dõi | Danh mục tính năng dự kiến (v2+), ý tưởng phát triển và nợ kỹ thuật (Tech Debt). |
+| 10 | [BAU_CUA_XU_SPEC.md](BAU_CUA_XU_SPEC.md) | Game | ✅ Đã triển khai | Bầu cua tôm cá có người làm cái xoay vòng, cược bằng ví xu ảo (nhận hằng ngày, vay ngân hàng, đại gia / con nợ). |
+| 11 | [BACKLOG.md](file:///Users/hoang.nguyen3/tidebird/chat/specs/BACKLOG.md) | Backlog | 📋 Đang theo dõi | Danh mục tính năng dự kiến (v2+), ý tưởng phát triển và nợ kỹ thuật (Tech Debt). |
 
 ---
 

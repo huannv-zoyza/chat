@@ -430,6 +430,10 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
 
       sock.on("ready", (ev) => {
         dispatch({ type: "ready", me: ev.user, online: ev.online_user_ids, ai: ev.ai ?? null });
+        api
+          .getWallet()
+          .then((w) => dispatch({ type: "wallet.set", balance: w.balance, debt: w.debt }))
+          .catch(() => {});
         stationStore.resubscribe();
         groups.setRooms(ev.group_calls ?? []);
         // bản web đang chạy cũ hơn bản máy chủ phục vụ: nhắc tải lại (app desktop có bản riêng)
@@ -580,6 +584,7 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       sock.on("channel.deleted", (ev) => dispatch({ type: "channel.removed", channelId: ev.channel_id })),
       sock.on("member.joined", (ev) => dispatch({ type: "member.joined", channelId: ev.channel_id, user: ev.user })),
       sock.on("member.left", (ev) => dispatch({ type: "member.left", channelId: ev.channel_id, userId: ev.user_id })),
+      sock.on("wallet.updated", (ev) => dispatch({ type: "wallet.set", balance: ev.balance, debt: ev.debt })),
       sock.on("reaction.updated", (ev) =>
         dispatch({ type: "reactions.set", messageId: ev.message_id, reactions: ev.reactions }),
       ),

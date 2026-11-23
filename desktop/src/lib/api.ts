@@ -76,7 +76,11 @@ export type MessageLinkInfo = {
   message?: Message;
 };
 
-export type GameKind = "station" | "werewolf" | "spy" | "caro" | "rps" | "chess" | "xiangqi";
+export type GameKind = "station" | "werewolf" | "spy" | "caro" | "rps" | "chess" | "xiangqi" | "baucua";
+
+export type Wallet = { balance: number; debt: number; can_claim: boolean; can_loan: boolean; in_tables: number };
+export type BoardEntry = { user: PublicUser; balance: number; debt: number };
+export type WalletBoard = { rich: BoardEntry[]; debtors: BoardEntry[] };
 export type GamePlayer = { id: number; name: string };
 
 export type GameMemberStats = {
@@ -475,6 +479,11 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     },
     messageLink: (id: number) => request<MessageLinkInfo>("GET", `/api/messages/${id}/link`),
     deleteChannel: (id: number) => request<void>("DELETE", `/api/channels/${id}`),
+    getWallet: () => request<Wallet>("GET", "/api/wallet"),
+    claimDaily: () => request<Wallet>("POST", "/api/wallet/claim"),
+    takeLoan: () => request<Wallet>("POST", "/api/wallet/loan"),
+    repayDebt: () => request<Wallet>("POST", "/api/wallet/repay"),
+    walletBoard: (channelId: number) => request<WalletBoard>("GET", `/api/channels/${channelId}/wallet-board`),
     kickMember: (channelId: number, userId: number) =>
       request<void>("DELETE", `/api/channels/${channelId}/members/${userId}`),
     joinChannel: (id: number) => request<Channel>("POST", `/api/channels/${id}/join`),

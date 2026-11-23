@@ -23,6 +23,7 @@ import { useWheelScrollX } from "../lib/useWheelScrollX";
 import type { StationState } from "../lib/station";
 import { StationSummary } from "./Station";
 import { ShareDialog } from "./Share";
+import { BauCua } from "./BauCuaGame";
 import { Avatar, Dialog, FormError, Icon } from "./ui";
 
 /* ---------- Tiện ích ---------- */
@@ -43,7 +44,7 @@ function clock(s: number) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-function Countdown({ deadline, label }: { deadline?: string; label?: string }) {
+export function Countdown({ deadline, label }: { deadline?: string; label?: string }) {
   const left = useSecondsLeft(deadline);
   if (left === null) return null;
   return (
@@ -53,8 +54,9 @@ function Countdown({ deadline, label }: { deadline?: string; label?: string }) {
   );
 }
 
-type Ctx = {
+export type Ctx = {
   messageId: number;
+  channelId: number;
   game: GameView;
   meId: number;
   isPlayer: boolean;
@@ -202,6 +204,7 @@ export function GameCard({ message }: { message: Message }) {
   const [lbOpen, setLbOpen] = useState(false);
   const ctx: Ctx = {
     messageId: message.id,
+    channelId: message.channel_id,
     game,
     meId,
     isPlayer,
@@ -258,6 +261,8 @@ export function GameCard({ message }: { message: Message }) {
         <Chess ctx={ctx} />
       ) : game.kind === "xiangqi" ? (
         <Xiangqi ctx={ctx} />
+      ) : game.kind === "baucua" ? (
+        <BauCua ctx={ctx} />
       ) : (
         <Rps ctx={ctx} />
       )}
@@ -365,6 +370,13 @@ const RULES: Record<GameKind, string[]> = {
     "Bên bị hết nước đi (bức tử / stalemate) bị xử thua cuộc.",
   ],
   rps: ["Búa thắng Kéo, Kéo thắng Bao, Bao thắng Búa.", "Hai người ra cùng lúc, 30 giây mỗi ván."],
+  baucua: [
+    "Vào bàn là mang toàn bộ xu trong ví thành chip. Hết ván chip còn lại tự về ví.",
+    "Mỗi lượt có 20 giây đặt chip vào 6 con: Bầu, Cua, Tôm, Cá, Gà, Nai. Cái bấm Lắc sớm được.",
+    "Con nào ra k mặt thì người cược ăn k lần tiền cược; con không ra thì cái ăn.",
+    "Cái xoay vòng theo thứ tự vào phòng. Cái không đủ trả là cháy túi: vay ngân hàng phần thiếu và mất cái ngay.",
+    "Hết xu thì bấm Vay ngân hàng 500 (thành nợ trong ví).",
+  ],
 };
 
 function Lobby({ ctx }: { ctx: Ctx }) {
@@ -1568,7 +1580,7 @@ function Rps({ ctx }: { ctx: Ctx }) {
 
 export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number; dm: boolean; onClose: () => void }) {
   const { createGame } = useChat();
-  const kinds = (Object.keys(GAME_INFO) as GameKind[]).filter((k) => !dm || k === "caro" || k === "rps" || k === "chess" || k === "xiangqi");
+  const kinds = (Object.keys(GAME_INFO) as GameKind[]).filter((k) => !dm || k === "caro" || k === "rps" || k === "chess" || k === "xiangqi" || k === "baucua");
   const [kind, setKind] = useState<GameKind>(kinds[0]);
   const [day, setDay] = useState(120);
   const [night, setNight] = useState(45);
@@ -1580,6 +1592,7 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
   const [xiangqiMinutes, setXiangqiMinutes] = useState(3);
   const [xiangqiFirst, setXiangqiFirst] = useState<"random" | "host" | "guest">("random");
   const [bestOf, setBestOf] = useState(3);
+  const [rollsPerDealer, setRollsPerDealer] = useState(3);
   const [st, setSt] = useState({
     traitors: 0,
     kill_cooldown: 25,
@@ -1606,6 +1619,7 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
       chess: { turn_minutes: chessMinutes, first: chessFirst },
       xiangqi: { turn_minutes: xiangqiMinutes, first: xiangqiFirst },
       rps: { best_of: bestOf },
+      baucua: { rolls_per_dealer: rollsPerDealer },
     };
     try {
       await createGame(channelId, kind, options[kind]);
@@ -1803,6 +1817,16 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
               </select>
             </label>
           </>
+        )}
+        {kind === "baucua" && (
+          <label className="field">
+            <span>Mỗi người cầm cái</span>
+            <select value={rollsPerDealer} onChange={(e) => setRollsPerDealer(Number(e.target.value))}>
+              <option value={1}>1 lượt lắc</option>
+              <option value={3}>3 lượt lắc</option>
+              <option value={5}>5 lượt lắc</option>
+            </select>
+          </label>
         )}
         {kind === "rps" && (
           <label className="field">

@@ -158,6 +158,33 @@ export const ROLE_INFO: Record<WerewolfRole, { name: string; icon: string; team:
   },
 };
 
+export const BAUCUA_SYMBOLS = [
+  { id: "bau", name: "Bầu", icon: "🍐" },
+  { id: "cua", name: "Cua", icon: "🦀" },
+  { id: "tom", name: "Tôm", icon: "🦐" },
+  { id: "ca", name: "Cá", icon: "🐟" },
+  { id: "ga", name: "Gà", icon: "🐓" },
+  { id: "nai", name: "Nai", icon: "🦌" },
+];
+
+export type BauCuaState = {
+  phase: "" | "betting" | "reveal";
+  dealer_id: number;
+  roll_no: number;
+  rolls_per_dealer: number;
+  dealer_order: number[];
+  chips: Record<number, number>;
+  loans: Record<number, number>;
+  bets: Record<number, Record<string, number>>;
+  dice: string[];
+  last_result: Record<number, number>;
+  history: string[][];
+  net: Record<number, number>;
+  busts: Record<number, number>;
+  last_bust?: number;
+  last_bust_amount?: number;
+};
+
 export const GAME_INFO: Record<GameKind, { title: string; icon: string; players: string; blurb: string }> = {
   station: {
     title: "Trạm Vũ Trụ",
@@ -200,6 +227,11 @@ export const GAME_INFO: Record<GameKind, { title: string; icon: string; players:
     icon: "🪖",
     players: "2 người",
     blurb: "Cờ tướng 9×10, luật chuẩn: cản mắt tượng, cản chân mã, pháo nhảy ngòi, lộ diện tướng.",
+  },  baucua: {
+    title: "Bầu cua tôm cá",
+    icon: "🎲",
+    players: "2–10 người",
+    blurb: "Đặt cược 6 con vật, cái xoay vòng, cháy túi thì vay ngân hàng. Cược bằng xu trong ví.",
   },
 };
 
@@ -238,6 +270,7 @@ export function myTurn(g: GameView | undefined, meId: number): string | null {
       const s = g.state as XiangqiState | undefined;
       return s?.turn_player_id === meId ? "Tới lượt bạn đi" : null;
     }
+
     case "rps": {
       const i = g.players.findIndex((p) => p.id === meId);
       const s = g.state as RpsState | undefined;

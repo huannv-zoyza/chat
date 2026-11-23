@@ -14,6 +14,7 @@ import {
 } from "./ChannelDialogs";
 import { clearPendingInvite, peekPendingInvite } from "../lib/platform";
 import { UserSettingsDialog } from "./UserSettingsDialog";
+import { WalletDialog } from "./Wallet";
 import { NewDMDialog } from "./NewDMDialog";
 import { SearchDialog } from "./MessageExtras";
 import { RemindersDialog } from "./Reminders";
@@ -28,7 +29,7 @@ import { COMPACT_QUERY, useMediaQuery } from "../lib/useMedia";
 import { Icon } from "./ui";
 
 type DialogName =
-  "create" | "browse" | "channel" | "user" | "invite" | "joinLink" | "dm" | "search" | "reminders" | null;
+  "create" | "browse" | "channel" | "user" | "invite" | "joinLink" | "dm" | "search" | "reminders" | "wallet" | null;
 
 export function Workspace() {
   const { state, dispatch, api, openThread, openMessageLink } = useChat();
@@ -180,6 +181,7 @@ export function Workspace() {
         onBrowseChannels={() => setDialog("browse")}
         onJoinByLink={() => setDialog("joinLink")}
         onOpenSettings={() => setDialog("user")}
+        onOpenWallet={() => setDialog("wallet")}
         onNewDM={() => setDialog("dm")}
         onSearch={() => setDialog("search")}
         onReminders={() => setDialog("reminders")}
@@ -233,6 +235,7 @@ export function Workspace() {
       )}
       {dialog === "channel" && channel && <ChannelSettingsDialog channel={channel} onClose={() => setDialog(null)} />}
       {dialog === "user" && <UserSettingsDialog onClose={() => setDialog(null)} />}
+      {dialog === "wallet" && <WalletDialog channelId={state.activeId} onClose={() => setDialog(null)} />}
       {dialog === "invite" && channel && <InviteDialog channel={channel} onClose={() => setDialog(null)} />}
       <CallOverlay />
       <GroupCallOverlay />

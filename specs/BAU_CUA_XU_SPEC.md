@@ -1,7 +1,7 @@
 # Đặc Tả Kỹ Thuật (SPEC): Bầu Cua Tôm Cá & Ví Xu Ảo
 
 - **Mã tính năng**: `BAU-CUA-XU`
-- **Trạng thái**: 📝 Đang thiết kế
+- **Trạng thái**: ✅ Đã triển khai
 - **Ngày tạo**: 2026-11-23
 - **Thư mục liên quan**:
   - Backend: `game/baucua.go` (mới), `game/game.go`, `controller/games.go`, `controller/wallet.go` (mới), `store/wallet.go` (mới), `database/migrations/000019_wallet.*.sql` (mới)
@@ -202,8 +202,8 @@ Thêm "Bầu cua tôm cá" vào `CreateGameDialog`, kèm tuỳ chọn số lư�
 ---
 
 ## 7. Kế Hoạch Triển Khai
-- [ ] Migration `000019_wallet` + `store/wallet.go` (ví lười, claim, loan, repay, buyin, cashout, refund, board) + test store.
-- [ ] `game/baucua.go`: luật, pha, xoay cái, cháy túi, view; interface `staked` cho game dùng chip (`BuyIn`, `Chips`, `Loans`, `Refund`) + test luật (xác suất trả thưởng, cháy túi, bỏ qua cái hết chip, kết thúc vòng).
-- [ ] Controller + store: mua chip và lưu ván trong một transaction (join, tạo phòng), trả chip (rời phòng chờ, `saveAndBroadcast` khi Ended, `deleteMessage`), cashout bù lúc khởi động. REST ví + sự kiện `wallet.updated`. Test API (join trừ ví, huỷ hoàn ví, cashout đúng một lần, cháy túi tạo nợ).
-- [ ] Frontend: API + types, nút ví ở Sidebar, hộp thoại Ví xu, thẻ bàn bầu cua, tuỳ chọn tạo ván, CSS (desktop + điện thoại).
-- [ ] README: thêm mục Bầu cua & Ví xu. `specs/README.md`: thêm dòng spec này.
+- [x] Migration `000019_wallet` + `store/wallet.go` (ví lười, claim, loan, repay, buyin, cashout, refund, board) + test store.
+- [x] `game/baucua.go`: luật, pha, xoay cái, cháy túi, view; interface `staked` cho game dùng chip (`BuyIn`, `Chips`, `Loans`, `Refund`) + test luật (xác suất trả thưởng, cháy túi, bỏ qua cái hết chip, kết thúc vòng).
+- [x] Controller + store: mua chip và lưu ván trong một transaction (join, tạo phòng), trả chip (rời phòng chờ, `saveAndBroadcast` khi Ended, `deleteMessage`), cashout bù lúc khởi động. REST ví + sự kiện `wallet.updated`. Test API (join trừ ví, huỷ hoàn ví, cashout đúng một lần, cháy túi tạo nợ).
+- [x] Frontend: API + types, nút ví ở Sidebar, hộp thoại Ví xu, thẻ bàn bầu cua, tuỳ chọn tạo ván, CSS (desktop + điện thoại).
+- [x] README: thêm mục Bầu cua & Ví xu. `specs/README.md`: thêm dòng spec này.

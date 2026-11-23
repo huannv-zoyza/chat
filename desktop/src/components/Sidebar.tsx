@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { WalletButton } from "./Wallet";
 import { useChat } from "../state/ChatProvider";
 import type { SocketStatus } from "../lib/socket";
 import { displayName } from "../lib/format";
@@ -24,6 +25,7 @@ type Props = {
   onBrowseChannels: () => void;
   onJoinByLink: () => void;
   onOpenSettings: () => void;
+  onOpenWallet: () => void;
   onNewDM: () => void;
   onSearch: () => void;
   onReminders: () => void;
@@ -35,6 +37,7 @@ export function Sidebar({
   onBrowseChannels,
   onJoinByLink,
   onOpenSettings,
+  onOpenWallet,
   onNewDM,
   onSearch,
   onReminders,
@@ -199,6 +202,7 @@ export function Sidebar({
         )}
       </div>
 
+      <WalletButton onOpen={onOpenWallet} />
       <button className="me-card" onClick={onOpenSettings} title="Cài đặt tài khoản">
         <Avatar user={me} size={34} online={state.status === "open"} />
         <span className="me-text">

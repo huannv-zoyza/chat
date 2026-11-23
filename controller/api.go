@@ -84,6 +84,17 @@ func (a *API) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("POST /api/channels/{id}/join", a.requireAuth(a.joinChannel))
 	mux.HandleFunc("POST /api/channels/{id}/leave", a.requireAuth(a.leaveChannel))
 	mux.HandleFunc("DELETE /api/channels/{id}/members/{userId}", a.requireAuth(a.kickMember))
+	mux.HandleFunc("GET /api/channels/{id}/wallet-board", a.requireAuth(a.walletBoard))
+	mux.HandleFunc("GET /api/wallet", a.requireAuth(a.getWallet))
+	mux.HandleFunc("POST /api/wallet/claim", a.requireAuth(a.walletAction(func(r *http.Request, id int64) (store.Wallet, error) {
+		return a.store.ClaimDaily(r.Context(), id, vnToday(time.Now()))
+	})))
+	mux.HandleFunc("POST /api/wallet/loan", a.requireAuth(a.walletAction(func(r *http.Request, id int64) (store.Wallet, error) {
+		return a.store.TakeLoan(r.Context(), id)
+	})))
+	mux.HandleFunc("POST /api/wallet/repay", a.requireAuth(a.walletAction(func(r *http.Request, id int64) (store.Wallet, error) {
+		return a.store.RepayDebt(r.Context(), id)
+	})))
 	mux.HandleFunc("POST /api/channels/{id}/invite", a.requireAuth(a.regenerateInvite))
 	mux.HandleFunc("GET /api/invites/{code}", a.requireAuth(a.previewInvite))
 	mux.HandleFunc("POST /api/invites/{code}/join", a.requireAuth(a.joinByInvite))

@@ -26,6 +26,7 @@ import (
 //	channel.deleted  {channel_id}                            kênh bị xoá
 //	member.joined    {channel_id, user}                      có người vào kênh
 //	member.left      {channel_id, user_id}                   có người rời kênh
+//	wallet.updated   {balance, debt}                         ví xu của mình thay đổi
 //	reaction.updated {channel_id, message_id, parent_id?, reactions}  cảm xúc của một tin thay đổi
 //	thread.updated   {channel_id, message_id, thread}        luồng trả lời của tin gốc thay đổi
 //	read.updated     {channel_id, user_id, message_id}       ai đó đã xem tới tin message_id

@@ -921,315 +921,138 @@ function Spy({ ctx }: { ctx: Ctx }) {
 
 /* ---------- Cờ caro ---------- */
 
+/** Số hàng/cột trống luôn chừa quanh quân ngoài cùng: đánh gần mép thì bàn tự nới ra. */
+const CARO_PAD = 2;
+/** Vùng ban đầu 15×15 (toạ độ 0..14), giống bàn caro thường. */
+const CARO_BASE = 15;
+const CARO_CELL_MAX = 34;
+const CARO_CELL_MIN = 22;
+
 function Caro({ ctx }: { ctx: Ctx }) {
   const { game, meId, busy, act } = ctx;
   const s = game.state as CaroState;
   const [x, o] = game.players;
   const myMove = game.status === "playing" && s.turn === meId;
-  const myMark = x?.id === meId ? "X" : "O";
+  const myMark = x?.id === meId ? "x" : "o";
 
+  // quân trên bàn: "r,c" -> "x" | "o" (ván cũ chỉ có chuỗi board 15×15)
   const pieces = useMemo(() => {
     if (s.pieces) return s.pieces;
     const map: Record<string, "x" | "o"> = {};
     if (s.board) {
       for (let i = 0; i < s.board.length; i++) {
         const ch = s.board[i];
-        if (ch === "x" || ch === "o") {
-          map[`${Math.floor(i / s.size)},${i % s.size}`] = ch;
-        }
+        if (ch === "x" || ch === "o") map[`${Math.floor(i / s.size)},${i % s.size}`] = ch;
       }
     }
     return map;
   }, [s.pieces, s.board, s.size]);
 
-  const winCoords = useMemo(() => {
-    if (s.win_coords && s.win_coords.length > 0) {
-      return new Set(s.win_coords.map((c) => `${c.r},${c.c}`));
-    }
-    if (s.win && s.win.length > 0) {
-      return new Set(s.win.map((idx) => `${Math.floor(idx / s.size)},${idx % s.size}`));
-    }
-    return new Set<string>();
+  const win = useMemo(() => {
+    if (s.win_coords?.length) return new Set(s.win_coords.map((c) => `${c.r},${c.c}`));
+    return new Set((s.win ?? []).map((i) => `${Math.floor(i / s.size)},${i % s.size}`));
   }, [s.win_coords, s.win, s.size]);
 
-  const lastCoord = useMemo(() => {
-    if (s.last_coord) return s.last_coord;
-    if (s.last !== undefined && s.last >= 0) {
-      return { r: Math.floor(s.last / s.size), c: s.last % s.size };
-    }
+  const last = useMemo(() => {
+    if (s.last_coord) return `${s.last_coord.r},${s.last_coord.c}`;
+    if (s.last !== undefined && s.last >= 0) return `${Math.floor(s.last / s.size)},${s.last % s.size}`;
     return null;
   }, [s.last_coord, s.last, s.size]);
 
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [cellSize, setCellSize] = useState(30);
-  const [dragging, setDragging] = useState(false);
-  const [hover, setHover] = useState<{ r: number; c: number } | null>(null);
-  const initializedRef = useRef(false);
+  // khung bàn = vùng 15×15 ban đầu ∪ mọi quân, nới thêm CARO_PAD ô quanh quân ngoài cùng
+  const bounds = useMemo(() => {
+    let r0 = 0,
+      r1 = CARO_BASE - 1,
+      c0 = 0,
+      c1 = CARO_BASE - 1;
+    for (const k of Object.keys(pieces)) {
+      const [r, c] = k.split(",").map(Number);
+      r0 = Math.min(r0, r - CARO_PAD);
+      r1 = Math.max(r1, r + CARO_PAD);
+      c0 = Math.min(c0, c - CARO_PAD);
+      c1 = Math.max(c1, c + CARO_PAD);
+    }
+    return { r0, c0, rows: r1 - r0 + 1, cols: c1 - c0 + 1 };
+  }, [pieces]);
 
-  const centerAt = useCallback((row: number, col: number, cs = cellSize) => {
-    const c = containerRef.current;
-    if (!c) return;
-    const rect = c.getBoundingClientRect();
-    setPan({
-      x: rect.width / 2 - (col + 0.5) * cs,
-      y: rect.height / 2 - (row + 0.5) * cs,
-    });
-  }, [cellSize]);
-
+  // cỡ ô: vừa bề ngang thẻ; bàn quá rộng thì cuộn trong khung bàn (không đẩy cả tin rộng ra)
+  const [width, setWidth] = useState(0);
+  const boxRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (initializedRef.current) return;
-    const c = containerRef.current;
-    if (!c) return;
-    const rect = c.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) {
-      initializedRef.current = true;
-      if (lastCoord) {
-        centerAt(lastCoord.r, lastCoord.c);
-      } else {
-        centerAt(7, 7);
-      }
-    }
-  }, [centerAt, lastCoord]);
+    const el = boxRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setWidth(el.clientWidth));
+    ro.observe(el);
+    setWidth(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+  const cell = width
+    ? Math.max(CARO_CELL_MIN, Math.min(CARO_CELL_MAX, Math.floor(width / bounds.cols)))
+    : CARO_CELL_MAX;
 
+  // điện thoại: chạm 1 lần để chọn ô, chạm lần nữa để đánh (ô nhỏ, dễ chạm nhầm)
+  const [picked, setPicked] = useState<string | null>(null);
+  useEffect(() => setPicked(null), [s.moves, myMove]);
+
+  // nước mới / bàn nới ra: cuộn để thấy nước vừa đánh
+  // (tự tính thay vì scrollIntoView: cái đó cuộn cả khung chat bên ngoài theo)
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx2d = canvas.getContext("2d");
-    if (!ctx2d) return;
+    const box = boxRef.current;
+    const el = last ? box?.querySelector<HTMLElement>(`[data-k="${last}"]`) : null;
+    if (!box || !el) return;
+    const b = box.getBoundingClientRect();
+    const e = el.getBoundingClientRect();
+    if (e.left < b.left) box.scrollLeft -= b.left - e.left + e.width;
+    else if (e.right > b.right) box.scrollLeft += e.right - b.right + e.width;
+    if (e.top < b.top) box.scrollTop -= b.top - e.top + e.height;
+    else if (e.bottom > b.bottom) box.scrollTop += e.bottom - b.bottom + e.height;
+  }, [last, bounds.rows, bounds.cols, cell]);
 
-    const rect = canvas.getBoundingClientRect();
-    const width = rect.width;
-    const height = rect.height;
-    if (width === 0 || height === 0) return;
-    const dpr = window.devicePixelRatio || 1;
-
-    if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
-      canvas.width = Math.round(width * dpr);
-      canvas.height = Math.round(height * dpr);
+  const touchRef = useRef(false);
+  const play = (k: string) => {
+    if (!myMove || busy || pieces[k]) return;
+    if (touchRef.current && picked !== k) {
+      setPicked(k);
+      return;
     }
-
-    ctx2d.save();
-    ctx2d.scale(dpr, dpr);
-
-    const computed = getComputedStyle(canvas);
-    const surfaceColor = computed.getPropertyValue("--surface").trim() || "#ffffff";
-    const canvasColor = computed.getPropertyValue("--canvas").trim() || "#f8fafc";
-    const lineSoft = computed.getPropertyValue("--line-soft").trim() || "rgba(128,128,128,0.2)";
-    const lineStrong = computed.getPropertyValue("--line").trim() || "rgba(128,128,128,0.45)";
-    const u1Color = computed.getPropertyValue("--u1").trim() || "#2f6fb3";
-    const u4Color = computed.getPropertyValue("--u4").trim() || "#e05252";
-    const signalColor = computed.getPropertyValue("--signal").trim() || "#3b82f6";
-    const signalSoft = computed.getPropertyValue("--signal-soft").trim() || "rgba(59,130,246,0.18)";
-    const textSoft = computed.getPropertyValue("--text-soft").trim() || "#94a3b8";
-
-    // 1. Clear full canvas
-    ctx2d.fillStyle = canvasColor;
-    ctx2d.fillRect(0, 0, width, height);
-
-    // 2. Starting 15x15 court
-    const courtLeft = 0 * cellSize + pan.x;
-    const courtTop = 0 * cellSize + pan.y;
-    const courtSize = 15 * cellSize;
-    ctx2d.fillStyle = surfaceColor;
-    ctx2d.fillRect(courtLeft, courtTop, courtSize, courtSize);
-    ctx2d.strokeStyle = lineStrong;
-    ctx2d.lineWidth = 1.5;
-    ctx2d.strokeRect(courtLeft, courtTop, courtSize, courtSize);
-
-    // 3. Grid lines
-    const startCol = Math.floor(-pan.x / cellSize) - 1;
-    const endCol = Math.ceil((width - pan.x) / cellSize) + 1;
-    const startRow = Math.floor(-pan.y / cellSize) - 1;
-    const endRow = Math.ceil((height - pan.y) / cellSize) + 1;
-
-    ctx2d.lineWidth = 1;
-    ctx2d.strokeStyle = lineSoft;
-    ctx2d.beginPath();
-    for (let c = startCol; c <= endCol; c++) {
-      const xPos = Math.round(c * cellSize + pan.x) + 0.5;
-      ctx2d.moveTo(xPos, 0);
-      ctx2d.lineTo(xPos, height);
-    }
-    for (let r = startRow; r <= endRow; r++) {
-      const yPos = Math.round(r * cellSize + pan.y) + 0.5;
-      ctx2d.moveTo(0, yPos);
-      ctx2d.lineTo(width, yPos);
-    }
-    ctx2d.stroke();
-
-    // Hoshi reference points in standard 15x15
-    const hoshi = [
-      [7, 7],
-      [3, 3],
-      [3, 11],
-      [11, 3],
-      [11, 11],
-    ];
-    ctx2d.fillStyle = textSoft;
-    for (const [hr, hc] of hoshi) {
-      const cx = hc * cellSize + pan.x + cellSize / 2;
-      const cy = hr * cellSize + pan.y + cellSize / 2;
-      if (cx >= -5 && cx <= width + 5 && cy >= -5 && cy <= height + 5) {
-        ctx2d.beginPath();
-        ctx2d.arc(cx, cy, Math.max(2, cellSize * 0.08), 0, Math.PI * 2);
-        ctx2d.fill();
-      }
-    }
-
-    // 4. Winning line highlight
-    if (winCoords.size > 0) {
-      for (const key of winCoords) {
-        const [r, c] = key.split(",").map(Number);
-        const cellX = c * cellSize + pan.x;
-        const cellY = r * cellSize + pan.y;
-        if (cellX + cellSize >= 0 && cellX <= width && cellY + cellSize >= 0 && cellY <= height) {
-          ctx2d.fillStyle = signalSoft;
-          ctx2d.fillRect(cellX, cellY, cellSize, cellSize);
-          ctx2d.strokeStyle = signalColor;
-          ctx2d.lineWidth = 2;
-          ctx2d.strokeRect(cellX + 1, cellY + 1, cellSize - 2, cellSize - 2);
-        }
-      }
-    }
-
-    // 5. Last move highlight
-    if (lastCoord) {
-      const cellX = lastCoord.c * cellSize + pan.x;
-      const cellY = lastCoord.r * cellSize + pan.y;
-      if (cellX + cellSize >= 0 && cellX <= width && cellY + cellSize >= 0 && cellY <= height) {
-        ctx2d.fillStyle = signalSoft;
-        ctx2d.fillRect(cellX, cellY, cellSize, cellSize);
-        ctx2d.strokeStyle = signalColor;
-        ctx2d.lineWidth = 1.5;
-        ctx2d.setLineDash([3, 3]);
-        ctx2d.strokeRect(cellX + 1.5, cellY + 1.5, cellSize - 3, cellSize - 3);
-        ctx2d.setLineDash([]);
-      }
-    }
-
-    // 6. Hover preview (ghost mark)
-    if (hover && myMove && !pieces[`${hover.r},${hover.c}`] && !busy) {
-      const cellX = hover.c * cellSize + pan.x;
-      const cellY = hover.r * cellSize + pan.y;
-      if (cellX + cellSize >= 0 && cellX <= width && cellY + cellSize >= 0 && cellY <= height) {
-        ctx2d.fillStyle = signalSoft;
-        ctx2d.fillRect(cellX, cellY, cellSize, cellSize);
-
-        ctx2d.font = `800 ${Math.round(cellSize * 0.65)}px sans-serif`;
-        ctx2d.textAlign = "center";
-        ctx2d.textBaseline = "middle";
-        ctx2d.fillStyle = myMark === "X" ? u1Color : u4Color;
-        ctx2d.globalAlpha = 0.45;
-        ctx2d.fillText(myMark, cellX + cellSize / 2, cellY + cellSize / 2);
-        ctx2d.globalAlpha = 1.0;
-      }
-    }
-
-    // 7. Placed pieces
-    ctx2d.font = `800 ${Math.round(cellSize * 0.65)}px sans-serif`;
-    ctx2d.textAlign = "center";
-    ctx2d.textBaseline = "middle";
-
-    for (const [key, mark] of Object.entries(pieces)) {
-      const [r, c] = key.split(",").map(Number);
-      const cellX = c * cellSize + pan.x;
-      const cellY = r * cellSize + pan.y;
-      if (cellX + cellSize < 0 || cellX > width || cellY + cellSize < 0 || cellY > height) {
-        continue;
-      }
-      const upper = mark.toUpperCase();
-      const isWin = winCoords.has(key);
-      ctx2d.fillStyle = isWin ? signalColor : upper === "X" ? u1Color : u4Color;
-      ctx2d.fillText(upper, cellX + cellSize / 2, cellY + cellSize / 2);
-    }
-
-    ctx2d.restore();
-  }, [cellSize, pan, pieces, winCoords, lastCoord, hover, myMove, busy, myMark]);
-
-  const pointerRef = useRef<{
-    id: number;
-    startX: number;
-    startY: number;
-    panX: number;
-    panY: number;
-    isDrag: boolean;
-  } | null>(null);
-
-  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (e.pointerType === "mouse" && e.button !== 0) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    pointerRef.current = {
-      id: e.pointerId,
-      startX: e.clientX,
-      startY: e.clientY,
-      panX: pan.x,
-      panY: pan.y,
-      isDrag: false,
-    };
+    const [r, c] = k.split(",").map(Number);
+    setPicked(null);
+    act("move", { r, c });
   };
 
-  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const p = pointerRef.current;
-    const rect = e.currentTarget.getBoundingClientRect();
-    if (p && p.id === e.pointerId) {
-      const dx = e.clientX - p.startX;
-      const dy = e.clientY - p.startY;
-      if (!p.isDrag && Math.hypot(dx, dy) > 4) {
-        p.isDrag = true;
-        setDragging(true);
-      }
-      if (p.isDrag) {
-        setPan({ x: p.panX + dx, y: p.panY + dy });
-        return;
-      }
+  const cells: ReactNode[] = [];
+  for (let i = 0; i < bounds.rows; i++) {
+    for (let j = 0; j < bounds.cols; j++) {
+      const r = bounds.r0 + i;
+      const c = bounds.c0 + j;
+      const k = `${r},${c}`;
+      const mark = pieces[k];
+      const cls = [
+        "caro-cell",
+        mark && `is-${mark}`,
+        win.has(k) && "is-win",
+        k === last && "is-last",
+        k === picked && "is-picked",
+        !mark && myMove && "is-open",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      cells.push(
+        <button
+          key={k}
+          type="button"
+          className={cls}
+          data-k={k}
+          disabled={!!mark || !myMove || busy}
+          onPointerDown={(e) => (touchRef.current = e.pointerType !== "mouse")}
+          onClick={() => play(k)}
+          aria-label={mark ? `${mark.toUpperCase()} hàng ${i + 1} cột ${j + 1}` : `Ô trống hàng ${i + 1} cột ${j + 1}`}
+        >
+          {mark ? mark.toUpperCase() : k === picked ? myMark.toUpperCase() : null}
+        </button>,
+      );
     }
-    const col = Math.floor((e.clientX - rect.left - pan.x) / cellSize);
-    const row = Math.floor((e.clientY - rect.top - pan.y) / cellSize);
-    if (!hover || hover.r !== row || hover.c !== col) {
-      setHover({ r: row, c: col });
-    }
-  };
-
-  const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const p = pointerRef.current;
-    if (!p || p.id !== e.pointerId) return;
-    pointerRef.current = null;
-    setDragging(false);
-
-    if (!p.isDrag) {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const col = Math.floor((e.clientX - rect.left - pan.x) / cellSize);
-      const row = Math.floor((e.clientY - rect.top - pan.y) / cellSize);
-      if (myMove && !pieces[`${row},${col}`] && !busy) {
-        act("move", { r: row, c: col });
-      }
-    }
-  };
-
-  const onPointerCancel = () => {
-    pointerRef.current = null;
-    setDragging(false);
-  };
-
-  const onWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
-    const newCellSize = Math.max(18, Math.min(64, Math.round(cellSize * zoomFactor)));
-    if (newCellSize === cellSize) return;
-
-    const rect = e.currentTarget.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-
-    const scale = newCellSize / cellSize;
-    const newPanX = mouseX - (mouseX - pan.x) * scale;
-    const newPanY = mouseY - (mouseY - pan.y) * scale;
-
-    setCellSize(newCellSize);
-    setPan({ x: newPanX, y: newPanY });
-  };
+  }
 
   return (
     <div className="caro">
@@ -1239,72 +1062,30 @@ function Caro({ ctx }: { ctx: Ctx }) {
             <span key={p.id} className={`caro-side${s.turn === p.id ? " is-turn" : ""}`}>
               <b className={`caro-mark caro-${i ? "o" : "x"}`}>{i ? "O" : "X"}</b>
               <Avatar user={ctx.user(p.id)} size={20} />
-              {p.id === meId ? "Bạn" : p.name}
+              <span className="caro-name">{p.id === meId ? "Bạn" : p.name}</span>
             </span>
           ) : null,
         )}
         {game.status === "playing" && <Countdown deadline={game.deadline} label="Thời gian nước đi" />}
       </div>
-      <div className="caro-board-container" ref={containerRef}>
-        <canvas
-          ref={canvasRef}
-          className={`caro-canvas${dragging ? " is-dragging" : ""}`}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerCancel}
-          onPointerLeave={() => setHover(null)}
-          onWheel={onWheel}
-          aria-label="Bàn cờ caro vô hạn. Kéo để di chuyển bàn cờ, bấm để đánh cờ."
-        />
-        <div className="caro-toolbar">
-          <button
-            type="button"
-            className="caro-tool-btn"
-            title="Về trung tâm (bàn 15×15 ban đầu)"
-            onClick={() => centerAt(7, 7)}
-          >
-            🎯 Về tâm
-          </button>
-          {lastCoord && (
-            <button
-              type="button"
-              className="caro-tool-btn"
-              title="Xem nước đi mới nhất"
-              onClick={() => centerAt(lastCoord.r, lastCoord.c)}
-            >
-              📍 Nước cuối
-            </button>
-          )}
-          <button
-            type="button"
-            className="caro-tool-btn"
-            title="Phóng to"
-            onClick={() => {
-              const newSize = Math.min(64, cellSize + 4);
-              setCellSize(newSize);
-            }}
-          >
-            +
-          </button>
-          <button
-            type="button"
-            className="caro-tool-btn"
-            title="Thu nhỏ"
-            onClick={() => {
-              const newSize = Math.max(18, cellSize - 4);
-              setCellSize(newSize);
-            }}
-          >
-            −
-          </button>
+      <div className="caro-box" ref={boxRef}>
+        <div
+          className={`caro-grid${myMove ? " is-my-move" : ""}`}
+          data-ghost={myMark.toUpperCase()}
+          style={{ gridTemplateColumns: `repeat(${bounds.cols}, ${cell}px)`, gridAutoRows: `${cell}px`, fontSize: cell * 0.62 }}
+        >
+          {cells}
         </div>
-        <span className="caro-pan-hint">🖱️ Kéo để di chuyển</span>
       </div>
       <div className="game-actions">
         {game.status === "playing" && (
           <span className="game-hint">
-            {myMove ? "Tới lượt bạn." : `Chờ ${ctx.nameOf(s.turn ?? 0)} đánh…`} Nước thứ {s.moves + 1}.
+            {myMove
+              ? picked
+                ? "Chạm lần nữa vào ô đó để đánh."
+                : "Tới lượt bạn."
+              : `Chờ ${ctx.nameOf(s.turn ?? 0)} đánh…`}{" "}
+            Nước thứ {s.moves + 1}.
           </span>
         )}
         {game.status === "playing" && ctx.isPlayer && (

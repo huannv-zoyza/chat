@@ -518,7 +518,8 @@ button {
   grid-template-columns: 264px minmax(0, 1fr) 260px;
 }
 .app.with-thread {
-  grid-template-columns: 264px minmax(0, 1fr) 380px;
+  /* --thread-w: độ rộng người dùng kéo (lưu theo tài khoản), luôn chừa >= 360px cho khung chat */
+  grid-template-columns: 264px minmax(0, 1fr) clamp(320px, var(--thread-w, 380px), max(320px, calc(100vw - 264px - 360px)));
 }
 
 /* =========================================================
@@ -1929,7 +1930,7 @@ button {
     grid-template-columns: 240px minmax(0, 1fr) 230px;
   }
   .app.with-thread {
-    grid-template-columns: 240px minmax(0, 1fr) 340px;
+    grid-template-columns: 240px minmax(0, 1fr) clamp(320px, var(--thread-w, 340px), max(320px, calc(100vw - 240px - 360px)));
   }
   .app {
     grid-template-columns: 240px minmax(0, 1fr);
@@ -2697,12 +2698,55 @@ button {
 }
 
 .thread-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
   border-left: 1px solid var(--line);
   background: var(--canvas);
 }
+/* tay kéo đổi độ rộng ở mép trái khung luồng (máy tính) */
+.thread-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  z-index: 3;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.thread-resizer::after {
+  content: "";
+  position: absolute;
+  inset: 0 3px;
+  background: transparent;
+  transition: background 0.15s;
+}
+.thread-resizer:hover::after,
+.thread-resizer:focus-visible::after,
+.is-col-resizing .thread-resizer::after {
+  background: var(--signal);
+}
+.thread-resizer:focus-visible {
+  outline: none;
+}
+/* đang kéo: con trỏ giữ nguyên, không bôi đen chữ, iframe/video không nuốt sự kiện chuột */
+body.is-col-resizing {
+  cursor: col-resize;
+  -webkit-user-select: none;
+  user-select: none;
+}
+body.is-col-resizing iframe,
+body.is-col-resizing video {
+  pointer-events: none;
+}
+@media (max-width: 860px) {
+  .thread-resizer {
+    display: none;
+  }
+}
+
 .thread-header {
   display: flex;
   align-items: center;
@@ -5042,110 +5086,85 @@ button.game-player:disabled {
 .caro-players .game-clock {
   margin-left: auto;
 }
-.caro-board-container {
-  position: relative;
-  width: 100%;
-  max-width: 30rem;
-  aspect-ratio: 1;
-  margin-bottom: 0.5rem;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--surface);
+.caro-name {
+  max-width: 9rem;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* khung bàn: bàn to hơn bề ngang thẻ thì cuộn bên trong khung này, không đẩy tin rộng ra */
+.caro-box {
+  max-width: 100%;
+  max-height: min(70vh, 40rem);
+  margin-bottom: 0.5rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.caro-grid {
+  display: grid;
+  width: max-content;
+  margin: 0 auto;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+  background: var(--surface);
   -webkit-user-select: none;
   user-select: none;
-  touch-action: none;
-}
-.caro-canvas {
-  display: block;
-  width: 100%;
-  height: 100%;
-  cursor: grab;
-}
-.caro-canvas.is-dragging {
-  cursor: grabbing;
-}
-.caro-toolbar {
-  position: absolute;
-  bottom: 0.5rem;
-  right: 0.5rem;
-  display: flex;
-  gap: 0.3rem;
-  z-index: 2;
-  pointer-events: auto;
-}
-.caro-tool-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.2rem 0.45rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  border-radius: 4px;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--text);
-  cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-  transition: background 0.15s ease;
-}
-.caro-tool-btn:hover {
-  background: var(--line-soft);
-}
-.caro-pan-hint {
-  position: absolute;
-  top: 0.45rem;
-  left: 0.5rem;
-  font-size: 0.72rem;
-  color: var(--muted);
-  background: var(--surface);
-  padding: 0.15rem 0.4rem;
-  border-radius: 4px;
-  border: 1px solid var(--line-soft);
-  pointer-events: none;
-  opacity: 0.8;
-}
-.caro-board {
-  display: grid;
-  width: 100%;
-  max-width: 30rem;
-  aspect-ratio: 1;
-  margin-bottom: 0.5rem;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--line-soft);
-  gap: 1px;
-  overflow: hidden;
 }
 .caro-cell {
   display: grid;
   place-items: center;
-  min-width: 0;
-  min-height: 0;
   padding: 0;
   border: 0;
-  background: var(--surface);
-  font-size: clamp(0.7rem, 2.6vw, 1.05rem);
+  border-right: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
   font-weight: 800;
   line-height: 1;
+  touch-action: manipulation;
 }
 .caro-cell:disabled {
   opacity: 1;
   cursor: default;
 }
-.caro-cell:not(:disabled):hover {
-  background: var(--signal-soft);
+.caro-cell.is-open {
+  cursor: pointer;
 }
-.caro-x,
-.caro-cell.caro-x {
+/* máy tính: rê chuột vào ô trống thì hiện mờ quân của mình */
+@media (hover: hover) {
+  .caro-grid.is-my-move .caro-cell.is-open:hover {
+    background: var(--signal-soft);
+  }
+  .caro-grid.is-my-move .caro-cell.is-open:hover::after {
+    opacity: 0.35;
+  }
+  .caro-grid.is-my-move[data-ghost="X"] .caro-cell.is-open:hover::after {
+    content: "X";
+    color: var(--u1);
+  }
+  .caro-grid.is-my-move[data-ghost="O"] .caro-cell.is-open:hover::after {
+    content: "O";
+    color: var(--u4);
+  }
+}
+/* điện thoại: ô đã chọn, chờ chạm lần 2 */
+.caro-cell.is-picked {
+  background: var(--signal-soft);
+  box-shadow: inset 0 0 0 2px var(--signal);
+  color: var(--muted);
+}
+.caro-cell.is-x,
+.caro-x {
   color: var(--u1);
 }
-.caro-o,
-.caro-cell.caro-o {
+.caro-cell.is-o,
+.caro-o {
   color: var(--u4);
 }
 .caro-cell.is-last {
   background: var(--signal-soft);
+  box-shadow: inset 0 0 0 2px var(--signal);
 }
 .caro-cell.is-win {
   background: var(--signal);

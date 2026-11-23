@@ -105,7 +105,7 @@ Lỗi trả về `{"error": "<câu hiển thị cho người dùng>"}`.
 | POST | `/api/channels/{id}/join`, `/leave` | Tham gia / rời kênh |
 | GET | `/api/channels/{id}/members` | Thành viên (chỉ thành viên xem được) |
 | GET | `/api/channels/{id}/messages?before=&limit=` | Lịch sử, cũ → mới, kèm `has_more` |
-| POST | `/api/channels/{id}/messages` | Gửi tin kèm file (multipart: `content`, `client_id`, `files` ×≤10, mỗi file ≤20 MB) |
+| POST | `/api/channels/{id}/messages` | Gửi tin kèm file (multipart: `content`, `client_id`, `files` ×≤10, mỗi file ≤20 MB, video/âm thanh ≤95 MB; đĩa còn <1 GB trống thì trả 507) |
 | GET | `/api/unfurl?url=` | Xem trước link: `{kind: page/image/video/audio/youtube/none, title, description, site_name, image, embed_url}`. Server chặn địa chỉ nội bộ (chống SSRF) |
 | GET | `/api/messages/{id}/thread` | Tin gốc + toàn bộ trả lời trong luồng |
 | POST | `/api/messages/{id}/reactions` | `{emoji}`: thả/bỏ cảm xúc (bấm lại để bỏ), trả về danh sách mới |

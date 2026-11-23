@@ -239,6 +239,18 @@ const paths: Record<string, ReactNode> = {
       <path d="M15.5 11V8.5a2 2 0 0 0-2-2H8M3.6 7.2A2 2 0 0 0 3 8.5v7a2 2 0 0 0 2 2h8.5a2 2 0 0 0 1.7-1M15.5 10.5l5-3v9M3 3l18 18" />
     </>
   ),
+  screen: (
+    <>
+      <rect x="3" y="4.5" width="18" height="12" rx="2" />
+      <path d="M8.5 20h7M12 16.5V20" />
+    </>
+  ),
+  screenOff: (
+    <>
+      <rect x="3" y="4.5" width="18" height="12" rx="2" />
+      <path d="M8.5 20h7M12 16.5V20M9.5 8l5 5M14.5 8l-5 5" />
+    </>
+  ),
   mic: (
     <>
       <rect x="9" y="3.5" width="6" height="11" rx="3" />

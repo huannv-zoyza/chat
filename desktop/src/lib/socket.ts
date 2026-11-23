@@ -37,7 +37,7 @@ export type ServerEvent =
       channel_id: number;
       from: string;
       from_user: PublicUser;
-      data: { sdp?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit };
+      data: SignalData;
     }
   | { type: "groupcall.error"; channel_id: number; message: string }
   | { type: "message.new"; message: Message; client_id?: string }
@@ -50,7 +50,7 @@ export type ServerEvent =
   | { type: "reminder.due"; reminder: Reminder }
   | { type: "call.incoming"; call_id: string; channel_id: number; from: PublicUser; video: boolean }
   | { type: "call.accepted"; call_id: string }
-  | { type: "call.signal"; call_id: string; data: { sdp?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit } }
+  | { type: "call.signal"; call_id: string; data: SignalData }
   | { type: "call.ended"; call_id: string; reason: string }
   | { type: "typing"; channel_id: number; user_id: number }
   | { type: "presence"; user_id: number; online: boolean }
@@ -74,6 +74,14 @@ export type SendOptions = {
   cipher?: string; // tin mã hoá đầu cuối
   replyToId?: number; // trả lời trích dẫn
   forwarded?: boolean;
+};
+
+/** Tín hiệu WebRTC chuyển giữa hai máy (máy chủ chuyển nguyên văn). */
+export type SignalData = {
+  sdp?: RTCSessionDescriptionInit;
+  candidate?: RTCIceCandidateInit;
+  /** Người gửi đang chia sẻ màn hình (có khi bật/tắt chia sẻ và kèm mỗi SDP). */
+  screen?: boolean;
 };
 
 /** Yêu cầu gọi điện gửi lên máy chủ (xem controller/calls.go). */

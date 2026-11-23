@@ -7,7 +7,8 @@
  */
 import { useSyncExternalStore } from "react";
 import { insecureMediaMessage, type Api, type PublicUser } from "./api";
-import type { CallRequest, ServerEvent } from "./socket";
+import { captureScreen, Renegotiator, setVideoSource } from "./screenshare";
+import type { CallRequest, ServerEvent, SignalData } from "./socket";
 
 export type CallPhase = "idle" | "outgoing" | "incoming" | "connecting" | "active" | "ended";
 
@@ -22,6 +23,12 @@ export type CallState = {
   remote?: MediaStream;
   muted: boolean;
   camOff: boolean;
+  /** Màn hình mình đang chia sẻ. */
+  screen?: MediaStream;
+  /** Người kia đang chia sẻ màn hình. */
+  remoteScreen?: boolean;
+  /** Báo ngắn trong lúc gọi (vd. không chia sẻ được màn hình). */
+  notice?: string;
   startedAt?: number;
   /** Câu báo khi kết thúc / lỗi. */
   message?: string;
@@ -91,6 +98,10 @@ export class CallController {
   private iceServers: RTCIceServer[] | null = null;
   private ringer = new Ringer();
   private clearTimer: number | undefined;
+  private noticeTimer: number | undefined;
+  private neg: Renegotiator | null = null;
+  /** Mình là người gọi (bên còn lại "nhường" khi hai bên cùng đàm phán lại). */
+  private isCaller = false;
 
   constructor(
     private api: Api,
@@ -149,6 +160,7 @@ export class CallController {
       }
     };
     pc.onconnectionstatechange = () => {
+      if (pc.connectionState === "connected") this.neg?.markReady();
       if (pc.connectionState === "connected" && this.state.phase !== "active") {
         this.set({ phase: "active", startedAt: Date.now() });
       } else if (pc.connectionState === "failed") {
@@ -156,8 +168,16 @@ export class CallController {
       }
     };
     this.state.local?.getTracks().forEach((t) => pc.addTrack(t, this.state.local!));
+    this.neg = new Renegotiator(pc, !this.isCaller, (sdp) => this.signal({ sdp }));
     this.pc = pc;
     return pc;
+  }
+
+  /** Gửi tín hiệu cho người kia; SDP luôn kèm cờ đang chia sẻ màn hình. */
+  private signal(data: SignalData) {
+    if (!this.state.callId) return;
+    const withScreen = data.sdp ? { ...data, screen: !!this.state.screen } : data;
+    this.send({ type: "call.signal", call_id: this.state.callId, data: withScreen });
   }
 
   /* ---------- Hành động người dùng ---------- */
@@ -166,6 +186,7 @@ export class CallController {
     if (this.state.phase !== "idle" && this.state.phase !== "ended") return;
     window.clearTimeout(this.clearTimer);
     const callId = newCallId();
+    this.isCaller = true;
     this.set({ ...IDLE, phase: "outgoing", callId, channelId, peer, video });
     try {
       const local = await this.media(video);
@@ -221,6 +242,59 @@ export class CallController {
     this.set({ camOff });
   }
 
+  /** Bật / tắt chia sẻ màn hình (thay cho hình camera nếu đang gọi video). */
+  async toggleScreen() {
+    if (this.state.screen) return this.stopScreen();
+    const pc = this.pc;
+    if (this.state.phase !== "active" || !pc) return;
+    let screen: MediaStream | null;
+    try {
+      screen = await captureScreen();
+    } catch (err) {
+      this.flash(err instanceof Error ? err.message : "Không chia sẻ được màn hình.");
+      return;
+    }
+    if (!screen) return;
+    if (this.pc !== pc || this.state.phase !== "active" || this.state.screen) {
+      return screen.getTracks().forEach((t) => t.stop());
+    }
+    const track = screen.getVideoTracks()[0];
+    // bấm "Dừng chia sẻ" của trình duyệt
+    track.onended = () => void this.stopScreen();
+    try {
+      if (await setVideoSource(pc, track, screen)) this.neg?.request();
+    } catch {
+      screen.getTracks().forEach((t) => t.stop());
+      this.flash("Không chia sẻ được màn hình.");
+      return;
+    }
+    this.set({ screen });
+    this.signal({ screen: true });
+  }
+
+  async stopScreen() {
+    const screen = this.state.screen;
+    if (!screen) return;
+    screen.getTracks().forEach((t) => {
+      t.onended = null;
+      t.stop();
+    });
+    this.set({ screen: undefined });
+    const pc = this.pc;
+    if (pc) {
+      // quay lại camera (nếu có), không thì thôi gửi hình
+      const cam = this.state.local?.getVideoTracks()[0] ?? null;
+      if (await setVideoSource(pc, cam, this.state.local).catch(() => false)) this.neg?.request();
+    }
+    this.signal({ screen: false });
+  }
+
+  private flash(notice: string) {
+    this.set({ notice });
+    window.clearTimeout(this.noticeTimer);
+    this.noticeTimer = window.setTimeout(() => this.set({ notice: undefined }), 4000);
+  }
+
   dismiss() {
     if (this.state.phase === "ended") this.set(IDLE);
   }
@@ -237,6 +311,7 @@ export class CallController {
           return;
         }
         window.clearTimeout(this.clearTimer);
+        this.isCaller = false;
         this.set({
           ...IDLE,
           phase: "incoming",
@@ -262,31 +337,42 @@ export class CallController {
           if (s.video && !this.state.local?.getVideoTracks().length) pc.addTransceiver("video", { direction: "recvonly" });
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
-          this.send({ type: "call.signal", call_id: ev.call_id, data: { sdp: pc.localDescription!.toJSON() } });
+          this.signal({ sdp: pc.localDescription!.toJSON() });
         } catch {
           this.hangup("Không thiết lập được cuộc gọi.");
         }
         return;
       }
       case "call.signal": {
-        if (ev.call_id !== s.callId || !this.pc) return;
         const pc = this.pc;
-        try {
-          if (ev.data.sdp) {
-            await pc.setRemoteDescription(ev.data.sdp);
-            if (ev.data.sdp.type === "offer") {
-              const answer = await pc.createAnswer();
-              await pc.setLocalDescription(answer);
-              this.send({ type: "call.signal", call_id: ev.call_id, data: { sdp: pc.localDescription!.toJSON() } });
-            }
-            for (const c of this.pendingIce.splice(0)) await pc.addIceCandidate(c).catch(() => {});
-          } else if (ev.data.candidate) {
-            if (pc.remoteDescription) await pc.addIceCandidate(ev.data.candidate).catch(() => {});
-            else this.pendingIce.push(ev.data.candidate);
-          }
-        } catch {
-          this.hangup("Không thiết lập được cuộc gọi.");
+        const neg = this.neg;
+        if (ev.call_id !== s.callId || !pc || !neg) return;
+        if (typeof ev.data.screen === "boolean" && ev.data.screen !== !!s.remoteScreen) {
+          this.set({ remoteScreen: ev.data.screen });
         }
+        const data = ev.data;
+        await neg.serial(async () => {
+          if (this.pc !== pc) return; // cuộc gọi đã kết thúc
+          try {
+            const sdp = data.sdp;
+            if (sdp) {
+              if (neg.shouldIgnore(sdp)) return;
+              await pc.setRemoteDescription(sdp);
+              if (sdp.type === "offer") {
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                this.signal({ sdp: pc.localDescription!.toJSON() });
+              }
+              for (const c of this.pendingIce.splice(0)) await pc.addIceCandidate(c).catch(() => {});
+              neg.afterRemote(sdp);
+            } else if (data.candidate) {
+              if (pc.remoteDescription) await pc.addIceCandidate(data.candidate).catch(() => {});
+              else this.pendingIce.push(data.candidate);
+            }
+          } catch {
+            if (this.pc === pc) this.hangup("Không thiết lập được cuộc gọi.");
+          }
+        });
         return;
       }
       case "call.ended": {
@@ -307,13 +393,27 @@ export class CallController {
     this.ringer.stop();
     this.pc?.close();
     this.pc = null;
+    this.neg = null;
     this.pendingIce = [];
     this.state.local?.getTracks().forEach((t) => t.stop());
+    this.state.screen?.getTracks().forEach((t) => {
+      t.onended = null;
+      t.stop();
+    });
+    window.clearTimeout(this.noticeTimer);
     if (quiet) {
       this.set(IDLE);
       return;
     }
-    this.set({ phase: "ended", message, local: undefined, remote: undefined });
+    this.set({
+      phase: "ended",
+      message,
+      local: undefined,
+      remote: undefined,
+      screen: undefined,
+      remoteScreen: false,
+      notice: undefined,
+    });
     window.clearTimeout(this.clearTimer);
     this.clearTimer = window.setTimeout(() => this.dismiss(), 2500);
   }

@@ -6,6 +6,8 @@
 import { useSyncExternalStore } from "react";
 import { insecureMediaMessage, type Api, type PublicUser } from "./api";
 import { Ringer } from "./calls";
+import { captureScreen, Renegotiator, setVideoSource } from "./screenshare";
+import type { SignalData } from "./socket";
 
 export type GroupParticipant = { peer_id: string; user: PublicUser; video: boolean };
 export type GroupRoom = { channel_id: number; started_at?: string; participants: GroupParticipant[] };
@@ -15,6 +17,8 @@ export type GroupPeer = {
   user: PublicUser;
   stream: MediaStream;
   state: RTCPeerConnectionState | "new";
+  /** Người này đang chia sẻ màn hình. */
+  screen?: boolean;
 };
 
 export type GroupState = {
@@ -30,6 +34,8 @@ export type GroupState = {
     muted: boolean;
     camOff: boolean;
     minimized: boolean;
+    /** Màn hình mình đang chia sẻ (thay cho camera khi gửi đi). */
+    screen?: MediaStream;
     /** Người mở cuộc gọi: số người đang online trong kênh đã được mời. */
     invited?: number;
   };
@@ -49,14 +55,15 @@ type GroupEvent =
       channel_id: number;
       from: string;
       from_user: PublicUser;
-      data: { sdp?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit };
+      data: SignalData;
     }
   | { type: "groupcall.error"; channel_id: number; message: string };
 
-/** Người gửi offer mà thiếu track nào thì thêm kênh chỉ-nhận cho loại đó. */
-export function recvOnlyIfMissing(pc: RTCPeerConnection, local?: MediaStream) {
-  if (!local?.getVideoTracks().length) pc.addTransceiver("video", { direction: "recvonly" });
-  if (!local?.getAudioTracks().length) pc.addTransceiver("audio", { direction: "recvonly" });
+/** Người gửi offer mà kết nối chưa có kênh loại nào thì thêm kênh chỉ-nhận cho loại đó. */
+export function recvOnlyIfMissing(pc: RTCPeerConnection) {
+  const kinds = new Set(pc.getTransceivers().map((t) => t.receiver.track?.kind));
+  if (!kinds.has("video")) pc.addTransceiver("video", { direction: "recvonly" });
+  if (!kinds.has("audio")) pc.addTransceiver("audio", { direction: "recvonly" });
 }
 
 export class GroupCallController {
@@ -64,6 +71,7 @@ export class GroupCallController {
   private listeners = new Set<() => void>();
   private pcs = new Map<string, RTCPeerConnection>();
   private pendingIce = new Map<string, RTCIceCandidateInit[]>();
+  private negs = new Map<string, Renegotiator>();
   private iceServers: RTCIceServer[] | null = null;
   private ringer = new Ringer();
   private ringTimer: number | undefined;
@@ -157,6 +165,62 @@ export class GroupCallController {
     this.setActive({ minimized: v });
   }
 
+  /** Bật / tắt chia sẻ màn hình cho cả nhóm (thay cho hình camera nếu đang bật). */
+  async toggleScreen() {
+    const a = this.state.active;
+    if (!a) return;
+    if (a.screen) return this.stopScreen();
+    let screen: MediaStream | null;
+    try {
+      screen = await captureScreen();
+    } catch (err) {
+      this.set({ error: err instanceof Error ? err.message : "Không chia sẻ được màn hình." });
+      return;
+    }
+    if (!screen) return;
+    // đã rời cuộc gọi trong lúc chọn màn hình
+    if (this.state.active?.channelId !== a.channelId || this.state.active.screen) {
+      return screen.getTracks().forEach((t) => t.stop());
+    }
+    const track = screen.getVideoTracks()[0];
+    track.onended = () => void this.stopScreen();
+    this.setActive({ screen });
+    await this.applyVideo(track, screen);
+    this.broadcast({ screen: true });
+  }
+
+  async stopScreen() {
+    const a = this.state.active;
+    if (!a?.screen) return;
+    a.screen.getTracks().forEach((t) => {
+      t.onended = null;
+      t.stop();
+    });
+    this.setActive({ screen: undefined });
+    // quay lại camera (nếu có), không thì thôi gửi hình
+    await this.applyVideo(a.local?.getVideoTracks()[0] ?? null, a.local);
+    this.broadcast({ screen: false });
+  }
+
+  private async applyVideo(track: MediaStreamTrack | null, stream?: MediaStream) {
+    await Promise.all(
+      [...this.pcs].map(async ([id, pc]) => {
+        if (await setVideoSource(pc, track, stream).catch(() => false)) this.negs.get(id)?.request();
+      }),
+    );
+  }
+
+  private signal(peerId: string, data: SignalData) {
+    const a = this.state.active;
+    if (!a) return;
+    const withScreen = data.sdp ? { ...data, screen: !!a.screen } : data;
+    this.send({ type: "groupcall.signal", channel_id: a.channelId, to: peerId, data: withScreen });
+  }
+
+  private broadcast(data: SignalData) {
+    for (const id of this.pcs.keys()) this.signal(id, data);
+  }
+
   dismissInvite() {
     this.ringer.stop();
     this.set({ invite: undefined });
@@ -189,8 +253,17 @@ export class GroupCallController {
         });
       }
     };
-    pc.onconnectionstatechange = () => this.updatePeer(peerId, { state: pc!.connectionState });
-    a.local?.getTracks().forEach((t) => pc!.addTrack(t, a.local!));
+    pc.onconnectionstatechange = () => {
+      if (pc!.connectionState === "connected") this.negs.get(peerId)?.markReady();
+      this.updatePeer(peerId, { state: pc!.connectionState });
+    };
+    // đang chia sẻ màn hình thì gửi màn hình thay cho camera
+    const screenTrack = a.screen?.getVideoTracks()[0];
+    a.local?.getAudioTracks().forEach((t) => pc!.addTrack(t, a.local!));
+    if (screenTrack) pc.addTrack(screenTrack, a.screen!);
+    else a.local?.getVideoTracks().forEach((t) => pc!.addTrack(t, a.local!));
+    // ai có mã phiên lớn hơn thì "nhường" khi hai bên cùng đàm phán lại
+    this.negs.set(peerId, new Renegotiator(pc, (a.selfId ?? "") > peerId, (sdp) => this.signal(peerId, { sdp })));
     this.pcs.set(peerId, pc);
     this.setActive({ peers: { ...a.peers, [peerId]: { peerId, user, stream, state: "new" } } });
     return pc;
@@ -206,6 +279,7 @@ export class GroupCallController {
   private dropPeer(peerId: string) {
     this.pcs.get(peerId)?.close();
     this.pcs.delete(peerId);
+    this.negs.delete(peerId);
     this.pendingIce.delete(peerId);
     const a = this.state.active;
     if (a?.peers[peerId]) {
@@ -217,6 +291,10 @@ export class GroupCallController {
   private cleanup(error?: string) {
     for (const id of [...this.pcs.keys()]) this.dropPeer(id);
     this.state.active?.local?.getTracks().forEach((t) => t.stop());
+    this.state.active?.screen?.getTracks().forEach((t) => {
+      t.onended = null;
+      t.stop();
+    });
     this.set({ active: undefined, ...(error ? { error } : {}) });
   }
 
@@ -266,14 +344,9 @@ export class GroupCallController {
           const pc = this.peer(p.peer_id, p.user);
           try {
             // mình không bật camera/micro vẫn phải xin NHẬN hình/tiếng của người kia
-            recvOnlyIfMissing(pc, a.local);
+            recvOnlyIfMissing(pc);
             await pc.setLocalDescription(await pc.createOffer());
-            this.send({
-              type: "groupcall.signal",
-              channel_id: ev.channel_id,
-              to: p.peer_id,
-              data: { sdp: pc.localDescription!.toJSON() },
-            });
+            this.signal(p.peer_id, { sdp: pc.localDescription!.toJSON() });
           } catch {
             this.dropPeer(p.peer_id);
           }
@@ -283,26 +356,31 @@ export class GroupCallController {
       case "groupcall.signal": {
         if (!a || a.channelId !== ev.channel_id) return;
         const pc = this.peer(ev.from, ev.from_user);
-        try {
-          if (ev.data.sdp) {
-            await pc.setRemoteDescription(ev.data.sdp);
-            if (ev.data.sdp.type === "offer") {
-              await pc.setLocalDescription(await pc.createAnswer());
-              this.send({
-                type: "groupcall.signal",
-                channel_id: ev.channel_id,
-                to: ev.from,
-                data: { sdp: pc.localDescription!.toJSON() },
-              });
+        if (typeof ev.data.screen === "boolean") this.updatePeer(ev.from, { screen: ev.data.screen });
+        const neg = this.negs.get(ev.from);
+        if (!neg) return;
+        const data = ev.data;
+        await neg.serial(async () => {
+          if (this.pcs.get(ev.from) !== pc) return; // người này đã rời
+          try {
+            const sdp = data.sdp;
+            if (sdp) {
+              if (neg.shouldIgnore(sdp)) return;
+              await pc.setRemoteDescription(sdp);
+              if (sdp.type === "offer") {
+                await pc.setLocalDescription(await pc.createAnswer());
+                this.signal(ev.from, { sdp: pc.localDescription!.toJSON() });
+              }
+              for (const c of this.pendingIce.get(ev.from)?.splice(0) ?? []) await pc.addIceCandidate(c).catch(() => {});
+              neg.afterRemote(sdp);
+            } else if (data.candidate) {
+              if (pc.remoteDescription) await pc.addIceCandidate(data.candidate).catch(() => {});
+              else this.pendingIce.set(ev.from, [...(this.pendingIce.get(ev.from) ?? []), data.candidate]);
             }
-            for (const c of this.pendingIce.get(ev.from)?.splice(0) ?? []) await pc.addIceCandidate(c).catch(() => {});
-          } else if (ev.data.candidate) {
-            if (pc.remoteDescription) await pc.addIceCandidate(ev.data.candidate).catch(() => {});
-            else this.pendingIce.set(ev.from, [...(this.pendingIce.get(ev.from) ?? []), ev.data.candidate]);
+          } catch {
+            this.dropPeer(ev.from);
           }
-        } catch {
-          this.dropPeer(ev.from);
-        }
+        });
         return;
       }
       case "groupcall.error":

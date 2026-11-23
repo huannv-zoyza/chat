@@ -15,6 +15,7 @@ Mọi tính năng mới, trò chơi tương tác hoặc module kiến trúc ph�
 | 3 | [NOTIFICATION_SOUND_SPEC.md](file:///Users/hoang.nguyen3/tidebird/chat/specs/NOTIFICATION_SOUND_SPEC.md) | Audio | ✅ Đã triển khai | Hệ thống âm thanh thông báo @mention và tin nhắn mới bằng Web Audio API. |
 | 4 | [GAME_VIEWER_THREAD_SPEC.md](file:///Users/hoang.nguyen3/tidebird/chat/specs/GAME_VIEWER_THREAD_SPEC.md) | Feature | ✅ Đã triển khai | Luồng bình luận riêng cho ván cờ (Thread) và định danh Khán giả (`[Viewer]`). |
 | 5 | [LIVE_GAMES_TOPBAR_SPEC.md](file:///Users/hoang.nguyen3/tidebird/chat/specs/LIVE_GAMES_TOPBAR_SPEC.md) | Feature | 📋 Đã duyệt | Ghim thanh các ván cờ đang live ở Topbar và điều hướng cuộn `jumpToMessage`. |
+| 6 | [SCREEN_SHARE_SPEC.md](SCREEN_SHARE_SPEC.md) | Feature | ✅ Đã triển khai | Chia sẻ màn hình trong cuộc gọi 1-1 và nhóm, đàm phán lại SDP kiểu perfect negotiation. |
 
 ---
 

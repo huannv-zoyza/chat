@@ -9,6 +9,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"time"
 
 	"chat/game"
 	"chat/model"
@@ -791,4 +792,60 @@ func (s *Store) AnalyzePlayerGameplay(ctx context.Context, userID int64, kind st
 	}
 
 	return report, nil
+}
+
+// GameListRow: một ván trong danh sách cho Trợ lý AI.
+type GameListRow struct {
+	GameRow
+	Status      string
+	ChannelName string
+	ChannelKind string
+	UpdatedAt   time.Time
+}
+
+// VisibleGames: các ván mới nhất (mới -> cũ) trong kênh channelID và các kênh công khai.
+// Không lấy ván ở kênh riêng tư khác hay tin nhắn riêng: Trợ lý AI trả lời công khai trong kênh
+// đang hỏi, không được để lộ nội dung từ đó. kind/status rỗng = mọi loại; status "ended" hoặc "playing".
+func (s *Store) VisibleGames(ctx context.Context, channelID int64, kind, status string, limit int) ([]GameListRow, error) {
+	q := `
+		SELECT g.message_id, m.channel_id, g.kind, g.state, g.status, c.name, c.kind, g.updated_at
+		FROM games g
+		JOIN messages m ON m.id = g.message_id
+		JOIN channels c ON c.id = m.channel_id
+		WHERE m.deleted_at IS NULL AND (m.channel_id = ? OR (c.kind = 'channel' AND c.is_private = 0))`
+	args := []any{channelID}
+	if kind != "" {
+		q += ` AND g.kind = ?`
+		args = append(args, kind)
+	}
+	switch status {
+	case "ended":
+		q += ` AND g.status = 'ended'`
+	case "playing":
+		q += ` AND g.status <> 'ended'`
+	}
+	q += ` ORDER BY g.updated_at DESC, g.message_id DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []GameListRow
+	for rows.Next() {
+		var g GameListRow
+		var state, updated string
+		if err := rows.Scan(&g.MessageID, &g.ChannelID, &g.Kind, &state, &g.Status, &g.ChannelName, &g.ChannelKind, &updated); err != nil {
+			return nil, err
+		}
+		g.State = []byte(state)
+		for _, layout := range []string{"2006-01-02 15:04:05", time.RFC3339Nano, "2006-01-02T15:04:05Z"} {
+			if t, err := time.Parse(layout, updated); err == nil {
+				g.UpdatedAt = t
+				break
+			}
+		}
+		out = append(out, g)
+	}
+	return out, rows.Err()
 }

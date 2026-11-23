@@ -41,7 +41,8 @@ Phần trên có trí nhớ tóm tắt của kênh (nếu có) và các tin gầ
 - Ảnh trong kênh: look_at_images. Nhờ vẽ / tạo / sửa ảnh: draw_image (ảnh tự gửi vào kênh, bạn chỉ cần nói ngắn gọn).
 - Nhờ tìm / gửi ảnh có sẵn trên mạng: search_images (nhờ gửi ảnh: send=true, ảnh tự gửi vào kênh; chỉ xin link: send=false rồi đưa link).
 - Nhờ nhắc việc: set_reminder (chỉ nhắc người đang hỏi). Nhờ tạo bình chọn: create_poll. Rủ chơi / mở game: start_game. Ghim tin: pin_message.
-- Nhờ phân tích cách chơi / chiến thuật / điểm mạnh, điểm yếu / cách khắc chế một người trong game: TỰ ĐỘNG GỌI analyze_player_game với tên người đó và môn cờ/game tương ứng (xiangqi, chess, caro, rps...). Trả lời chi tiết theo từng game cụ thể, nêu bật phong cách chiến thuật, khai cuộc sở trường, điểm mạnh, tử huyệt và lời khuyên khắc chế dựa trên dữ liệu thật trong CSDL, KHÔNG ĐOÁN MÒ VÀ KHÔNG BỊA ĐẶT.
+- Game: tìm ván bằng list_games (lọc theo người, đối thủ, loại game), đọc từng nước bằng get_game_moves. Hỏi về một ván cụ thể (ván vừa rồi, ván A với B, nước nào sai, sao thua): đọc đúng ván đó rồi chỉ ra nước then chốt kèm số thứ tự nước.
+- Phân tích phong cách / chiến thuật / điểm mạnh, điểm yếu / cách khắc chế một người: analyze_player_game để lấy Elo và thống kê, rồi đọc nước đi của vài ván gần nhất của người đó (get_game_moves) để thấy khai cuộc hay dùng, quân hay đưa lên sớm, lúc nào hay mất quân, thắng/thua kiểu gì. Chỉ kết luận từ những gì thật sự đọc được, nêu ví dụ nước cụ thể; ít ván thì nói rõ là ít dữ liệu, KHÔNG ĐOÁN MÒ VÀ KHÔNG BỊA ĐẶT.
 Câu chào hỏi, nói chuyện phiếm, hay câu đã đủ thông tin ở trên: trả lời luôn, không gọi công cụ.
 Gọi được nhiều công cụ trong nhiều lượt. Đủ thông tin thì trả lời ngay. Trong câu trả lời không nhắc tên công cụ hay mã #id.
 Kết quả web_search / open_url được tính là "Kết quả tìm web".
@@ -106,8 +107,22 @@ func (a *API) agentTools() []ai.Tool {
 	}
 	tools = append(tools,
 		ai.Tool{Name: "start_game", Description: "Open a game room in this channel with the person asking as host; others join by clicking it. " +
-			"station = Trạm Vũ Trụ (impostor game like Among Us), werewolf = Ma Sói, spy = Ai là gián điệp (spy word game), caro = Cờ caro (gomoku, 2 players), rps = Oẳn tù tì (rock paper scissors), chess = Cờ vua (chess, 2 players).",
-			Params: obj(map[string]any{"game": map[string]any{"type": "string", "enum": []string{"station", "werewolf", "spy", "caro", "rps", "chess"}}}, "game")},
+			"station = Trạm Vũ Trụ (impostor game like Among Us), werewolf = Ma Sói, spy = Ai là gián điệp (spy word game), caro = Cờ caro (gomoku, 2 players), rps = Oẳn tù tì (rock paper scissors), chess = Cờ vua (chess, 2 players), xiangqi = Cờ tướng (Chinese chess, 2 players).",
+			Params: obj(map[string]any{"game": map[string]any{"type": "string", "enum": []string{"station", "werewolf", "spy", "caro", "rps", "chess", "xiangqi"}}}, "game")},
+		ai.Tool{Name: "list_games", Description: "List recent games played in this channel and in public channels (newest first): game id, players, result, number of moves, date. " +
+			"Use it to find games of a person or between two people, then read them with get_game_moves.",
+			Params: obj(map[string]any{
+				"player":   str("Only games this member played (name or @username; \"tôi\" = the person asking). Optional."),
+				"opponent": str("Only games against this member. Optional."),
+				"game":     map[string]any{"type": "string", "enum": []string{"xiangqi", "chess", "caro", "rps", "werewolf", "spy", "station", "all"}, "description": "Game type. Default all."},
+				"status":   map[string]any{"type": "string", "enum": []string{"ended", "playing", "any"}, "description": "Default any."},
+				"limit":    num("Max games to return (1-20, default 10)."),
+			})},
+		ai.Tool{Name: "get_game_moves", Description: "Read one game move by move: every move in order with piece names (Xe, Mã, Pháo…), captures and checks, " +
+			"the final (or current) position as a text board, the result and other events (draw offers, timeouts, resignations). " +
+			"Use it to analyse openings, tactics, mistakes and each player's style from what was actually played — read several games of a person before judging their style. " +
+			"Coordinates: xiangqi files a-i / ranks 0-9 from Red's side; chess a-h / 1-8; caro (row,col).",
+			Params: obj(map[string]any{"game_id": num("The game id (the number after # from list_games, or of the game message).")}, "game_id")},
 		ai.Tool{Name: "analyze_player_game", Description: "Phân tích lối chơi, khai cuộc sở trường, chiến thuật, điểm mạnh, điểm yếu và xếp hạng Elo của một người chơi từ cơ sở dữ liệu cho một trò chơi cụ thể (xiangqi = Cờ tướng, chess = Cờ vua, caro = Cờ caro, rps = Oẳn tù tì, werewolf = Ma Sói, station = Trạm Vũ Trụ) hoặc toàn bộ game (all). Dùng khi có người hỏi về phong cách đánh, chiến thuật hoặc cách đối phó với một người nào đó.",
 			Params: obj(map[string]any{
 				"player": str("Tên hiển thị hoặc @username của người chơi cần phân tích."),
@@ -282,6 +297,10 @@ func (r *agentRun) exec(ctx context.Context, c ai.ToolCall) string {
 		return r.startGame(ctx, args.str("game"))
 	case "analyze_player_game":
 		return r.analyzePlayerGame(ctx, args.str("player"), args.str("game"))
+	case "list_games":
+		return r.listGames(ctx, args.str("player"), args.str("opponent"), args.str("game"), args.str("status"), args.num("limit"))
+	case "get_game_moves":
+		return r.gameMoves(ctx, args.num("game_id"))
 	case "pin_message":
 		pin := true
 		if _, ok := args["pinned"]; ok {

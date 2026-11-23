@@ -39,6 +39,8 @@ type caro struct {
 	Last   *Coord            `json:"last,omitempty"`
 	Win    []Coord           `json:"win,omitempty"`
 	Moves  int               `json:"moves"`
+	// Thứ tự các nước (X đi trước). Pieces chỉ cho biết vị trí, không biết nước nào đi trước.
+	Order []Coord `json:"order,omitempty"`
 
 	// Legacy field for loading games saved prior to infinite board support
 	Board string `json:"board,omitempty"`
@@ -117,7 +119,7 @@ func (c *caro) start(now time.Time) error {
 	c.Pieces = make(map[string]string)
 	c.Board = ""
 	shuffle(c.Players)
-	c.Turn, c.Last, c.Moves, c.Win = 0, nil, 0, nil
+	c.Turn, c.Last, c.Moves, c.Win, c.Order = 0, nil, 0, nil, nil
 	c.logf("%s (X) đấu với %s (O). X đi trước.", c.Players[0].Name, c.Players[1].Name)
 	c.setDeadline(now, caroTurnTime)
 	return nil
@@ -171,6 +173,7 @@ func (c *caro) act(p int64, action string, data json.RawMessage, now time.Time) 
 
 	c.Pieces[key] = string(mark(me))
 	c.Last = &Coord{R: r, C: col}
+	c.Order = append(c.Order, Coord{R: r, C: col})
 	c.Moves++
 	if line := c.winLine(r, col); line != nil {
 		c.Win = line

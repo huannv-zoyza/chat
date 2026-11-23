@@ -48,6 +48,8 @@ type xiangqi struct {
 	Fullmove      int            `json:"fullmove"`   // Số lượt đi (bắt đầu từ 1, tăng sau mỗi lượt Đen)
 	LastMove      *xiangqiMove   `json:"last_move,omitempty"`
 	DrawOfferedBy int64          `json:"draw_offered_by,omitempty"` // ID người chơi đang xin hoà (0 nếu không có)
+	// Toàn bộ nước đi theo thứ tự (Đỏ đi trước). Không cắt bớt như Log, để phân tích lại ván (Trợ lý AI).
+	History []xiangqiMove `json:"history,omitempty"`
 }
 
 func (x *xiangqi) limits() (int, int) { return 2, 2 }
@@ -279,6 +281,7 @@ func (x *xiangqi) act(p int64, action string, data json.RawMessage, now time.Tim
 		moveLog += " [Chiếu!]"
 	}
 	x.logf("%s", moveLog)
+	x.History = append(x.History, *chosenMove)
 
 	// Kiểm tra trạng thái kết thúc ván đấu
 	oppLegalMoves := x.generateLegalMoves(x.TurnColor)
@@ -436,7 +439,7 @@ func isInCheckOnBoard(board [90]byte, color byte) bool {
 	}
 	// Mã nhảy tới (kf, kr) khi nó đứng tại các ô cách King L-shape
 	horseDeltas := []struct {
-		df, dr   int // vị trí mã đối với King
+		df, dr     int // vị trí mã đối với King
 		legF, legR int // chân cản đối với King (nơi mã phải không bị cản để nhảy tới King)
 	}{
 		// Mã đứng tại (kf-1, kr-2), chân mã tại (kf-1, kr-1)
@@ -676,7 +679,7 @@ func (x *xiangqi) generatePseudoLegalMoves(color byte) []xiangqiMove {
 			if p == 'P' {
 				// Đỏ tiến lên (r + 1)
 				if r < xiangqiBoardRanks-1 {
-					tSq := (r + 1)*xiangqiBoardFiles + f
+					tSq := (r+1)*xiangqiBoardFiles + f
 					target := x.Board[tSq]
 					if target == '.' || isPieceColorXq(target, oppColor) {
 						cap := ""
@@ -714,7 +717,7 @@ func (x *xiangqi) generatePseudoLegalMoves(color byte) []xiangqiMove {
 			} else {
 				// Đen tiến xuống (r - 1)
 				if r > 0 {
-					tSq := (r - 1)*xiangqiBoardFiles + f
+					tSq := (r-1)*xiangqiBoardFiles + f
 					target := x.Board[tSq]
 					if target == '.' || isPieceColorXq(target, oppColor) {
 						cap := ""

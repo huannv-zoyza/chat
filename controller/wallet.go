@@ -1,10 +1,13 @@
 package controller
 
 import (
+	"context"
 	"errors"
+	"log"
 	"net/http"
 	"time"
 
+	"chat/game"
 	"chat/store"
 )
 
@@ -93,5 +96,93 @@ func (a *API) walletBoard(w http.ResponseWriter, r *http.Request) {
 
 // chipsOnTables: số xu userID đang mang trên các bàn chưa kết thúc.
 func (a *API) chipsOnTables(userID int64) int64 {
-	return 0
+	a.games.mu.Lock()
+	list := make([]*gameSession, 0, len(a.games.sessions))
+	for _, s := range a.games.sessions {
+		list = append(list, s)
+	}
+	a.games.mu.Unlock()
+	var sum int64
+	for _, s := range list {
+		s.mu.Lock()
+		if !s.deleted && s.g.Staked() && s.g.Status() != game.Ended {
+			sum += s.g.StakeOf(userID).Chips
+		}
+		s.mu.Unlock()
+	}
+	return sum
+}
+
+/* ---------- Ván dùng chip: mua chip / trả chip (gọi khi đang giữ s.mu) ---------- */
+
+// buyInLocked: userID mang toàn bộ số dư ví vào ván, ghi ví và trạng thái ván trong một transaction.
+// Lỗi thì nạp lại ván từ DB để bỏ các thay đổi trong bộ nhớ chưa được lưu.
+func (a *API) buyInLocked(ctx context.Context, s *gameSession, userID int64) error {
+	seq := s.g.BuyInCount(userID) + 1
+	wal, err := a.store.BuyIn(ctx, s.messageID, userID, seq, func(amount int64) (string, []byte, error) {
+		s.g.BuyIn(userID, amount)
+		state, err := s.g.Marshal()
+		return string(s.g.Status()), state, err
+	})
+	if err != nil {
+		a.reloadLocked(ctx, s)
+		return err
+	}
+	a.pushWallet(wal)
+	return nil
+}
+
+// payOutLocked trả chip (và nợ trong bàn) về ví, đồng thời lưu trạng thái ván. Gọi lại không cộng hai lần.
+func (a *API) payOutLocked(ctx context.Context, s *gameSession, kind string, seq int64, stakes []game.Stake) error {
+	state, err := s.g.Marshal()
+	if err != nil {
+		return err
+	}
+	payouts := make([]store.Payout, 0, len(stakes))
+	for _, st := range stakes {
+		payouts = append(payouts, store.Payout{UserID: st.UserID, Chips: st.Chips, Loans: st.Loans})
+	}
+	wallets, err := a.store.PayOut(ctx, s.messageID, kind, seq, payouts, string(s.g.Status()), state)
+	if err != nil {
+		return err
+	}
+	for _, w := range wallets {
+		a.pushWallet(w)
+	}
+	return nil
+}
+
+func (a *API) reloadLocked(ctx context.Context, s *gameSession) {
+	row, err := a.store.GetGame(ctx, s.messageID)
+	if err != nil {
+		log.Printf("reload game %d: %v", s.messageID, err)
+		return
+	}
+	if g, err := game.Load(row.Kind, row.State); err == nil {
+		s.g = g
+	}
+}
+
+// settlePendingCashouts: lúc khởi động, trả chip cho các ván bầu cua đã kết thúc (hoặc tin đã xoá)
+// mà chưa kịp trả (máy chủ tắt giữa chừng).
+func (a *API) settlePendingCashouts(ctx context.Context) {
+	rows, err := a.store.GamesNeedingCashout(ctx, "baucua")
+	if err != nil {
+		log.Printf("pending cashouts: %v", err)
+		return
+	}
+	for _, row := range rows {
+		g, err := game.Load(row.Kind, row.State)
+		if err != nil {
+			log.Printf("load game %d: %v", row.MessageID, err)
+			continue
+		}
+		g.Abort("Ván kết thúc khi máy chủ khởi động lại.")
+		s := &gameSession{messageID: row.MessageID, channelID: row.ChannelID, g: g}
+		s.mu.Lock()
+		if err := a.payOutLocked(ctx, s, "cashout", 0, g.Settle()); err != nil {
+			log.Printf("cashout game %d: %v", row.MessageID, err)
+		}
+		s.mu.Unlock()
+	}
 }

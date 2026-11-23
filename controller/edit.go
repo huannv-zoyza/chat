@@ -120,6 +120,22 @@ func (a *API) deleteMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if msg.Embed != nil && msg.Embed.Type == "game" {
+		// ván dùng chip đang dở: trả hết chip về ví trước khi xoá tin
+		if s, err := a.gameSession(r.Context(), msg.ID); err == nil {
+			s.mu.Lock()
+			if s.g.Staked() && !s.paid {
+				s.g.Abort("Tin ván đã bị xoá.")
+				if err := a.payOutLocked(r.Context(), s, "cashout", 0, s.g.Settle()); err != nil {
+					s.mu.Unlock()
+					internalError(w, r, err)
+					return
+				}
+				s.paid = true
+			}
+			s.mu.Unlock()
+		}
+	}
 	deleted, keys, err := a.store.DeleteMessage(r.Context(), msg.ID)
 	if err != nil {
 		internalError(w, r, err)

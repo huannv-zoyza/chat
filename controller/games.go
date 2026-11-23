@@ -31,6 +31,7 @@ type gameSession struct {
 	g         *game.Game
 	deleted   bool
 	rated     bool // Đã tính biến thiên điểm Elo khi ván kết thúc chưa
+	paid      bool // Ván dùng chip: đã trả chip về ví khi kết thúc chưa
 	// Trò thời gian thực: vòng lặp đang chạy, và các kết nối đang mở màn hình chơi (nhận frame).
 	running    bool
 	watchers   map[*socket.Client]bool
@@ -106,7 +107,18 @@ func viewJSON(g *game.Game, viewer int64) json.RawMessage {
 // saveAndBroadcast: gọi khi đang giữ s.mu.
 func (a *API) saveAndBroadcast(ctx context.Context, s *gameSession) {
 	state, err := s.g.Marshal()
-	if err == nil {
+	if err == nil && s.g.Staked() && s.g.Status() == game.Ended && !s.paid {
+		// ván dùng chip vừa kết thúc: trả chip về ví và lưu ván trong một transaction
+		if err = a.payOutLocked(ctx, s, "cashout", 0, s.g.Settle()); err == nil {
+			s.paid = true
+		} else {
+			log.Printf("cashout game %d: %v", s.messageID, err)
+		}
+	}
+	if err == nil && !s.paid {
+		err = a.store.SaveGame(ctx, s.messageID, string(s.g.Status()), state)
+	} else if err != nil {
+		// trả chip lỗi: vẫn lưu ván đã kết thúc để lần khởi động sau trả bù
 		err = a.store.SaveGame(ctx, s.messageID, string(s.g.Status()), state)
 	}
 	if err != nil {
@@ -383,7 +395,7 @@ func (a *API) startGame(ctx context.Context, ch model.Channel, host model.User, 
 	if title == "" {
 		return model.Message{}, game.Error("Không có trò chơi này.")
 	}
-	if ch.IsDM() && kind != "caro" && kind != "rps" && kind != "chess" {
+	if ch.IsDM() && kind != "caro" && kind != "rps" && kind != "chess" && kind != "baucua" {
 		return model.Message{}, game.Error("Trò này cần nhiều người, hãy mở trong kênh.")
 	}
 	now := time.Now()
@@ -400,6 +412,15 @@ func (a *API) startGame(ctx context.Context, ch model.Channel, host model.User, 
 		return model.Message{}, err
 	}
 	s := a.games.put(&gameSession{messageID: m.ID, channelID: ch.ID, g: g})
+	if g.Staked() {
+		s.mu.Lock()
+		err := a.buyInLocked(ctx, s, host.ID)
+		g = s.g
+		s.mu.Unlock()
+		if err != nil {
+			log.Printf("game %d: chủ phòng mua chip: %v", m.ID, err)
+		}
+	}
 	_, _, _ = a.store.MarkRead(ctx, ch.ID, host.ID, m.ID)
 	if len(clientID) > 64 {
 		clientID = clientID[:64]
@@ -450,9 +471,26 @@ func (a *API) gameAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	wasPlaying := s.g.Status() == game.Playing
+	staked := s.g.Staked()
+	leaveStake, leaveSeq := s.g.StakeOf(me.ID), s.g.BuyInCount(me.ID)
 	if err := s.g.Act(asPlayer(me), req.Action, req.Data, time.Now()); err != nil {
 		writeGameError(w, r, err)
 		return
+	}
+	if staked {
+		var err error
+		switch req.Action {
+		case "join":
+			err = a.buyInLocked(r.Context(), s, me.ID)
+		case "leave":
+			if err = a.payOutLocked(r.Context(), s, "refund", leaveSeq, []game.Stake{leaveStake}); err != nil {
+				a.reloadLocked(r.Context(), s)
+			}
+		}
+		if err != nil {
+			internalError(w, r, err)
+			return
+		}
 	}
 	if s.g.Realtime() && wasPlaying && s.g.Status() == game.Playing {
 		// trò thời gian thực: vòng lặp gửi frame ngay lượt sau, thay đổi lớn thì nó lưu và cập nhật thẻ
@@ -514,6 +552,7 @@ func (a *API) fillForViewer(ctx context.Context, userID int64, msgs []model.Mess
 
 // RunGames nạp lại các ván đang dở và mỗi giây xử lý những ván hết giờ (chuyển pha, xử thua...).
 func (a *API) RunGames(ctx context.Context) {
+	a.settlePendingCashouts(ctx)
 	rows, err := a.store.ActiveGames(ctx)
 	if err != nil {
 		log.Printf("load games: %v", err)

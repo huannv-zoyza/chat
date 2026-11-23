@@ -9152,3 +9152,155 @@ button.game-player:disabled {
     font-size: 1.6rem;
   }
 }
+
+/* ---------- Trêu nhau: ném đồ, biệt danh ---------- */
+
+.msg-fun {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  background: var(--raised);
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+.msg-fun strong {
+  color: var(--text);
+}
+.msg-fun-icon {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+.member:has(.member-fun-panel) {
+  flex-wrap: wrap;
+}
+.member-fun {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.member:hover .member-fun,
+.member-fun:focus-visible,
+.member-fun.is-open {
+  opacity: 1;
+}
+@media (hover: none) {
+  .member-fun {
+    opacity: 1;
+  }
+}
+.member-fun-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  flex-basis: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0.5rem 0 0.25rem;
+}
+.member-throws {
+  display: flex;
+  gap: 0.3rem;
+}
+.member-throw {
+  flex: 1;
+  min-width: 0;
+  min-height: 2.25rem;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+.member-throw:hover:not(:disabled) {
+  transform: translateY(-2px) rotate(-8deg);
+}
+.member-nick {
+  display: flex;
+  gap: 0.35rem;
+}
+.member-nick input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--step--1);
+}
+
+.throw-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 1rem;
+  pointer-events: none;
+  animation: throw-fade 2.8s ease-in forwards;
+}
+.throw-item {
+  font-size: min(38vw, 12rem);
+  line-height: 1;
+  filter: drop-shadow(0 12px 18px rgb(0 0 0 / 0.35));
+  animation: throw-fly 0.55s cubic-bezier(0.3, 0.1, 0.4, 1.3) both, throw-splat 0.35s 0.55s ease-out both;
+}
+.throw-hoa .throw-item {
+  animation: throw-fly 0.7s ease-out both, throw-float 1.4s 0.7s ease-in-out both;
+}
+.throw-text {
+  margin: 0;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-weight: 700;
+  text-align: center;
+  max-width: calc(100vw - 2rem);
+}
+@keyframes throw-fly {
+  from {
+    transform: translate(-70vw, 45vh) rotate(-540deg) scale(0.3);
+  }
+  to {
+    transform: translate(0, 0) rotate(0) scale(1);
+  }
+}
+@keyframes throw-splat {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.35, 0.55);
+  }
+  100% {
+    transform: scale(1.15, 0.8);
+  }
+}
+@keyframes throw-float {
+  50% {
+    transform: translateY(-12px) scale(1.05);
+  }
+}
+@keyframes throw-fade {
+  0%,
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .throw-item,
+  .throw-hoa .throw-item {
+    animation: none;
+  }
+}

@@ -101,6 +101,10 @@ export type ChatState = {
   notice: string | null;
   /** Ví xu ảo của mình (null khi chưa tải). */
   wallet: { balance: number; debt: number } | null;
+  /** channelId -> userId -> biệt danh trong kênh. */
+  nicknames: Record<number, Record<number, string>>;
+  /** Vừa bị ném đồ: hiện hiệu ứng toàn màn hình (key đổi mỗi lần ném). */
+  hit: { item: string; fromId: number; key: number } | null;
 };
 
 export function initialState(me: User): ChatState {
@@ -131,6 +135,8 @@ export function initialState(me: User): ChatState {
     spectators: {},
     notice: null,
     wallet: null,
+    nicknames: {},
+    hit: null,
   };
 }
 
@@ -145,6 +151,10 @@ export type Action =
   | { type: "channel.removed"; channelId: number; kicked?: boolean }
   | { type: "notice"; text: string | null }
   | { type: "wallet.set"; balance: number; debt: number }
+  | { type: "nicknames.loaded"; channelId: number; nicknames: Record<string, string> }
+  | { type: "nickname.set"; channelId: number; userId: number; nickname: string }
+  | { type: "hit"; item: string; fromId: number }
+  | { type: "hit.clear" }
   | { type: "channel.select"; channelId: number | null; auto?: boolean }
   | { type: "channel.read"; channelId: number }
   | { type: "messages.loaded"; channelId: number; messages: Message[]; hasMore: boolean; older: boolean }
@@ -616,6 +626,24 @@ export function reducer(s: ChatState, a: Action): ChatState {
 
     case "wallet.set":
       return { ...s, wallet: { balance: a.balance, debt: a.debt } };
+
+    case "nicknames.loaded": {
+      const map: Record<number, string> = {};
+      for (const [id, nick] of Object.entries(a.nicknames)) map[Number(id)] = nick;
+      return { ...s, nicknames: { ...s.nicknames, [a.channelId]: map } };
+    }
+
+    case "nickname.set": {
+      const { [a.userId]: _old, ...rest } = s.nicknames[a.channelId] ?? {};
+      const map = a.nickname ? { ...rest, [a.userId]: a.nickname } : rest;
+      return { ...s, nicknames: { ...s.nicknames, [a.channelId]: map } };
+    }
+
+    case "hit":
+      return { ...s, hit: { item: a.item, fromId: a.fromId, key: Date.now() } };
+
+    case "hit.clear":
+      return { ...s, hit: null };
 
     case "member.left": {
       const c = s.channels[a.channelId];

@@ -50,7 +50,7 @@ export type Attachment = {
 
 /** Sticker (bộ có sẵn trong app) hoặc GIF (GIPHY) gửi thay cho nội dung chữ. */
 export type Embed = {
-  type: "sticker" | "gif" | "call" | "game" | "share";
+  type: "sticker" | "gif" | "call" | "game" | "share" | "throw" | "nickname";
   id: string;
   url?: string;
   preview?: string;
@@ -67,6 +67,8 @@ export type Embed = {
   video?: boolean;
   duration?: number;
   participants?: number;
+  /** Trêu nhau (type "throw" / "nickname"): người bị nhắm tới; tên chụp lại ở author. */
+  target_id?: number;
 };
 
 /** GET /api/messages/{id}/link: người xem có tới được tin không (member) và tin đầy đủ nếu có. */
@@ -479,6 +481,11 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     },
     messageLink: (id: number) => request<MessageLinkInfo>("GET", `/api/messages/${id}/link`),
     deleteChannel: (id: number) => request<void>("DELETE", `/api/channels/${id}`),
+    throwItem: (channelId: number, userId: number, item: string) =>
+      request<Message>("POST", `/api/channels/${channelId}/throw`, { user_id: userId, item }),
+    nicknames: (channelId: number) => request<Record<string, string>>("GET", `/api/channels/${channelId}/nicknames`),
+    setNickname: (channelId: number, userId: number, nickname: string) =>
+      request<void>("PUT", `/api/channels/${channelId}/nicknames/${userId}`, { nickname }),
     getWallet: () => request<Wallet>("GET", "/api/wallet"),
     claimDaily: () => request<Wallet>("POST", "/api/wallet/claim"),
     takeLoan: () => request<Wallet>("POST", "/api/wallet/loan"),

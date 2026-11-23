@@ -511,6 +511,14 @@ func transcriptLine(m model.Message, botID int64, captions map[string]string, op
 			parts = append(parts, "[mở trò chơi "+e.Title+"]")
 		case "share":
 			parts = append(parts, fmt.Sprintf("[chia sẻ tin của %s ở #%s: %s]", e.Author, e.Channel, shorten(e.Text, 200)))
+		case "throw":
+			parts = append(parts, fmt.Sprintf("[ném %s vào %s]", throwItems[e.ID], e.Author))
+		case "nickname":
+			if e.Text == "" {
+				parts = append(parts, "[xoá biệt danh của "+e.Author+"]")
+			} else {
+				parts = append(parts, fmt.Sprintf("[đặt biệt danh cho %s là %q]", e.Author, e.Text))
+			}
 		}
 	}
 	for _, at := range m.Attachments {

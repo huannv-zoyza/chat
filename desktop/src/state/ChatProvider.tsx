@@ -465,6 +465,10 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
         }
         notifyIfMentioned(ev.message, viewing);
         playSoundForMessage(ev.message);
+        const e = ev.message.embed;
+        if (e?.type === "throw" && e.target_id === stateRef.current.me.id) {
+          dispatch({ type: "hit", item: e.id, fromId: ev.message.user_id });
+        }
       }),
 
       sock.on("message.updated", (ev) => {
@@ -585,6 +589,9 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       sock.on("member.joined", (ev) => dispatch({ type: "member.joined", channelId: ev.channel_id, user: ev.user })),
       sock.on("member.left", (ev) => dispatch({ type: "member.left", channelId: ev.channel_id, userId: ev.user_id })),
       sock.on("wallet.updated", (ev) => dispatch({ type: "wallet.set", balance: ev.balance, debt: ev.debt })),
+      sock.on("nickname.updated", (ev) =>
+        dispatch({ type: "nickname.set", channelId: ev.channel_id, userId: ev.user_id, nickname: ev.nickname }),
+      ),
       sock.on("reaction.updated", (ev) =>
         dispatch({ type: "reactions.set", messageId: ev.message_id, reactions: ev.reactions }),
       ),

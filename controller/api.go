@@ -24,6 +24,7 @@ const sessionTTL = 30 * 24 * time.Hour
 type API struct {
 	store          *store.Store
 	hub            *socket.Hub
+	throws         throwLimiter // giới hạn tốc độ ném đồ
 	originPatterns []string
 	uploadsDir     string // thư mục lưu file người dùng gửi
 	minFreeDisk    uint64 // còn ít hơn chừng này byte trống thì không nhận file mới
@@ -85,6 +86,9 @@ func (a *API) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("POST /api/channels/{id}/leave", a.requireAuth(a.leaveChannel))
 	mux.HandleFunc("DELETE /api/channels/{id}/members/{userId}", a.requireAuth(a.kickMember))
 	mux.HandleFunc("GET /api/channels/{id}/wallet-board", a.requireAuth(a.walletBoard))
+	mux.HandleFunc("POST /api/channels/{id}/throw", a.requireAuth(a.throwItem))
+	mux.HandleFunc("GET /api/channels/{id}/nicknames", a.requireAuth(a.listNicknames))
+	mux.HandleFunc("PUT /api/channels/{id}/nicknames/{userId}", a.requireAuth(a.setNickname))
 	mux.HandleFunc("GET /api/wallet", a.requireAuth(a.getWallet))
 	mux.HandleFunc("POST /api/wallet/claim", a.requireAuth(a.walletAction(func(r *http.Request, id int64) (store.Wallet, error) {
 		return a.store.ClaimDaily(r.Context(), id, vnToday(time.Now()))

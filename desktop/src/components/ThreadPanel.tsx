@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Attachment, Channel } from "../lib/api";
-import { displayName } from "../lib/format";
+import { shownName } from "../lib/format";
 import { useChat } from "../state/ChatProvider";
 import { buildRows, MessageRow, TypingIndicator } from "./ChannelView";
 import { Composer } from "./Composer";
@@ -138,7 +138,7 @@ export function ThreadPanel({ channel, parentId, onClose }: Props) {
               mine={parent.user_id === state.me.id}
               mentioned={!!parent.mentions?.includes(state.me.id)}
               grouped={false}
-              name={displayName(parentUser)}
+              name={shownName(parentUser, state.nicknames[channel.id])}
               avatarUser={parentUser}
               time={parent.created_at}
               content={parent.content}
@@ -159,7 +159,7 @@ export function ThreadPanel({ channel, parentId, onClose }: Props) {
                     mine={r.msg.user_id === state.me.id}
                     mentioned={!!r.msg.mentions?.includes(state.me.id)}
                     grouped={r.grouped}
-                    name={displayName(user)}
+                    name={shownName(user, state.nicknames[channel.id])}
                     avatarUser={user}
                     time={r.msg.created_at}
                     content={r.msg.content}
@@ -177,7 +177,7 @@ export function ThreadPanel({ channel, parentId, onClose }: Props) {
                   key={r.key}
                   mine
                   grouped={r.grouped}
-                  name={displayName(me)}
+                  name={shownName(me, state.nicknames[channel.id])}
                   avatarUser={me}
                   time={r.p.createdAt}
                   content={r.p.content}

@@ -64,6 +64,7 @@ export type ServerEvent =
   | { type: "member.joined"; channel_id: number; user: PublicUser }
   | { type: "member.left"; channel_id: number; user_id: number }
   | { type: "wallet.updated"; balance: number; debt: number }
+  | { type: "nickname.updated"; channel_id: number; user_id: number; nickname: string }
   | { type: "reaction.updated"; channel_id: number; message_id: number; parent_id?: number; reactions: Reaction[] }
   | { type: "thread.updated"; channel_id: number; message_id: number; thread: ThreadSummary }
   | { type: "read.updated"; channel_id: number; user_id: number; message_id: number }

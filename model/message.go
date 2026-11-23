@@ -85,6 +85,9 @@ type Embed struct {
 	Author    string `json:"author,omitempty"`
 	Channel   string `json:"channel,omitempty"`
 	ChannelID int64  `json:"channel_id,omitempty"`
+	// Trêu nhau (type "throw": id = món ném; type "nickname": Text = biệt danh mới, rỗng = xoá):
+	// người bị nhắm tới, tên của họ chụp lại trong Author.
+	TargetID int64 `json:"target_id,omitempty"`
 }
 
 // Reaction: một emoji và những ai đã thả nó.

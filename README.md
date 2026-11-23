@@ -116,6 +116,7 @@ Chi tiết API, giao thức websocket và cấu trúc frontend: [desktop/README.
   - **Bầu cua tôm cá** (2–10 người): cược bằng xu ảo trong ví. Vào bàn là mang toàn bộ xu thành chip, hết ván chip tự về ví. Mỗi lượt 20 giây đặt chip vào 6 con, cái lắc 3 xúc xắc; con ra k mặt thì ăn k lần. Cái xoay vòng theo thứ tự vào phòng (1/3/5 lượt mỗi người); cái không đủ trả là cháy túi, phần thiếu thành nợ ngân hàng và mất cái ngay.
   - **Cờ caro** 15×15 (luật chặn hai đầu, 3 phút/nước) và **Oẳn tù tì** (1/3/5 ván): 2 người, chơi được cả trong tin nhắn riêng.
   - Vai / từ khoá chỉ gửi cho đúng người đó, thẻ úp sẵn để người ngồi cạnh không nhìn trộm. Ván đang dở vẫn chạy tiếp khi khởi động lại server.
+- Trêu nhau: bấm 😈 cạnh một người trong danh sách thành viên để **ném đồ** (🩴 dép, 🍅 cà chua, 🥚 trứng, 🎂 bánh kem, 🌹 hoa hồng): người bị ném thấy món đồ bay vào giữa màn hình, cả kênh thấy dòng "ném … vào …" (mỗi người 5 giây ném một lần). Cũng ở đó **đặt biệt danh** cho người khác (hoặc cho mình) trong kênh, tối đa 32 ký tự: biệt danh thay tên ở tin nhắn và danh sách thành viên của kênh đó, có dòng thông báo trong kênh.
 - Ví xu ảo: 🪙 ở góc dưới thanh bên. Mỗi người khởi đầu 1.000 xu, mỗi ngày bấm nhận 100 xu (giờ Việt Nam), còn dưới 100 xu thì vay ngân hàng 500 (thành nợ), có nút trả nợ. Bảng Đại gia / Con nợ theo từng kênh. Xu chỉ để chơi, không đổi ra gì.
 - Tin nhắn riêng 1-1: mục "Tin nhắn riêng" ở thanh bên (nút +), hoặc nút nhắn ở danh sách thành viên. Tự nhắn cho mình để ghi chú.
 - Ảnh đại diện: chọn ảnh từ máy (tự cắt vuông, thu nhỏ 256×256) hoặc dán link.

@@ -118,6 +118,7 @@ var titles = map[string]string{
 	"rps":      "Oẳn tù tì",
 	"chess":    "Cờ vua",
 	"xiangqi":  "Cờ tướng",
+	"baucua":   "Bầu cua tôm cá",
 }
 
 // Title: tên trò chơi để hiển thị ("" nếu không có trò này).
@@ -139,6 +140,8 @@ func newRules(kind string) rules {
 		return &chess{}
 	case "xiangqi":
 		return &xiangqi{}
+	case "baucua":
+		return &baucua{}
 	}
 	return nil
 }
@@ -232,6 +235,9 @@ func (g *Game) Act(p Player, action string, data json.RawMessage, now time.Time)
 			return Error("Chủ phòng không rời được, hãy huỷ phòng.")
 		}
 		b.Players = append(b.Players[:i], b.Players[i+1:]...)
+		if st, ok := g.r.(staked); ok {
+			st.removePlayer(p.ID)
+		}
 	case "start":
 		if b.Status != Lobby {
 			return Error("Ván đã bắt đầu rồi.")
@@ -294,6 +300,65 @@ func (g *Game) Tick(now time.Time) bool {
 		return true
 	}
 	return false
+}
+
+/* ---------- Trò dùng chip mua bằng xu (bầu cua) ---------- */
+
+// Stake: chip một người đang có trên bàn và nợ ngân hàng phát sinh trong ván.
+type Stake struct {
+	UserID, Chips, Loans int64
+}
+
+type staked interface {
+	buyIn(uid, amount int64) int64
+	stakeOf(uid int64) Stake
+	buyIns(uid int64) int64
+	removePlayer(uid int64)
+}
+
+// Staked: trò này cược bằng chip mua từ ví xu.
+func (g *Game) Staked() bool { _, ok := g.r.(staked); return ok }
+
+// BuyIn cộng amount chip cho userID, trả số lần người đó đã mua chip ở ván này (1, 2, …).
+func (g *Game) BuyIn(userID, amount int64) int64 {
+	if st, ok := g.r.(staked); ok {
+		return st.buyIn(userID, amount)
+	}
+	return 0
+}
+
+func (g *Game) StakeOf(userID int64) Stake {
+	if st, ok := g.r.(staked); ok {
+		return st.stakeOf(userID)
+	}
+	return Stake{UserID: userID}
+}
+
+func (g *Game) BuyInCount(userID int64) int64 {
+	if st, ok := g.r.(staked); ok {
+		return st.buyIns(userID)
+	}
+	return 0
+}
+
+// Settle: chip và nợ của mọi người đang ở bàn (để trả về ví khi hết ván).
+func (g *Game) Settle() []Stake {
+	out := []Stake{}
+	for _, p := range g.r.base().Players {
+		out = append(out, g.StakeOf(p.ID))
+	}
+	return out
+}
+
+// Abort kết thúc ván ngay (vd. tin chứa ván bị xoá).
+func (g *Game) Abort(reason string) {
+	b := g.r.base()
+	if b.Status == Ended {
+		return
+	}
+	b.logf("%s", reason)
+	b.end(reason, nil)
+	g.touch()
 }
 
 // View: những gì viewer được thấy (viewer = 0: chỉ phần công khai).

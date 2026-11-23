@@ -49,7 +49,11 @@ export function XiangqiPiece({
       viewBox="0 0 50 50"
       className={className ? `xiangqi-piece ${className}` : "xiangqi-piece"}
       style={{ userSelect: "none", overflow: "visible" }}
+      role="img"
+      aria-label={`${vn} ${isRed ? "Đỏ" : "Đen"}`}
     >
+      {/* tên tiếng Việt hiện khi rê chuột (chữ phụ trên quân quá nhỏ để đọc) */}
+      <title>{`${vn} (${isRed ? "Đỏ" : "Đen"})`}</title>
       <defs>
         {/* Đổ bóng 3D nhẹ */}
         <filter id={`xq-shadow-${piece}`} x="-15%" y="-15%" width="130%" height="130%">
@@ -97,11 +101,11 @@ export function XiangqiPiece({
       {/* Chữ Hán thư pháp lớn */}
       <text
         x="25"
-        y="27.5"
+        y="26"
         textAnchor="middle"
         dominantBaseline="central"
         fill={textColor}
-        fontSize="21"
+        fontSize="24"
         fontWeight="bold"
         fontFamily='"Noto Serif TC", "KaiTi", "STKaiti", "Baskerville", "Georgia", serif'
         style={{ pointerEvents: "none" }}
@@ -109,22 +113,6 @@ export function XiangqiPiece({
         {hanzi}
       </text>
 
-      {/* Nhãn tiếng Việt phụ bên dưới */}
-      <text
-        x="25"
-        y="39"
-        textAnchor="middle"
-        dominantBaseline="central"
-        fill={textColor}
-        fontSize="6.5"
-        fontWeight="700"
-        fontFamily="system-ui, -apple-system, sans-serif"
-        letterSpacing="0.2px"
-        opacity="0.85"
-        style={{ pointerEvents: "none" }}
-      >
-        {vn}
-      </text>
     </svg>
   );
 }

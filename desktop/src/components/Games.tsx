@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ApiError, type GameKind, type GameLeaderboard, type GameView, type Message, type PublicUser } from "../lib/api";
+import { ApiError, type GameKind, type GameLeaderboard, type GameMemberStats, type GameView, type Message, type PublicUser } from "../lib/api";
 import {
   GAME_INFO,
   ROLE_INFO,
@@ -168,6 +168,9 @@ function VoterDots({ ctx, ids }: { ctx: Ctx; ids: number[] }) {
 
 /* ---------- Thẻ ván chơi trong tin nhắn ---------- */
 
+/** Các game 2 người có tính điểm Elo (xem store/games.go). */
+const RATED_KINDS = new Set<string>(["caro", "chess", "xiangqi", "rps"]);
+
 export function GameCard({ message }: { message: Message }) {
   const { state, gameAction, openThread } = useChat();
   const game = message.game!;
@@ -195,6 +198,7 @@ export function GameCard({ message }: { message: Message }) {
   const user = (id: number): PublicUser =>
     state.users[id] ?? { id, username: nameOf(id), display_name: nameOf(id), avatar: null, status_text: "" };
   const [sharing, setSharing] = useState(false);
+  const [lbOpen, setLbOpen] = useState(false);
   const ctx: Ctx = {
     messageId: message.id,
     game,
@@ -257,31 +261,6 @@ export function GameCard({ message }: { message: Message }) {
         <Rps ctx={ctx} />
       )}
 
-      {/* Thanh Khán giả & Bình luận của ván cờ */}
-      <div className="game-spectator-bar">
-        <div className="game-spectator-info">
-          <span className="game-spectator-count">
-            💬 {replyCount > 0 ? `${replyCount} bình luận` : "Chưa có bình luận"}
-            {viewerCount > 0 && ` · 👁️ ${viewerCount} Khán giả`}
-          </span>
-          {viewerIds.length > 0 && (
-            <span className="game-viewer-avatars" aria-hidden>
-              {viewerIds.slice(0, 5).map((id) => (
-                <Avatar key={id} user={state.users[id]} size={20} />
-              ))}
-            </span>
-          )}
-        </div>
-        <button
-          type="button"
-          className="btn btn-xs btn-secondary"
-          onClick={() => openThread(message.id)}
-          title="Mở luồng bình luận và xem ý kiến khán giả"
-        >
-          💬 {replyCount > 0 ? "Mở Khán đài" : "Bình luận (Khán đài)"}
-        </button>
-      </div>
-
       {game.status === "ended" && game.result && (
         <p className={`game-result${game.winners?.includes(meId) ? " is-win" : ""}`}>
           {game.winners?.includes(meId) ? "🏆 " : ""}
@@ -290,6 +269,36 @@ export function GameCard({ message }: { message: Message }) {
       )}
       <GameLog game={game} />
       <FormError>{error}</FormError>
+
+      {/* Chân thẻ: khán đài (luồng bình luận) và bảng xếp hạng, dùng chung cho mọi game */}
+      <footer className="game-foot">
+        <button
+          type="button"
+          className="game-foot-btn"
+          onClick={() => openThread(message.id)}
+          title="Mở khán đài: bình luận và xem cùng mọi người"
+        >
+          <Icon name="thread" size={15} />
+          <span>
+            Khán đài
+            {replyCount > 0 && <span className="game-foot-count"> · {replyCount} bình luận</span>}
+          </span>
+        </button>
+        {viewerCount > 0 && (
+          <span className="game-foot-viewers" title={`${viewerCount} khán giả đã bình luận`}>
+            {viewerIds.slice(0, 4).map((id) => (
+              <Avatar key={id} user={state.users[id]} size={20} />
+            ))}
+            {viewerCount > 4 && <span className="game-foot-more">+{viewerCount - 4}</span>}
+          </span>
+        )}
+        {RATED_KINDS.has(game.kind) && (
+          <button type="button" className="game-foot-btn game-foot-lb" onClick={() => setLbOpen(true)}>
+            <span aria-hidden>🏆</span> Xếp hạng
+          </button>
+        )}
+      </footer>
+      {lbOpen && <GameLeaderboardDialog initialKind={game.kind} onClose={() => setLbOpen(false)} />}
       {sharing && <ShareDialog message={message} onClose={() => setSharing(false)} />}
     </section>
   );
@@ -957,7 +966,6 @@ function Caro({ ctx }: { ctx: Ctx }) {
   const [dragging, setDragging] = useState(false);
   const [hover, setHover] = useState<{ r: number; c: number } | null>(null);
   const initializedRef = useRef(false);
-  const [lbOpen, setLbOpen] = useState(false);
 
   const centerAt = useCallback((row: number, col: number, cs = cellSize) => {
     const c = containerRef.current;
@@ -1298,16 +1306,12 @@ function Caro({ ctx }: { ctx: Ctx }) {
             {myMove ? "Tới lượt bạn." : `Chờ ${ctx.nameOf(s.turn ?? 0)} đánh…`} Nước thứ {s.moves + 1}.
           </span>
         )}
-        <button type="button" className="link-btn" onClick={() => setLbOpen(true)}>
-          🏆 Bảng xếp hạng
-        </button>
         {game.status === "playing" && ctx.isPlayer && (
           <button type="button" className="link-btn game-cancel" disabled={busy} onClick={() => act("resign")}>
             Chịu thua
           </button>
         )}
       </div>
-      {lbOpen && <GameLeaderboardDialog initialKind="caro" onClose={() => setLbOpen(false)} />}
     </div>
   );
 }
@@ -1321,7 +1325,6 @@ function Chess({ ctx }: { ctx: Ctx }) {
   const [pendingPromotion, setPendingPromotion] = useState<{ from: string; to: string } | null>(null);
   const [confirmResign, setConfirmResign] = useState(false);
   const [manualFlip, setManualFlip] = useState<boolean | null>(null);
-  const [lbOpen, setLbOpen] = useState(false);
 
   const whitePlayer = game.players.find((p) => p.id === s.white_player_id);
   const blackPlayer = game.players.find((p) => p.id === s.black_player_id);
@@ -1648,21 +1651,6 @@ function Chess({ ctx }: { ctx: Ctx }) {
           >
             🔄 Lật bàn
           </button>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={ctx.openThread}
-            title="Mở luồng bình luận / Khán đài"
-          >
-            💬 Khán đài {ctx.replyCount ? `(${ctx.replyCount})` : ""}
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => setLbOpen(true)}
-          >
-            🏆 Xếp hạng
-          </button>
         </div>
 
         {game.status === "playing" && isPlayer && (
@@ -1711,7 +1699,6 @@ function Chess({ ctx }: { ctx: Ctx }) {
         )}
       </div>
 
-      {lbOpen && <GameLeaderboardDialog initialKind="chess" onClose={() => setLbOpen(false)} />}
     </div>
   );
 }
@@ -1719,19 +1706,7 @@ function Chess({ ctx }: { ctx: Ctx }) {
 /* ---------- Cờ tướng (Xiangqi) ---------- */
 
 function Xiangqi({ ctx }: { ctx: Ctx }) {
-  const [lbOpen, setLbOpen] = useState(false);
-  return (
-    <>
-      <XiangqiGame
-        ctx={{
-          ...ctx,
-          onOpenLeaderboard: () => setLbOpen(true),
-          onOpenThread: ctx.openThread,
-        }}
-      />
-      {lbOpen && <GameLeaderboardDialog initialKind="xiangqi" onClose={() => setLbOpen(false)} />}
-    </>
-  );
+  return <XiangqiGame ctx={ctx} />;
 }
 
 /* ---------- Oẳn tù tì ---------- */
@@ -2083,18 +2058,34 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
 
 /* ---------- Bảng xếp hạng trò chơi ---------- */
 
+const LB_TABS: { id: string; label: string }[] = [
+  { id: "all", label: "Tất cả" },
+  { id: "xiangqi", label: "Cờ tướng" },
+  { id: "chess", label: "Cờ vua" },
+  { id: "caro", label: "Cờ caro" },
+  { id: "rps", label: "Oẳn tù tì" },
+  { id: "werewolf", label: "Ma Sói" },
+  { id: "spy", label: "Gián điệp" },
+  { id: "station", label: "Trạm vũ trụ" },
+];
+
+function lbUser(m: GameMemberStats): PublicUser {
+  return { id: m.user_id, username: m.username, display_name: m.display_name, avatar: m.avatar, status_text: "" };
+}
+
 export function GameLeaderboardDialog({
-  initialKind = "caro",
+  initialKind = "all",
   onClose,
 }: {
   initialKind?: string;
   onClose: () => void;
 }) {
-  const { api } = useChat();
+  const { api, state } = useChat();
   const [kind, setKind] = useState<string>(initialKind);
   const [data, setData] = useState<GameLeaderboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -2119,25 +2110,25 @@ export function GameLeaderboardDialog({
     };
   }, [api, kind]);
 
-  const tabs: { id: string; label: string }[] = [
-    { id: "caro", label: "Cờ caro" },
-    { id: "chess", label: "Cờ vua" },
-    { id: "xiangqi", label: "Cờ tướng" },
-    { id: "all", label: "Tất cả game" },
-    { id: "rps", label: "Oẳn tù tì" },
-    { id: "werewolf", label: "Ma Sói" },
-    { id: "spy", label: "Gián điệp" },
-    { id: "station", label: "Trạm vũ trụ" },
-  ];
+  // tab đang chọn luôn nằm trong vùng nhìn thấy (điện thoại: tab cuộn ngang)
+  useEffect(() => {
+    tabsRef.current?.querySelector<HTMLElement>(".is-active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [kind]);
+
+  const rated = RATED_KINDS.has(kind);
+  const members = (data?.members ?? []).filter((m) => m.total_games > 0);
+  const podium = members.slice(0, 3);
 
   return (
-    <Dialog title="🏆 Bảng xếp hạng trò chơi" onClose={onClose} wide>
-      <div className="lb-container">
-        <div className="lb-tabs" role="tablist">
-          {tabs.map((t) => (
+    <Dialog title="Bảng xếp hạng" onClose={onClose} wide>
+      <div className="lb">
+        <div className="lb-tabs" role="tablist" ref={tabsRef}>
+          {LB_TABS.map((t) => (
             <button
               key={t.id}
               type="button"
+              role="tab"
+              aria-selected={kind === t.id}
               className={`lb-tab${kind === t.id ? " is-active" : ""}`}
               onClick={() => setKind(t.id)}
             >
@@ -2147,165 +2138,79 @@ export function GameLeaderboardDialog({
         </div>
 
         {loading ? (
-          <div className="lb-loading">Đang tải bảng xếp hạng…</div>
+          <p className="lb-note">Đang tải…</p>
         ) : error ? (
-          <div className="lb-error">{error}</div>
-        ) : !data || data.total_ended === 0 ? (
+          <p className="lb-note is-error">{error}</p>
+        ) : !data || data.total_ended === 0 || members.length === 0 ? (
           <div className="lb-empty">
-            <p>Chưa có ván chơi nào hoàn thành cho mục này.</p>
-            <small>Hãy rủ bạn bè vào phòng cùng chơi để vinh danh trên bảng xếp hạng nhé!</small>
+            <p>Chưa có ván nào kết thúc.</p>
+            <small>Chơi xong một ván là tên bạn sẽ có ở đây.</small>
           </div>
         ) : (
-          <div className="lb-body">
-            {/* Top 10 Thắng & Top 10 Thua */}
-            <div className="lb-top-grid">
-              {/* Top 10 Thắng */}
-              <div className="lb-top-card lb-top-wins">
-                <div className="lb-card-header">
-                  <h3>🥇 Top 10 Số Bàn Thắng</h3>
-                  <span>{data.top_wins.length} thành viên</span>
-                </div>
-                <div className="lb-top-list">
-                  {data.top_wins.length === 0 ? (
-                    <p className="lb-subtle">Chưa có ai thắng trận nào.</p>
-                  ) : (
-                    data.top_wins.map((m, idx) => (
-                      <div key={m.user_id} className={`lb-item rank-${idx + 1}`}>
-                        <span className="lb-rank">
-                          {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : `#${idx + 1}`}
-                        </span>
-                        <Avatar
-                          user={
-                            {
-                              id: m.user_id,
-                              username: m.username,
-                              display_name: m.display_name,
-                              avatar: m.avatar,
-                            } as PublicUser
-                          }
-                          size={28}
-                        />
-                        <div className="lb-user-info">
-                          <span className="lb-name">{m.display_name || m.username}</span>
-                          <span className="lb-sub">
-                            {m.tier_badge || "🥈"} {m.rating ?? 1200} Elo · Thắng: {m.win_rate}%
-                          </span>
-                        </div>
-                        <div className="lb-stat-badge win-badge">
-                          <b>{m.wins}</b> thắng
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
+          <>
+            <ol className="lb-podium" aria-label="Ba người dẫn đầu">
+              {podium.map((m, i) => (
+                <li key={m.user_id} className={`lb-podium-item place-${i + 1}${m.user_id === state.me.id ? " is-me" : ""}`}>
+                  <span className="lb-medal" aria-label={`Hạng ${i + 1}`}>
+                    {i + 1}
+                  </span>
+                  <Avatar user={lbUser(m)} size={i === 0 ? 52 : 44} />
+                  <span className="lb-podium-name">{m.display_name || m.username}</span>
+                  <span className="lb-podium-score">
+                    {rated ? (
+                      <>
+                        <b>{m.rating ?? 1200}</b> Elo
+                      </>
+                    ) : (
+                      <>
+                        <b>{m.wins}</b> thắng
+                      </>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ol>
 
-              {/* Top 10 Thua */}
-              <div className="lb-top-card lb-top-losses">
-                <div className="lb-card-header">
-                  <h3>💀 Top 10 Số Bàn Thua</h3>
-                  <span>{data.top_losses.length} thành viên</span>
-                </div>
-                <div className="lb-top-list">
-                  {data.top_losses.length === 0 ? (
-                    <p className="lb-subtle">Chưa có ai thua trận nào.</p>
-                  ) : (
-                    data.top_losses.map((m, idx) => (
-                      <div key={m.user_id} className={`lb-item rank-${idx + 1}`}>
-                        <span className="lb-rank">#{idx + 1}</span>
-                        <Avatar
-                          user={
-                            {
-                              id: m.user_id,
-                              username: m.username,
-                              display_name: m.display_name,
-                              avatar: m.avatar,
-                            } as PublicUser
-                          }
-                          size={28}
-                        />
-                        <div className="lb-user-info">
-                          <span className="lb-name">{m.display_name || m.username}</span>
-                          <span className="lb-sub">Tổng: {m.total_games} ván</span>
-                        </div>
-                        <div className="lb-stat-badge loss-badge">
-                          <b>{m.losses}</b> thua
-                        </div>
-                      </div>
-                    ))
+            <div className="lb-list" role="table" aria-label="Xếp hạng chi tiết">
+              <div className="lb-row lb-row-head" role="row">
+                <span role="columnheader" className="lb-c-rank">#</span>
+                <span role="columnheader" className="lb-c-name">Người chơi</span>
+                {rated && <span role="columnheader" className="lb-c-elo">Elo</span>}
+                <span role="columnheader" className="lb-c-record" title="Thắng – Thua – Hoà">T–B–H</span>
+                <span role="columnheader" className="lb-c-rate">Tỉ lệ thắng</span>
+              </div>
+              {members.map((m, i) => (
+                <div key={m.user_id} role="row" className={`lb-row${m.user_id === state.me.id ? " is-me" : ""}`}>
+                  <span role="cell" className="lb-c-rank">{i + 1}</span>
+                  <span role="cell" className="lb-c-name">
+                    <Avatar user={lbUser(m)} size={28} />
+                    <span className="lb-name-text">
+                      <span className="lb-name">{m.display_name || m.username}</span>
+                      {m.username && <span className="lb-handle">@{m.username}</span>}
+                    </span>
+                  </span>
+                  {rated && (
+                    <span role="cell" className="lb-c-elo" title={`${m.rank_tier || ""} · cao nhất ${m.peak_rating ?? m.rating ?? 1200}`}>
+                      <b>{m.rating ?? 1200}</b>
+                      {m.rank_tier && <small>{m.rank_tier}</small>}
+                    </span>
                   )}
+                  <span role="cell" className="lb-c-record">
+                    <span className="is-win">{m.wins}</span>–<span className="is-loss">{m.losses}</span>–{m.draws}
+                  </span>
+                  <span role="cell" className="lb-c-rate">
+                    <span className="lb-rate-bar" aria-hidden>
+                      <span style={{ width: `${Math.min(100, Math.max(0, m.win_rate))}%` }} />
+                    </span>
+                    {Math.round(m.win_rate)}%
+                  </span>
                 </div>
-              </div>
+              ))}
             </div>
-
-            {/* Bảng xếp hạng chi tiết tất cả thành viên */}
-            <div className="lb-table-wrap">
-              <div className="lb-card-header">
-                <h3>📋 Bảng Xếp Hạng Chi Tiết ({data.members.length} người chơi)</h3>
-                <span>Tổng cộng {data.total_ended} ván đã hoàn thành</span>
-              </div>
-              <div className="lb-table-scroll">
-                <table className="lb-table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: "3.5rem" }}>Hạng</th>
-                      <th>Thành viên</th>
-                      <th style={{ textAlign: "center" }}>Cấp Bậc & Elo</th>
-                      <th style={{ textAlign: "center" }}>Tổng ván</th>
-                      <th style={{ textAlign: "center" }}>Thắng</th>
-                      <th style={{ textAlign: "center" }}>Thua</th>
-                      <th style={{ textAlign: "center" }}>Hoà</th>
-                      <th style={{ textAlign: "right" }}>Tỉ lệ thắng</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.members.map((m, idx) => (
-                      <tr key={m.user_id}>
-                        <td className="lb-td-rank">
-                          {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : idx + 1}
-                        </td>
-                        <td className="lb-td-user">
-                          <div className="lb-td-user-inner">
-                            <Avatar
-                              user={
-                                {
-                                  id: m.user_id,
-                                  username: m.username,
-                                  display_name: m.display_name,
-                                  avatar: m.avatar,
-                                } as PublicUser
-                              }
-                              size={24}
-                            />
-                            <span className="lb-td-name">{m.display_name || m.username}</span>
-                            {m.username && <span className="lb-td-handle">@{m.username}</span>}
-                          </div>
-                        </td>
-                        <td style={{ textAlign: "center" }}>
-                          <span className="lb-elo-badge" title={`Đỉnh cao: ${m.peak_rating || m.rating || 1200} Elo`}>
-                            <span className="lb-tier-icon">{m.tier_badge || "🥈"}</span>
-                            <b>{m.rating ?? 1200}</b>
-                            <span className="lb-tier-name">{m.rank_tier || "Bạc"}</span>
-                          </span>
-                        </td>
-                        <td style={{ textAlign: "center" }}>
-                          <b>{m.total_games}</b>
-                        </td>
-                        <td style={{ textAlign: "center", color: "var(--u1)", fontWeight: 700 }}>
-                          {m.wins}
-                        </td>
-                        <td style={{ textAlign: "center", color: "var(--u4)", fontWeight: 700 }}>
-                          {m.losses}
-                        </td>
-                        <td style={{ textAlign: "center", color: "var(--text-soft)" }}>{m.draws}</td>
-                        <td style={{ textAlign: "right", fontWeight: 700 }}>{m.win_rate}%</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
+            <p className="lb-note">
+              {data.total_ended} ván đã kết thúc{rated ? " · Elo khởi điểm 1200, thắng người mạnh hơn được cộng nhiều hơn" : ""}
+            </p>
+          </>
         )}
       </div>
     </Dialog>

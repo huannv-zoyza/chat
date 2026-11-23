@@ -12,3 +12,4 @@ chat.db-shm
 
 # tệp thử của cmd/musetry
 muse-test*
+backups/

@@ -232,11 +232,11 @@ export function myTurn(g: GameView | undefined, meId: number): string | null {
       return (g.state as CaroState | undefined)?.turn === meId ? "Tới lượt bạn đánh" : null;
     case "chess": {
       const s = g.state as ChessState | undefined;
-      return s?.turn_player_id === meId ? "Tới lượt bạn đi cờ" : null;
+      return s?.turn_player_id === meId ? "Tới lượt bạn đi" : null;
     }
     case "xiangqi": {
       const s = g.state as XiangqiState | undefined;
-      return s?.turn_player_id === meId ? "Tới lượt bạn đi cờ" : null;
+      return s?.turn_player_id === meId ? "Tới lượt bạn đi" : null;
     }
     case "rps": {
       const i = g.players.findIndex((p) => p.id === meId);

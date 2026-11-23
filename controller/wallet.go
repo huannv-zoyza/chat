@@ -118,6 +118,7 @@ func (a *API) chipsOnTables(userID int64) int64 {
 // buyInLocked: userID mang toàn bộ số dư ví vào ván, ghi ví và trạng thái ván trong một transaction.
 // Lỗi thì nạp lại ván từ DB để bỏ các thay đổi trong bộ nhớ chưa được lưu.
 func (a *API) buyInLocked(ctx context.Context, s *gameSession, userID int64) error {
+	ctx = context.WithoutCancel(ctx) // ghi tiền không bỏ dở vì người dùng đóng tab
 	seq := s.g.BuyInCount(userID) + 1
 	wal, err := a.store.BuyIn(ctx, s.messageID, userID, seq, func(amount int64) (string, []byte, error) {
 		s.g.BuyIn(userID, amount)
@@ -134,6 +135,7 @@ func (a *API) buyInLocked(ctx context.Context, s *gameSession, userID int64) err
 
 // payOutLocked trả chip (và nợ trong bàn) về ví, đồng thời lưu trạng thái ván. Gọi lại không cộng hai lần.
 func (a *API) payOutLocked(ctx context.Context, s *gameSession, kind string, seq int64, stakes []game.Stake) error {
+	ctx = context.WithoutCancel(ctx) // ghi tiền không bỏ dở vì người dùng đóng tab
 	state, err := s.g.Marshal()
 	if err != nil {
 		return err
@@ -161,6 +163,48 @@ func (a *API) reloadLocked(ctx context.Context, s *gameSession) {
 	if g, err := game.Load(row.Kind, row.State); err == nil {
 		s.g = g
 	}
+}
+
+// settleChannelGames: trước khi xoá kênh, kết thúc mọi ván dùng chip của kênh và trả chip về ví
+// (xoá kênh xoá luôn các ván, sau đó không còn gì để trả bù).
+func (a *API) settleChannelGames(ctx context.Context, channelID int64) error {
+	rows, err := a.store.ActiveGamesByChannel(ctx, channelID)
+	if err != nil {
+		return err
+	}
+	ids := map[int64]bool{}
+	for _, r := range rows {
+		ids[r.MessageID] = true
+	}
+	a.games.mu.Lock()
+	for id, s := range a.games.sessions {
+		if s.channelID == channelID {
+			ids[id] = true // gồm cả ván đã kết thúc mà chưa trả được chip
+		}
+	}
+	a.games.mu.Unlock()
+	for id := range ids {
+		s, err := a.gameSession(ctx, id)
+		if errors.Is(err, store.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		s.mu.Lock()
+		if s.g.Staked() && !s.paid {
+			s.g.Abort("Kênh đã bị xoá.")
+			err = a.payOutLocked(ctx, s, "cashout", 0, s.g.Settle())
+			if err == nil {
+				s.paid = true
+			}
+		}
+		s.mu.Unlock()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // settlePendingCashouts: lúc khởi động, trả chip cho các ván bầu cua đã kết thúc (hoặc tin đã xoá)

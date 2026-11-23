@@ -162,3 +162,36 @@ func TestBauCuaMoneyFlow(t *testing.T) {
 		t.Fatalf("baucua in DM: %d", code)
 	}
 }
+
+func TestBauCuaChipsSurviveChannelDeleteAndCancelledRequest(t *testing.T) {
+	e := newEnv(t)
+	alice := e.register("alice", "Alice")
+	bob := e.register("bob", "Bob")
+	newTable := func(name string) (int64, int64) {
+		var ch channel
+		e.do("POST", "/api/channels", alice.Token, map[string]string{"name": name}, &ch)
+		e.do("POST", "/api/channels/"+itoa(ch.ID)+"/join", bob.Token, nil, nil)
+		var m struct{ ID int64 }
+		e.do("POST", "/api/channels/"+itoa(ch.ID)+"/games", alice.Token, map[string]any{"kind": "baucua"}, &m)
+		e.do("POST", "/api/messages/"+itoa(m.ID)+"/game", bob.Token, map[string]any{"action": "join"}, nil)
+		return ch.ID, m.ID
+	}
+
+	// xoá kênh đang có bàn: chip phải về ví trước khi ván bị xoá theo kênh
+	chID, _ := newTable("ban-1")
+	if code := e.do("DELETE", "/api/channels/"+itoa(chID), alice.Token, nil, nil); code != 204 {
+		t.Fatalf("delete channel: %d", code)
+	}
+	if a, b := e.wallet(alice.Token), e.wallet(bob.Token); a.Balance != 1000 || b.Balance != 1000 {
+		t.Fatalf("after channel delete: alice %+v bob %+v", a, b)
+	}
+
+	// huỷ ván trong request đã bị huỷ (đóng tab): vẫn phải trả chip
+	_, gID := newTable("ban-2")
+	if err := e.api.CancelGameWithCancelledContextForTest(gID, alice.User.ID); err != nil {
+		t.Fatal(err)
+	}
+	if a, b := e.wallet(alice.Token), e.wallet(bob.Token); a.Balance != 1000 || b.Balance != 1000 {
+		t.Fatalf("after cancelled-context cancel: alice %+v bob %+v", a, b)
+	}
+}

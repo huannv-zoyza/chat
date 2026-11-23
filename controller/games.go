@@ -107,22 +107,26 @@ func viewJSON(g *game.Game, viewer int64) json.RawMessage {
 // saveAndBroadcast: gọi khi đang giữ s.mu.
 func (a *API) saveAndBroadcast(ctx context.Context, s *gameSession) {
 	state, err := s.g.Marshal()
-	if err == nil && s.g.Staked() && s.g.Status() == game.Ended && !s.paid {
-		// ván dùng chip vừa kết thúc: trả chip về ví và lưu ván trong một transaction
-		if err = a.payOutLocked(ctx, s, "cashout", 0, s.g.Settle()); err == nil {
-			s.paid = true
-		} else {
-			log.Printf("cashout game %d: %v", s.messageID, err)
-		}
-	}
-	if err == nil && !s.paid {
-		err = a.store.SaveGame(ctx, s.messageID, string(s.g.Status()), state)
-	} else if err != nil {
-		// trả chip lỗi: vẫn lưu ván đã kết thúc để lần khởi động sau trả bù
-		err = a.store.SaveGame(ctx, s.messageID, string(s.g.Status()), state)
-	}
-	if err != nil {
+	switch {
+	case err != nil:
 		log.Printf("save game %d: %v", s.messageID, err)
+	case s.g.Staked() && s.g.Status() == game.Ended && !s.paid:
+		// ván dùng chip vừa kết thúc: trả chip về ví và lưu ván trong một transaction.
+		// Lỗi thì vẫn lưu ván đã kết thúc; tickGames thử trả lại, khởi động lại cũng trả bù.
+		if err := a.payOutLocked(ctx, s, "cashout", 0, s.g.Settle()); err != nil {
+			log.Printf("cashout game %d: %v", s.messageID, err)
+			if err := a.store.SaveGame(context.WithoutCancel(ctx), s.messageID, string(s.g.Status()), state); err != nil {
+				log.Printf("save game %d: %v", s.messageID, err)
+			}
+		} else {
+			s.paid = true
+		}
+	case s.g.Staked() && s.paid:
+		// đã trả chip: trạng thái cuối đã được lưu cùng lúc
+	default:
+		if err := a.store.SaveGame(ctx, s.messageID, string(s.g.Status()), state); err != nil {
+			log.Printf("save game %d: %v", s.messageID, err)
+		}
 	}
 
 	// Khi ván kết thúc (status == Ended) và là game đối kháng 2 người, tự động tính điểm Elo
@@ -593,6 +597,14 @@ func (a *API) tickGames(ctx context.Context, now time.Time) {
 			a.saveAndBroadcast(ctx, s)
 		}
 		ended := s.g.Status() == game.Ended
+		if ended && !s.deleted && s.g.Staked() && !s.paid {
+			// trả chip lần trước bị lỗi: thử lại, chưa được thì giữ ván trong bộ nhớ
+			if err := a.payOutLocked(ctx, s, "cashout", 0, s.g.Settle()); err == nil {
+				s.paid = true
+			} else {
+				ended = false
+			}
+		}
 		s.mu.Unlock()
 		if ended {
 			// ván xong không cần đồng hồ nữa; lần sau có người xem thì nạp lại từ DB

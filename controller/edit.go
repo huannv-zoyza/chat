@@ -122,7 +122,13 @@ func (a *API) deleteMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if msg.Embed != nil && msg.Embed.Type == "game" {
 		// ván dùng chip đang dở: trả hết chip về ví trước khi xoá tin
-		if s, err := a.gameSession(r.Context(), msg.ID); err == nil {
+		s, err := a.gameSession(r.Context(), msg.ID)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			// không nạp được ván thì không xoá, kẻo mất chip đang trên bàn
+			internalError(w, r, err)
+			return
+		}
+		if err == nil {
 			s.mu.Lock()
 			if s.g.Staked() && !s.paid {
 				s.g.Abort("Tin ván đã bị xoá.")

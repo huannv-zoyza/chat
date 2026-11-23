@@ -205,6 +205,10 @@ func (a *API) deleteChannel(w http.ResponseWriter, r *http.Request) {
 	if !ok || !a.requireOwner(w, r, ch) {
 		return
 	}
+	if err := a.settleChannelGames(r.Context(), ch.ID); err != nil {
+		internalError(w, r, err)
+		return
+	}
 	keys, err := a.store.AttachmentKeysForChannel(r.Context(), ch.ID)
 	if err != nil {
 		internalError(w, r, err)

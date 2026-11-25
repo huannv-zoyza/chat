@@ -13430,9 +13430,6 @@ button.villager:focus-visible .villager-name {
 .tod-dusk .farm-ground {
   filter: brightness(0.88) sepia(0.15);
 }
-.tod-night .farm-iso {
-  filter: brightness(0.8);
-}
 
 /* ---- nút thu hoạch / dòng nhắc ---- */
 .farm-banner {
@@ -15126,14 +15123,20 @@ button.villager:focus-visible .villager-name {
   z-index: 2;
   pointer-events: none;
 }
+/* Nhân màu (multiply) chứ không phủ màu bán trong suốt: phủ màu tối lên cỏ xanh làm cả cảnh
+   đục xám như có sương; nhân màu chỉ làm tối và ngả màu, giữ nguyên độ tương phản nên nhãn giờ,
+   nút "Mở rộng"... vẫn rõ. */
+.farm-tint {
+  mix-blend-mode: multiply;
+}
 .farm-tint.is-dawn {
-  background: rgb(255 160 90 / 0.14);
+  background: rgb(255 228 200);
 }
 .farm-tint.is-dusk {
-  background: linear-gradient(180deg, rgb(110 60 150 / 0.28), rgb(255 140 80 / 0.12));
+  background: linear-gradient(180deg, rgb(215 190 235), rgb(255 215 190));
 }
 .farm-tint.is-night {
-  background: radial-gradient(ellipse at 45% 50%, rgb(10 20 60 / 0.35), rgb(5 10 35 / 0.68));
+  background: radial-gradient(ellipse at 45% 50%, rgb(165 180 230), rgb(115 130 195));
 }
 .farm-field > .farm-tint {
   z-index: 1;

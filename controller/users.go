@@ -98,13 +98,9 @@ func (a *API) register(w http.ResponseWriter, r *http.Request) {
 		internalError(w, r, err)
 		return
 	}
-	user, err := a.store.RegisterUser(r.Context(), username, email, hash, displayName, clientIP(r), a.signupsPerIP)
+	user, err := a.store.RegisterUser(r.Context(), username, email, hash, displayName, clientIP(r))
 	if errors.Is(err, store.ErrConflict) {
 		writeError(w, http.StatusConflict, "Tên đăng nhập hoặc email đã được dùng.")
-		return
-	}
-	if errors.Is(err, store.ErrSignupLimit) {
-		writeError(w, http.StatusTooManyRequests, "Mạng của bạn đã tạo quá nhiều tài khoản hôm nay. Thử lại sau 24 giờ.")
 		return
 	}
 	if err != nil {

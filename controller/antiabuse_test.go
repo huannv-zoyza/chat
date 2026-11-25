@@ -30,40 +30,14 @@ func (e *env) registerFrom(username, cfIP string) (int, string) {
 	return res.StatusCode, r.Error
 }
 
-func TestSignupLimitedPerIP(t *testing.T) {
+// Cả công ty ra Internet qua cùng một IP: đăng ký từ một IP bao nhiêu tài khoản cũng được.
+func TestSignupNotLimitedPerIP(t *testing.T) {
 	e := newEnv(t)
-	for _, u := range []string{"clone1", "clone2", "clone3"} {
+	for i := range 6 {
+		u := "staff" + itoa(int64(i))
 		if code, msg := e.registerFrom(u, "203.0.113.7"); code != http.StatusCreated {
 			t.Fatalf("register %s: %d %s", u, code, msg)
 		}
-	}
-	code, msg := e.registerFrom("clone4", "203.0.113.7")
-	if code != http.StatusTooManyRequests || !strings.Contains(msg, "quá nhiều tài khoản") {
-		t.Fatalf("4th signup from same IP: want 429, got %d %q", code, msg)
-	}
-	// Bị chặn thì không giữ chỗ tên đăng nhập.
-	if code, _ := e.registerFrom("clone4", "198.51.100.9"); code != http.StatusCreated {
-		t.Fatalf("other IP must still sign up, got %d", code)
-	}
-	// IPv6 cùng dải /64 tính chung một mạng.
-	for i, ip := range []string{"2001:db8:1:2::a", "2001:db8:1:2::b", "2001:db8:1:2:ffff::1"} {
-		if code, msg := e.registerFrom("six"+itoa(int64(i)), ip); code != http.StatusCreated {
-			t.Fatalf("ipv6 signup %d: %d %s", i, code, msg)
-		}
-	}
-	if code, _ := e.registerFrom("six9", "2001:db8:1:2:dead::beef"); code != http.StatusTooManyRequests {
-		t.Fatalf("4th signup from same /64: want 429, got %d", code)
-	}
-	// Gọi thẳng từ máy chủ (không qua tunnel) không bị giới hạn theo IP.
-	for _, u := range []string{"admin1", "admin2", "admin3", "admin4"} {
-		if code, msg := e.registerFrom(u, ""); code != http.StatusCreated {
-			t.Fatalf("local register %s: %d %s", u, code, msg)
-		}
-	}
-	// Qua 24 giờ thì IP đó tạo tiếp được.
-	e.st.SetClock(func() time.Time { return time.Now().Add(25 * time.Hour) })
-	if code, msg := e.registerFrom("clone5", "203.0.113.7"); code != http.StatusCreated {
-		t.Fatalf("signup after 24h: %d %s", code, msg)
 	}
 }
 
@@ -83,7 +57,7 @@ func TestNewAccountCannotMoveCoins(t *testing.T) {
 		t.Fatalf("create bet table: %d", code)
 	}
 
-	e.api.SetNewAccountRules(3, 7*24*time.Hour)
+	e.api.SetNewAccountHold(7 * 24 * time.Hour)
 
 	var errResp struct {
 		Error string `json:"error"`

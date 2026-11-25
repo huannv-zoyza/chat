@@ -29,7 +29,6 @@ type API struct {
 	uploadsDir     string // thư mục lưu file người dùng gửi
 	minFreeDisk    uint64 // còn ít hơn chừng này byte trống thì không nhận file mới
 	logins         *loginLimiter
-	signupsPerIP   int           // số tài khoản mỗi IP tạo được trong 24 giờ (<= 0: không giới hạn)
 	newAccountHold time.Duration // tài khoản mới phải chờ chừng này mới đưa xu cho người khác được
 	unfurlClient   *http.Client  // xem trước link: chỉ kết nối được tới internet công khai
 	unfurls        unfurlCache
@@ -60,7 +59,6 @@ func NewAPI(st *store.Store, hub *socket.Hub, originPatterns []string, uploadsDi
 		store: st, hub: hub, originPatterns: originPatterns, uploadsDir: uploadsDir,
 		minFreeDisk:    defaultMinFreeDisk,
 		logins:         newLoginLimiter(10, 15*time.Minute),
-		signupsPerIP:   defaultSignupsPerIP,
 		newAccountHold: defaultNewAccountHold,
 		unfurlClient:   newUnfurlClient(),
 		hookRate:       newRateWindow(hookRatePerMin, time.Minute),

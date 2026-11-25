@@ -315,7 +315,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                   />
                   <span className="mention-option-name">Trợ lý AI</span>
                   <span className="mention-option-sub">
-                    Hỏi gì cũng được{state.ai?.image ? ", hoặc “vẽ …” để tạo ảnh" : ""}
+                    {state.ai?.image ? "Hỏi đáp, “vẽ …” ra ảnh" : "Hỏi gì cũng được"}
                   </span>
                 </>
               ) : s.kind === "all" ? (

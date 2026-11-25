@@ -36,6 +36,7 @@ import { EncryptedAttachments } from "./EncryptedAttachments";
 import { E2EEBanner, SafetyDialog, useDMEncryption } from "./E2EEDialogs";
 import { e2ee, useE2EE } from "../lib/e2ee";
 import { channelLabel, channelTitle, dmPeerId, isDM } from "../lib/channel";
+import { isIntegrationBot } from "./Integrations";
 
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
 
@@ -644,6 +645,7 @@ export function MessageRow(props: RowProps) {
             <span className="msg-user" style={{ color: avatarUser ? `var(--u${(avatarUser.id % 6) + 1})` : undefined }}>
               {name}
               {isAIUser(avatarUser) && <span className="bot-tag">AI</span>}
+              {isIntegrationBot(avatarUser) && <span className="bot-tag is-integration">BOT</span>}
               {roleBadge}
             </span>
             <time className="msg-time" dateTime={time} title={formatFull(time)}>

@@ -72,6 +72,11 @@ func (a *API) register(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Tên đăng nhập gồm 3–32 ký tự: chữ thường không dấu, số, dấu chấm hoặc gạch dưới.")
 		return
 	}
+	// đuôi "_bot" và email @bot.invalid dành cho bot tích hợp: không cho người giả làm bot
+	if isBotUsername(username) || strings.HasSuffix(strings.ToLower(email), botEmailDomain) {
+		writeError(w, http.StatusBadRequest, "Tên đăng nhập đuôi “_bot” dành cho bot, hãy chọn tên khác.")
+		return
+	}
 	if addr, err := mail.ParseAddress(email); err != nil || addr.Address != email || len(email) > 255 {
 		writeError(w, http.StatusBadRequest, "Email không hợp lệ.")
 		return

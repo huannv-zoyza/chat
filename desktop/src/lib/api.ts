@@ -95,6 +95,21 @@ export type WalletTransaction = {
 };
 export type BoardEntry = { user: PublicUser; balance: number; debt: number };
 export type WalletBoard = { rich: BoardEntry[]; debtors: BoardEntry[] };
+
+/** Bot tích hợp của kênh. outgoing_url / signing_secret chỉ chủ kênh thấy. */
+export type Integration = {
+  id: number;
+  channel_id: number;
+  bot_user_id: number;
+  bot_username: string;
+  bot_name: string;
+  outgoing_url: string;
+  signing_secret: string;
+  created_by: number | null;
+  created_at: string;
+  /** Chỉ có lúc vừa tạo / đổi mã: "/api/hooks/<mã>" (mã không xem lại được). */
+  hook_path?: string;
+};
 export type GamePlayer = { id: number; name: string };
 
 export type GameMemberStats = {
@@ -551,6 +566,15 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     nicknames: (channelId: number) => request<Record<string, string>>("GET", `/api/channels/${channelId}/nicknames`),
     setNickname: (channelId: number, userId: number, nickname: string) =>
       request<void>("PUT", `/api/channels/${channelId}/nicknames/${userId}`, { nickname }),
+    listIntegrations: (channelId: number) => request<Integration[]>("GET", `/api/channels/${channelId}/integrations`),
+    createIntegration: (channelId: number, name: string, outgoingUrl: string) =>
+      request<Integration>("POST", `/api/channels/${channelId}/integrations`, { name, outgoing_url: outgoingUrl }),
+    updateIntegration: (channelId: number, id: number, outgoingUrl: string) =>
+      request<Integration>("PATCH", `/api/channels/${channelId}/integrations/${id}`, { outgoing_url: outgoingUrl }),
+    rotateIntegrationToken: (channelId: number, id: number) =>
+      request<Integration>("POST", `/api/channels/${channelId}/integrations/${id}/token`),
+    deleteIntegration: (channelId: number, id: number) =>
+      request<void>("DELETE", `/api/channels/${channelId}/integrations/${id}`),
     getWallet: () => request<Wallet>("GET", "/api/wallet"),
     claimDaily: () => request<Wallet>("POST", "/api/wallet/claim"),
     takeLoan: () => request<Wallet>("POST", "/api/wallet/loan"),

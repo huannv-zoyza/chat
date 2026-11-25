@@ -1,4 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
+import { IntegrationsDialog } from "./Integrations";
 import { ApiError, type Channel, parseInviteCode } from "../lib/api";
 import { useChat } from "../state/ChatProvider";
 import { copyText, displayName, formatDay } from "../lib/format";
@@ -406,6 +408,7 @@ export function ChannelSettingsDialog({ channel, onClose }: { channel: Channel; 
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [integOpen, setIntegOpen] = useState(false);
   const owner = state.users[channel.owner_id];
 
   const save = async (e: FormEvent) => {
@@ -465,6 +468,19 @@ export function ChannelSettingsDialog({ channel, onClose }: { channel: Channel; 
             <InviteLinkBox channel={channel} />
           </section>
 
+          <section className="settings-section integ-entry">
+            <span className="integ-entry-icon" aria-hidden>
+              <Icon name="bot" size={20} />
+            </span>
+            <div>
+              <h3>Bot & tích hợp</h3>
+              <p>Nhận thông báo từ CI/CD, n8n, script… vào kênh; bot trả lời khi được @nhắc tên.</p>
+            </div>
+            <button type="button" className="btn" onClick={() => setIntegOpen(true)}>
+              Quản lý bot
+            </button>
+          </section>
+
           <section className="danger-zone">
             <h3>Xoá kênh</h3>
             <p>Toàn bộ tin nhắn và file của kênh sẽ bị xoá vĩnh viễn với mọi thành viên.</p>
@@ -520,6 +536,8 @@ export function ChannelSettingsDialog({ channel, onClose }: { channel: Channel; 
           </div>
         </div>
       )}
+      {/* hộp thoại bot có form riêng: đưa ra ngoài form cài đặt kênh */}
+      {integOpen && createPortal(<IntegrationsDialog channel={channel} onClose={() => setIntegOpen(false)} />, document.body)}
     </Dialog>
   );
 }

@@ -5,6 +5,7 @@ import { useChat } from "../state/ChatProvider";
 import { displayName } from "../lib/format";
 import { NICKNAME_MAX, THROW_ITEMS } from "../lib/fun";
 import { Avatar, Icon } from "./ui";
+import { isIntegrationBot } from "./Integrations";
 
 export function MembersPanel({
   channel,
@@ -142,6 +143,7 @@ export function MembersPanel({
                       <span className="member-name-text">{nicks?.[m.id] || displayName(m)}</span>
                       {m.id === state.me.id && <span className="member-tag">bạn</span>}
                       {m.id === channel.owner_id && <span className="member-tag">chủ kênh</span>}
+                      {isIntegrationBot(m) && <span className="bot-tag is-integration">BOT</span>}
                     </span>
                     <span className="member-status">
                       {nicks?.[m.id] ? displayName(m) + " · " : ""}

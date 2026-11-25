@@ -12512,3 +12512,221 @@ button.villager:focus-visible .villager-name {
 [data-density="compact"] .member {
   padding-block: 0.25rem;
 }
+
+/* Gợi ý @nhắc tên: tên luôn một dòng; dòng phụ bên phải co lại trước (cắt "…") thay vì bẻ tên */
+.mention-option {
+  min-width: 0;
+  border-radius: 8px;
+}
+.mention-option-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mention-option-sub {
+  flex: 0 1000 auto;
+  min-width: 2.5rem;
+  overflow: hidden;
+  padding-left: 0.75rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+.mention-option > .avatar,
+.mention-option > .mention-all-icon {
+  flex-shrink: 0;
+}
+.mention-menu {
+  border-radius: 12px;
+}
+
+/* =========================================================
+   Bot & tích hợp
+   ========================================================= */
+.bot-tag.is-integration {
+  background: color-mix(in srgb, var(--u3) 85%, #000);
+}
+.member-name .bot-tag {
+  margin-left: 0.25rem;
+}
+.integ-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+.integ-entry > div {
+  flex: 1;
+  min-width: 0;
+}
+.integ-entry h3 {
+  margin: 0;
+  font-size: var(--step-0);
+}
+.integ-entry p {
+  margin: 0.15rem 0 0;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+.integ-entry-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--u3) 16%, transparent);
+  color: var(--u3);
+}
+.integ-intro {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--step--1);
+  line-height: 1.55;
+}
+.integ-intro b {
+  color: var(--text);
+}
+.integ-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.integ-item {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.integ-item.is-open {
+  box-shadow: var(--shadow-sm);
+}
+.integ-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+.integ-head:hover {
+  background: var(--raised);
+}
+.integ-name {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.integ-name small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--step--1);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.integ-body {
+  display: grid;
+  gap: 0.85rem;
+  padding: 0.25rem 0.85rem 0.85rem;
+  border-top: 1px solid var(--line-soft);
+  animation: tab-panel-in 0.16s var(--ease);
+}
+.integ-hook {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  padding: 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--signal) 50%, transparent);
+  border-radius: 12px;
+  background: var(--signal-soft);
+}
+.integ-hook-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-weight: 600;
+  font-size: var(--step--1);
+}
+.integ-hook .share-link {
+  margin: 0;
+}
+.integ-help,
+.integ-label {
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+.integ-label {
+  margin: 0 0 0.3rem;
+}
+.integ-code {
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  overflow-x: auto;
+  border-radius: 10px;
+  background: var(--ink);
+  color: #d6e2ec;
+  font: 0.78rem/1.5 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  white-space: pre;
+}
+.integ-url .share-link,
+.integ-secret .share-link {
+  margin: 0;
+}
+.integ-doc summary {
+  cursor: pointer;
+  color: var(--focus);
+  font-size: var(--step--1);
+  font-weight: 500;
+}
+.integ-doc p {
+  margin: 0.5rem 0;
+  color: var(--muted);
+  font-size: var(--step--1);
+  line-height: 1.55;
+}
+.integ-doc code,
+.integ-secret code {
+  padding: 0 0.25rem;
+  border-radius: 4px;
+  background: var(--canvas);
+  font-size: 0.8em;
+}
+.integ-note {
+  margin: 0;
+  color: var(--ok);
+  font-size: var(--step--1);
+}
+.integ-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.integ-confirm {
+  margin-right: auto;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+.integ-create {
+  display: grid;
+  gap: 0.85rem;
+  padding: 0.9rem;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+}
+@media (max-width: 720px) {
+  .integ-entry {
+    flex-wrap: wrap;
+  }
+  .integ-entry .btn {
+    width: 100%;
+  }
+}

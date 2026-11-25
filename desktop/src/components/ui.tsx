@@ -141,6 +141,15 @@ const paths: Record<string, ReactNode> = {
   send: <path d="M4 12 20 4l-4 16-4-7-8-1ZM12 13l8-9" />,
   refresh: <path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" />,
   arrowDown: <path d="M12 5v14M6 13l6 6 6-6" />,
+  chevronDown: <path d="M6 9l6 6 6-6" />,
+  chevronUp: <path d="M6 15l6-6 6 6" />,
+  bot: (
+    <>
+      <rect x="4" y="8" width="16" height="12" rx="3" />
+      <path d="M12 8V4M9 13v1M15 13v1M2 13v3M22 13v3" />
+      <circle cx="12" cy="3.5" r="0.5" />
+    </>
+  ),
   arrowUp: <path d="M12 19V5M6 11l6-6 6 6" />,
   arrowLeft: <path d="M19 12H5M11 6l-6 6 6 6" />,
   play: <path d="M8 5.5v13l11-6.5-11-6.5Z" fill="currentColor" />,

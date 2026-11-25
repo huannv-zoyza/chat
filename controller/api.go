@@ -39,7 +39,9 @@ type API struct {
 	groups         groupRegistry
 	games          gameRegistry
 	watchParties   watchPartyRegistry
-	ai             *aiService // nil: tắt trợ lý AI
+	ai             *aiService   // nil: tắt trợ lý AI
+	hookRate       *rateWindow  // giới hạn tin mỗi bot tích hợp
+	botClient      *http.Client // gọi URL trả lời của bot (cho phép địa chỉ LAN)
 	iceServers     []ICEServer
 	uiBuild        string
 	turn           TURNProvider
@@ -57,6 +59,8 @@ func NewAPI(st *store.Store, hub *socket.Hub, originPatterns []string, uploadsDi
 		minFreeDisk:  defaultMinFreeDisk,
 		logins:       newLoginLimiter(10, 15*time.Minute),
 		unfurlClient: newUnfurlClient(),
+		hookRate:     newRateWindow(hookRatePerMin, time.Minute),
+		botClient:    &http.Client{Timeout: outgoingTimeout},
 	}
 }
 
@@ -89,6 +93,12 @@ func (a *API) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("GET /api/channels/{id}/wallet-board", a.requireAuth(a.walletBoard))
 	mux.HandleFunc("POST /api/channels/{id}/throw", a.requireAuth(a.throwItem))
 	mux.HandleFunc("GET /api/channels/{id}/nicknames", a.requireAuth(a.listNicknames))
+	mux.HandleFunc("GET /api/channels/{id}/integrations", a.requireAuth(a.listIntegrations))
+	mux.HandleFunc("POST /api/channels/{id}/integrations", a.requireAuth(a.createIntegration))
+	mux.HandleFunc("PATCH /api/channels/{id}/integrations/{iid}", a.requireAuth(a.updateIntegration))
+	mux.HandleFunc("POST /api/channels/{id}/integrations/{iid}/token", a.requireAuth(a.rotateIntegrationToken))
+	mux.HandleFunc("DELETE /api/channels/{id}/integrations/{iid}", a.requireAuth(a.deleteIntegration))
+	mux.HandleFunc("POST /api/hooks/{token}", a.incomingHook)
 	mux.HandleFunc("PUT /api/channels/{id}/nicknames/{userId}", a.requireAuth(a.setNickname))
 	mux.HandleFunc("GET /api/wallet", a.requireAuth(a.getWallet))
 	mux.HandleFunc("POST /api/wallet/claim", a.requireAuth(a.walletAction(func(r *http.Request, id int64) (store.Wallet, error) {

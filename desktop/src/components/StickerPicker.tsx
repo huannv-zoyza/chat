@@ -216,7 +216,8 @@ function GifTab({ onPick, onPickFile }: { onPick: (e: Embed) => void; onPickFile
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Tìm GIF (tiếng Việt hoặc tiếng Anh)"
           aria-label="Tìm GIF"
-          autoFocus data-autofocus
+          autoFocus
+          data-autofocus
         />
       </div>
       {error && <p className="gif-note">{error}</p>}

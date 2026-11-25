@@ -162,7 +162,8 @@ export function BrowseChannelsDialog({
     <Dialog title="Khám phá kênh" onClose={onClose} wide>
       <input
         className="search"
-        autoFocus data-autofocus
+        autoFocus
+        data-autofocus
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Tìm theo tên hoặc mô tả"
@@ -354,7 +355,8 @@ export function JoinByLinkDialog({ initialCode, onClose }: { initialCode?: strin
         <label className="field">
           <span>Link mời</span>
           <input
-            autoFocus data-autofocus
+            autoFocus
+            data-autofocus
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="http://…/invite/…"

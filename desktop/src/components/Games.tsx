@@ -1067,7 +1067,8 @@ function Spy({ ctx }: { ctx: Ctx }) {
             maxLength={80}
             placeholder="Mô tả từ của bạn (đừng nói thẳng ra)…"
             aria-label="Mô tả từ khoá"
-            autoFocus data-autofocus
+            autoFocus
+            data-autofocus
             disabled={busy}
           />
           <button className="btn btn-primary" disabled={busy || !clue.trim()}>

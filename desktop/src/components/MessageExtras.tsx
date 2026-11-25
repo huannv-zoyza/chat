@@ -5,7 +5,7 @@ import { e2ee, useE2EE } from "../lib/e2ee";
 import { displayName, formatDay, formatTime } from "../lib/format";
 import { useChat } from "../state/ChatProvider";
 import { embedSummary } from "./Embeds";
-import { Avatar, Dialog, FormError, Icon } from "./ui";
+import { Avatar, Dialog, EmptyState, FormError, Icon } from "./ui";
 
 /* ---------- Xem trước ngắn gọn một tin (dùng cho trích dẫn, ghim, tìm kiếm) ---------- */
 
@@ -97,7 +97,9 @@ export function PinsDialog({ channel, onClose }: { channel: Channel; onClose: ()
       <FormError>{error}</FormError>
       {!pins && !error && <p className="muted">Đang tải…</p>}
       {pins && pins.length === 0 && (
-        <p className="muted">Chưa có tin nào được ghim. Rê chuột (hoặc nhấn giữ) một tin, chọn “Ghim”.</p>
+        <EmptyState icon="pin" title="Chưa có tin nào được ghim">
+          Rê chuột (hoặc nhấn giữ) vào một tin quan trọng rồi chọn “Ghim” để cả kênh dễ tìm lại.
+        </EmptyState>
       )}
       {pins && pins.length > 0 && (
         <ul className="pin-list">
@@ -220,7 +222,8 @@ export function SearchDialog({ onClose, onJumped }: { onClose: () => void; onJum
     <Dialog title="Tìm tin nhắn" onClose={onClose} wide>
       <input
         className="search"
-        autoFocus data-autofocus
+        autoFocus
+        data-autofocus
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Gõ từ khoá (không cần dấu: “pho bo” tìm được “phở bò”)"
@@ -239,7 +242,11 @@ export function SearchDialog({ onClose, onJumped }: { onClose: () => void; onJum
       </div>
       <FormError>{error}</FormError>
       {loading && !results && <p className="muted">Đang tìm…</p>}
-      {results && results.length === 0 && !loading && <p className="muted">Không có tin nào khớp “{query}”.</p>}
+      {results && results.length === 0 && !loading && (
+        <EmptyState icon="search" title={`Không có tin nào khớp “${query}”`}>
+          {onlyHere ? "Thử từ khoá ngắn hơn, hoặc bỏ chọn ô bên trên để tìm ở mọi kênh." : "Thử từ khoá ngắn hơn hoặc khác đi."}
+        </EmptyState>
+      )}
       {results && results.length > 0 && (
         <ul className="search-results">
           {results.map((m) => {

@@ -81,7 +81,8 @@ export function PinDialog({ mode: initial, onClose }: { mode: PinMode; onClose: 
             value={pin}
             onChange={(e) => setPin(e.target.value)}
             autoComplete={mode === "unlock" ? "current-password" : "new-password"}
-            autoFocus data-autofocus
+            autoFocus
+            data-autofocus
             minLength={MIN_PIN}
             maxLength={128}
           />

@@ -260,7 +260,8 @@ export function CreatePollDialog({ channelId, onClose }: { channelId: number; on
             onChange={(e) => setQuestion(e.target.value)}
             placeholder="Ví dụ: Trưa nay ăn gì?"
             maxLength={300}
-            autoFocus data-autofocus
+            autoFocus
+            data-autofocus
           />
         </label>
         <fieldset className="field poll-edit-options">

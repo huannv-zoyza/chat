@@ -5,7 +5,7 @@ import { channelLabel } from "../lib/channel";
 import { useE2EE } from "../lib/e2ee";
 import { useChat } from "../state/ChatProvider";
 import { previewText } from "./MessageExtras";
-import { Dialog, FormError, Icon } from "./ui";
+import { Dialog, EmptyState, FormError, Icon } from "./ui";
 
 /* ---------- Thời gian ---------- */
 
@@ -223,7 +223,9 @@ export function RemindersDialog({ onClose, onJumped }: { onClose: () => void; on
       <FormError>{error}</FormError>
       {!list && <p className="muted">Đang tải…</p>}
       {list && list.length === 0 && (
-        <p className="muted">Chưa có nhắc việc nào. Rê chuột (hoặc nhấn giữ) một tin, chọn “Nhắc tôi về tin này”.</p>
+        <EmptyState icon="clock" title="Chưa có nhắc việc nào">
+          Rê chuột (hoặc nhấn giữ) vào một tin rồi chọn “Nhắc tôi về tin này”, đến giờ app sẽ gọi bạn.
+        </EmptyState>
       )}
       {due.length > 0 && (
         <>

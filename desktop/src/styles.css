@@ -12031,3 +12031,182 @@ button.villager:focus-visible .villager-name {
   margin-right: 0.35rem;
   vertical-align: -0.15em;
 }
+
+/* Đăng nhập: bên trái là cảnh chat mẫu thay cho dấu # trơ trọi */
+.auth-brand {
+  position: relative;
+  justify-content: center;
+  background:
+    radial-gradient(120% 70% at 0% 100%, color-mix(in srgb, var(--signal) 16%, transparent), transparent 60%),
+    var(--ink);
+}
+.auth-brand .auth-mark {
+  position: absolute;
+  top: -0.12em;
+  right: -0.08em;
+  margin: 0;
+  font-size: clamp(14rem, 30vw, 26rem);
+  color: var(--signal);
+  opacity: 0.08;
+  pointer-events: none;
+}
+.auth-brand-body {
+  position: relative;
+  max-width: 26rem;
+}
+.auth-wordmark {
+  margin: 0;
+  color: #fff;
+  font-size: var(--step-5);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+.auth-brand .auth-tagline {
+  margin: 0.9rem 0 2rem;
+  color: var(--ink-muted);
+  font-size: var(--step-0);
+  line-height: 1.55;
+}
+.auth-preview {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.auth-bubble {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--ink-3);
+  border-radius: 14px;
+  background: var(--ink-2);
+  color: var(--ink-text);
+  font-size: var(--step--1);
+  line-height: 1.45;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+  animation: auth-bubble-in 0.5s var(--ease) both;
+  animation-delay: calc(0.25s + var(--i) * 0.35s);
+}
+.auth-bubble > span:last-child {
+  display: grid;
+}
+.auth-bubble b {
+  color: #fff;
+  font-weight: 600;
+}
+.auth-bubble:nth-child(2) {
+  margin-left: 2rem;
+}
+.auth-bubble.is-fun {
+  display: block;
+  margin-left: 1rem;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+}
+.auth-bubble.is-coin {
+  display: block;
+  margin-left: 3rem;
+  border-color: color-mix(in srgb, var(--signal) 45%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--signal) 14%, var(--ink-2));
+  color: #f6dc8e;
+  box-shadow: none;
+}
+.auth-av {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 700;
+  font-size: var(--step--1);
+}
+@keyframes auth-bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .auth-bubble {
+    animation: none;
+  }
+}
+
+/* Thẻ người chơi (mọi cỡ màn hình): tên xuống được 2 dòng, huy hiệu vai nằm ở góc thẻ
+   thay vì giành chỗ của tên ("Tô Đứ…", "Xuân …") */
+.game-player-name {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
+.game-player-badge {
+  position: absolute;
+  top: -0.4rem;
+  right: -0.3rem;
+  transform: scale(0.85);
+}
+.game-player:has(> .game-player-badge) {
+  padding-right: 1.05rem;
+}
+
+/* Màn trống dùng chung */
+.empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 0.35rem;
+  padding: 1.5rem 1rem 1rem;
+  text-align: center;
+}
+.empty-state-icon {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  margin-bottom: 0.35rem;
+  border-radius: 50%;
+  background: var(--signal-soft);
+  color: color-mix(in srgb, var(--signal) 70%, var(--text));
+}
+.empty-state-title {
+  margin: 0;
+  font-weight: 600;
+}
+.empty-state-hint {
+  max-width: 22rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--step--1);
+  line-height: 1.5;
+}
+
+/* Mở khung Thành viên / luồng: nội dung trượt nhẹ vào thay vì bật ra */
+@media (min-width: 861px) {
+  .members,
+  .thread-panel:not(.is-embedded) {
+    animation: side-panel-in 0.2s var(--ease);
+  }
+}
+@keyframes side-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .members,
+  .thread-panel {
+    animation: none;
+  }
+}

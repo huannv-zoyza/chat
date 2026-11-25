@@ -354,3 +354,16 @@ export function FormError({ children }: { children: ReactNode }) {
     </p>
   );
 }
+
+/** Màn trống: icon trong vòng tròn, một câu nói đang trống gì, một câu chỉ cách làm. */
+export function EmptyState({ icon, title, children }: { icon: string; title: string; children?: ReactNode }) {
+  return (
+    <div className="empty-state">
+      <span className="empty-state-icon" aria-hidden>
+        <Icon name={icon} size={22} />
+      </span>
+      <p className="empty-state-title">{title}</p>
+      {children && <p className="empty-state-hint">{children}</p>}
+    </div>
+  );
+}

@@ -585,7 +585,8 @@ export function AddWatchPartyDialog({ channelId, onClose }: { channelId: number;
           <span>Link bài hát hoặc video YouTube</span>
           <input
             type="url"
-            autoFocus data-autofocus
+            autoFocus
+            data-autofocus
             required
             value={url}
             onChange={(e) => setUrl(e.target.value)}

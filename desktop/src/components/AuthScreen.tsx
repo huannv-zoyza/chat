@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState, type CSSProperties, type FormEvent } from "react";
 import { ApiError, createApi, normalizeServerUrl, type User } from "../lib/api";
 import { FormError } from "./ui";
 
@@ -57,9 +57,37 @@ export function AuthScreen({ initialServer, fixedServer, notice, onAuthenticated
     <main className="auth">
       <section className="auth-brand" aria-hidden>
         <span className="auth-mark">#</span>
-        <p className="auth-tagline">Trò chuyện theo kênh cho cả nhóm, ngay trên máy tính của bạn.</p>
+        <div className="auth-brand-body">
+          <p className="auth-wordmark">Go Chat</p>
+          <p className="auth-tagline">Chat theo kênh cho cả nhóm, chơi game và trêu nhau ngay trong cuộc trò chuyện.</p>
+          <ul className="auth-preview">
+            <li className="auth-bubble" style={{ "--i": 0 } as CSSProperties}>
+              <span className="auth-av" style={{ background: "var(--u1)" }}>
+                N
+              </span>
+              <span>
+                <b>Nam</b>
+                Tối nay ai vào làm ván Ma Sói không? 🐺
+              </span>
+            </li>
+            <li className="auth-bubble" style={{ "--i": 1 } as CSSProperties}>
+              <span className="auth-av" style={{ background: "var(--u3)" }}>
+                L
+              </span>
+              <span>
+                <b>Linh</b>
+                Có mình! Rủ cả team luôn
+              </span>
+            </li>
+            <li className="auth-bubble is-fun" style={{ "--i": 2 } as CSSProperties}>
+              🩴 <b>Huy</b> ném dép vào <b>Nam</b>
+            </li>
+            <li className="auth-bubble is-coin" style={{ "--i": 3 } as CSSProperties}>
+              🪙 Linh vừa nhận 100 xu điểm danh
+            </li>
+          </ul>
+        </div>
       </section>
-
       <section className="auth-panel">
         <form className="auth-form" onSubmit={submit} noValidate>
           <h1 className="auth-title">{mode === "login" ? "Đăng nhập Go Chat" : "Tạo tài khoản"}</h1>
@@ -76,7 +104,8 @@ export function AuthScreen({ initialServer, fixedServer, notice, onAuthenticated
               <label className="field">
                 <span>Tên hiển thị</span>
                 <input
-                  autoFocus data-autofocus
+                  autoFocus
+                  data-autofocus
                   value={displayName}
                   maxLength={64}
                   onChange={(e) => setDisplayName(e.target.value)}

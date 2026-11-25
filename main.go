@@ -90,19 +90,31 @@ func main() {
 	api.SetUIBuild(web.BuildID())
 
 	if *turnAddr != "" {
-		ip := rtc.DetectLANIP()
-		if *turnIP != "" {
-			ip = net.ParseIP(*turnIP)
-		}
-		if ip == nil {
-			log.Printf("TURN tắt: không tìm được IP LAN (đặt -turn-ip)")
-		} else if t, err := rtc.StartTURN(*turnAddr, ip); err != nil {
-			log.Printf("TURN tắt: %v", err)
-		} else {
-			defer t.Close()
-			api.SetTURN(t)
-			log.Printf("TURN chạy tại %s:%s (relay UDP %d-%d)", ip, strings.TrimPrefix(*turnAddr, ":"), rtc.RelayMinPort, rtc.RelayMaxPort)
-		}
+		// Lúc máy vừa khởi động mạng LAN có thể chưa lên: thử lại tới khi có IP thay vì tắt TURN
+		// cả ngày (không có TURN thì máy nào không nối thẳng được với nhau là không nghe/thấy nhau).
+		go func() {
+			for wait := 0; ; wait++ {
+				ip := rtc.DetectLANIP()
+				if *turnIP != "" {
+					ip = net.ParseIP(*turnIP)
+				}
+				if ip == nil {
+					if wait == 0 {
+						log.Printf("TURN chưa chạy: chưa có IP LAN, sẽ thử lại (hoặc đặt -turn-ip)")
+					}
+					time.Sleep(5 * time.Second)
+					continue
+				}
+				t, err := rtc.StartTURN(*turnAddr, ip)
+				if err != nil {
+					log.Printf("TURN tắt: %v", err)
+					return
+				}
+				api.SetTURN(t)
+				log.Printf("TURN chạy tại %s:%s (relay UDP %d-%d)", ip, strings.TrimPrefix(*turnAddr, ":"), rtc.RelayMinPort, rtc.RelayMaxPort)
+				return
+			}
+		}()
 	}
 
 	// Trợ lý AI: nhà cung cấp nào có key thì dùng (xem ai/config.go), Pollinations miễn phí làm dự phòng.

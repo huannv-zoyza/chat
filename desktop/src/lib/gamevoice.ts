@@ -58,7 +58,13 @@ type Conn = {
   source?: MediaStreamAudioSourceNode;
   pendingIce: RTCIceCandidateInit[];
   queue: Promise<void>;
+  /** Số lần đã thử nối lại liên tiếp (về 0 khi nối được). */
+  restarts: number;
+  restartTimer?: number;
 };
+
+/** Thử nối lại tối đa bấy nhiêu lần liên tiếp khi đường nối giữa hai người bị đứt. */
+const MAX_RESTARTS = 5;
 
 const SPEAK_LEVEL = 0.035;
 
@@ -202,7 +208,7 @@ class GameVoiceController {
     const stream = new MediaStream();
     const audio = new Audio();
     audio.autoplay = true;
-    const c: Conn = { pc, userId: user.id, audio, stream, pendingIce: [], queue: Promise.resolve() };
+    const c: Conn = { pc, userId: user.id, audio, stream, pendingIce: [], queue: Promise.resolve(), restarts: 0 };
     pc.ontrack = (e) => {
       if (!stream.getTracks().includes(e.track)) stream.addTrack(e.track);
       audio.srcObject = stream;
@@ -215,8 +221,14 @@ class GameVoiceController {
       }
     };
     pc.onconnectionstatechange = () => {
-      this.updatePeer(peerId, { state: pc.connectionState });
-      if (pc.connectionState === "failed") this.dropPeer(peerId);
+      const st = pc.connectionState;
+      this.updatePeer(peerId, { state: st });
+      window.clearTimeout(c.restartTimer);
+      if (st === "connected") c.restarts = 0;
+      // Đứt (đổi Wi-Fi, mạng chập chờn...): nối lại bằng ICE restart thay vì bỏ hẳn người này.
+      // "disconnected" hay tự hồi lại nên chờ một chút; "failed" thì nối lại ngay.
+      if (st === "failed") this.restartIce(peerId, c);
+      else if (st === "disconnected") c.restartTimer = window.setTimeout(() => this.restartIce(peerId, c), 3000);
     };
     this.conns.set(peerId, c);
     this.setActive({ peers: { ...a.peers, [peerId]: { peerId, user, state: "new" } } });
@@ -230,6 +242,33 @@ class GameVoiceController {
     this.applyRules();
   }
 
+  /**
+   * Nối lại đường đã đứt tới peerId. Chỉ một bên chủ động (bên có mã phiên nhỏ hơn) để hai bên
+   * không cùng gửi offer một lúc; bên kia trả lời như mọi offer khác.
+   */
+  private restartIce(peerId: string, c: Conn) {
+    const self = this.state.active?.selfId;
+    if (!self || self > peerId || this.conns.get(peerId) !== c) return;
+    if (c.restarts >= MAX_RESTARTS) return;
+    c.restarts++;
+    c.queue = c.queue.then(async () => {
+      if (this.conns.get(peerId) !== c || c.pc.signalingState !== "stable") return;
+      const st = c.pc.connectionState;
+      if (st !== "failed" && st !== "disconnected") return;
+      try {
+        await c.pc.setLocalDescription(await c.pc.createOffer({ iceRestart: true }));
+        this.signal(peerId, { sdp: c.pc.localDescription!.toJSON() });
+      } catch {
+        /* thử lại ở lần đổi trạng thái sau */
+      }
+    });
+    // offer/answer xong mà vẫn chưa nối được thì thử lại
+    c.restartTimer = window.setTimeout(() => {
+      const st = c.pc.connectionState;
+      if (st === "failed" || st === "disconnected") this.restartIce(peerId, c);
+    }, 8000);
+  }
+
   private updatePeer(peerId: string, patch: Partial<VoicePeer>) {
     const a = this.state.active;
     const p = a?.peers[peerId];
@@ -240,6 +279,7 @@ class GameVoiceController {
   private dropPeer(peerId: string) {
     const c = this.conns.get(peerId);
     if (c) {
+      window.clearTimeout(c.restartTimer);
       c.pc.close();
       c.audio.srcObject = null;
       c.source?.disconnect();

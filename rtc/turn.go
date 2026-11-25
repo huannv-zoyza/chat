@@ -15,10 +15,13 @@ import (
 	"github.com/pion/turn/v4"
 )
 
-// Cổng UDP dùng để chuyển tiếp media (mở trên tường lửa nếu có bật).
+// Cổng UDP dùng để chuyển tiếp media (mở trên tường lửa nếu có bật). Mỗi kết nối WebRTC xin
+// một cổng cho mỗi card mạng × (UDP, TCP) của máy người dùng, kể cả khi rốt cuộc nối thẳng; thoại
+// trong ván kiểu mesh 10 người đã là 90 kết nối, nên dải phải rộng (41 cổng cũ chỉ đủ ~9 kết nối,
+// cặp nào cần chuyển tiếp mà hết cổng thì không nghe được nhau).
 const (
 	RelayMinPort = 49160
-	RelayMaxPort = 49200
+	RelayMaxPort = 50999
 )
 
 type TURN struct {

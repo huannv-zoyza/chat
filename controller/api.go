@@ -48,6 +48,7 @@ type API struct {
 	botClient      *http.Client // gọi URL trả lời của bot (cho phép địa chỉ LAN)
 	iceServers     []ICEServer
 	uiBuild        string
+	turnMu         sync.RWMutex
 	turn           TURNProvider
 	tlsPort        string
 }

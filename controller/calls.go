@@ -44,7 +44,11 @@ type TURNProvider interface {
 	Credentials(user string) (urls []string, username, credential string, err error)
 }
 
-func (a *API) SetTURN(t TURNProvider) { a.turn = t }
+func (a *API) SetTURN(t TURNProvider) {
+	a.turnMu.Lock()
+	a.turn = t
+	a.turnMu.Unlock()
+}
 
 // SetTLSPort: cổng HTTPS cho LAN (để gợi ý người đang dùng http chuyển sang).
 func (a *API) SetTLSPort(port string) { a.tlsPort = port }
@@ -53,8 +57,11 @@ func (a *API) SetTLSPort(port string) { a.tlsPort = port }
 // tương ứng nếu trang đang mở bằng http (trình duyệt chặn micro/camera trên http).
 func (a *API) rtcConfig(w http.ResponseWriter, r *http.Request) {
 	list := append([]ICEServer{}, a.iceServers...)
-	if a.turn != nil {
-		urls, u, p, err := a.turn.Credentials(strconv.FormatInt(currentUser(r).ID, 10))
+	a.turnMu.RLock()
+	turn := a.turn
+	a.turnMu.RUnlock()
+	if turn != nil {
+		urls, u, p, err := turn.Credentials(strconv.FormatInt(currentUser(r).ID, 10))
 		if err == nil {
 			list = append(list, ICEServer{URLs: urls, Username: u, Credential: p})
 		}

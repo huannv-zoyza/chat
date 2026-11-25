@@ -16087,3 +16087,133 @@ button.villager:focus-visible .villager-name {
       0 8px 18px rgb(168 106 0 / 0.3);
   }
 }
+
+/* HUD gọn: vườn của mình chỉ còn chip cấp độ (không avatar, không tên) */
+.farm-owner.is-mine {
+  padding: 0 0.85rem 0 0.35rem;
+  height: 2.6rem;
+}
+.farm-owner.is-mine .farm-level {
+  margin-top: 0;
+}
+.farm-owner.is-mine .farm-level-bar {
+  width: 6.5rem;
+}
+@media (max-width: 960px) {
+  .farm {
+    --farm-hud-h: calc(max(0.6rem, env(safe-area-inset-top)) + 3.2rem);
+  }
+  .farm-hud {
+    align-items: center;
+    gap: 0.4rem;
+    padding: max(0.5rem, env(safe-area-inset-top)) 0.6rem 0.4rem;
+  }
+  .farm-back,
+  .farm-home,
+  .farm-owner,
+  .farm-coins {
+    border-width: 2px;
+    box-shadow:
+      0 3px 0 var(--wood-dk),
+      0 6px 12px rgb(60 40 10 / 0.2);
+  }
+  .farm-back,
+  .farm-home,
+  .farm-coins,
+  .farm-owner.is-mine {
+    height: 2.2rem;
+  }
+  .farm-back {
+    width: 2.2rem;
+    padding: 0;
+    justify-content: center;
+  }
+  .farm-owner {
+    gap: 0.4rem;
+    padding: 0.15rem 0.7rem 0.15rem 0.2rem;
+  }
+  .farm-owner.is-mine {
+    padding: 0 0.6rem 0 0.25rem;
+  }
+  .farm-owner > .avatar {
+    border-width: 2px;
+  }
+  .farm-owner-name {
+    max-width: 8rem;
+    font-size: 0.78rem;
+  }
+  .farm-level-badge {
+    padding: 0 0.45rem;
+    font-size: 0.72rem;
+  }
+  .farm-owner.is-mine .farm-level-bar {
+    width: 3.6rem;
+    height: 0.55rem;
+  }
+  .farm-coins {
+    padding: 0 0.7rem 0 0.25rem;
+    font-size: 1rem;
+  }
+  .farm-coins > span:first-child {
+    font-size: 1.25rem;
+  }
+}
+.farm-level-badge {
+  white-space: nowrap;
+}
+@media (max-width: 960px) {
+  /* đang thăm vườn người khác: tên đã có ở dải "Đang thăm vườn của …", HUD chỉ còn avatar + cấp;
+     nút về nhà nằm luôn trong dải đó */
+  .farm-owner:not(.is-mine) {
+    height: 2.2rem;
+    padding: 0 0.6rem 0 0.15rem;
+  }
+  .farm-owner:not(.is-mine) .farm-owner-name {
+    display: none;
+  }
+  .farm-owner:not(.is-mine) .farm-level {
+    margin-top: 0;
+  }
+  .farm-owner:not(.is-mine) .farm-level-bar {
+    width: 3.2rem;
+    height: 0.55rem;
+  }
+  .farm-hud .farm-home {
+    display: none;
+  }
+  .farm-visiting {
+    max-width: 100%;
+    gap: 0.4rem;
+    padding: 0.2rem 0.25rem 0.2rem 0.7rem;
+    border-width: 2px;
+    box-shadow:
+      0 3px 0 var(--wood-dk),
+      0 6px 14px rgb(60 40 10 / 0.2);
+  }
+  .farm-visiting > span {
+    min-width: 0;
+    font-size: 0.8rem;
+  }
+  .farm-visiting-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .farm-visiting .btn {
+    flex-shrink: 0;
+    padding: 0.3rem 0.75rem;
+    font-size: 0.8rem;
+  }
+}
+.farm-owner:not(.is-mine) {
+  height: 2.6rem;
+  padding: 0 0.85rem 0 0.2rem;
+}
+.farm-owner:not(.is-mine) .farm-level {
+  margin-top: 0;
+}
+@media (max-width: 960px) {
+  .farm-owner:not(.is-mine) {
+    height: 2.2rem;
+    padding: 0 0.6rem 0 0.15rem;
+  }
+}

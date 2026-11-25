@@ -406,16 +406,11 @@ function Farm() {
             <span>Về chat</span>
           </button>
           {view && (
-            <div className="farm-owner">
-              <Avatar user={view.user} size={38} />
-              <div>
-                <p className="farm-owner-name">
-                  {view.me
-                    ? "Nông trại của bạn"
-                    : `Nông trại của ${displayName(view.user)}`}
-                </p>
-                <LevelBar view={view} />
-              </div>
+            <div className={`farm-owner${view.me ? " is-mine" : ""}`}>
+              {/* vườn của mình: chỉ cần cấp độ; đi thăm: thêm avatar chủ vườn (tên và nút
+                  về nhà đã có ở dải "Đang thăm vườn của …") */}
+              {!view.me && <Avatar user={view.user} size={30} />}
+              <LevelBar view={view} />
             </div>
           )}
           <div className="farm-hud-right">
@@ -429,15 +424,6 @@ function Farm() {
                   </small>
                 )}
               </span>
-            )}
-            {visit && (
-              <button
-                type="button"
-                className="farm-home"
-                onClick={() => setVisit(null)}
-              >
-                <Emo e="🏠" /> <span>Về nhà</span>
-              </button>
             )}
           </div>
         </header>
@@ -481,7 +467,7 @@ function Farm() {
                         className="btn btn-primary"
                         onClick={() => setVisit(null)}
                       >
-                        <Emo e="🏠" /> Về vườn của tôi
+                        <Emo e="🏠" /> Về nhà
                       </button>
                     </div>
                   )}

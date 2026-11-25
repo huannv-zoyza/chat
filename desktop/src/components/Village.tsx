@@ -242,6 +242,8 @@ function Scene({ ctx, ww }: { ctx: Ctx; ww: WW }) {
           );
         })}
       </ul>
+      {/* bóng đêm phủ lên cả người: chỉ quanh đống lửa là sáng, càng xa càng tối */}
+      <div className="village-dark" aria-hidden />
     </div>
   );
 }
@@ -291,7 +293,7 @@ function Backdrop() {
     () =>
       Array.from({ length: 48 }, (_, i) => ({
         left: `${(i * 37.7) % 100}%`,
-        top: `${(i * 13.3) % 34}%`,
+        top: `${(i * 13.3) % 80}%`,
         size: 1 + ((i * 7) % 3),
         delay: `${-((i * 0.53) % 4)}s`,
       })),

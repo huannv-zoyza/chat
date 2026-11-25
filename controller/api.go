@@ -11,6 +11,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"chat/auth"
@@ -30,6 +31,7 @@ type API struct {
 	minFreeDisk    uint64 // còn ít hơn chừng này byte trống thì không nhận file mới
 	logins         *loginLimiter
 	newAccountHold time.Duration // tài khoản mới phải chờ chừng này mới đưa xu cho người khác được
+	devicesSeen    sync.Map      // "userID:deviceID" đã ghi vào user_devices trong lần chạy này
 	unfurlClient   *http.Client  // xem trước link: chỉ kết nối được tới internet công khai
 	unfurls        unfurlCache
 	giphyKey       string // rỗng: tắt tìm GIF
@@ -277,7 +279,7 @@ func (a *API) cors(next http.Handler) http.Handler {
 			h.Add("Vary", "Origin")
 			if r.Method == http.MethodOptions {
 				h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-				h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+				h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Device-ID")
 				h.Set("Access-Control-Max-Age", "600")
 				w.WriteHeader(http.StatusNoContent)
 				return
@@ -323,6 +325,7 @@ func (a *API) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			internalError(w, r, err)
 			return
 		}
+		a.touchDevice(r, user.ID)
 		ctx := context.WithValue(r.Context(), ctxUser, user)
 		ctx = context.WithValue(ctx, ctxTokenHash, auth.HashToken(token))
 		next(w, r.WithContext(ctx))

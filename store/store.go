@@ -75,24 +75,6 @@ func (s *Store) CreateUser(ctx context.Context, username, email, passwordHash, d
 	return u, err
 }
 
-// RegisterUser tạo tài khoản như CreateUser và ghi lại IP tạo (ip rỗng: không ghi), để tra lại khi
-// nghi có người tạo tài khoản ảo. Không giới hạn số tài khoản mỗi IP: cả công ty dùng chung một IP.
-func (s *Store) RegisterUser(ctx context.Context, username, email, passwordHash, displayName, ip string) (model.User, error) {
-	var signupIP sql.NullString
-	if ip != "" {
-		signupIP = sql.NullString{String: ip, Valid: true}
-	}
-	row := s.db.QueryRowContext(ctx, `
-		INSERT INTO users (username, email, password_hash, display_name, signup_ip)
-		VALUES (?, ?, ?, ?, ?)
-		RETURNING `+userColumns, username, email, passwordHash, displayName, signupIP)
-	u, err := scanUser(row)
-	if isUniqueViolation(err) {
-		return u, ErrConflict
-	}
-	return u, err
-}
-
 func (s *Store) GetUserByID(ctx context.Context, id int64) (model.User, error) {
 	u, err := scanUser(s.db.QueryRowContext(ctx, `SELECT `+userColumns+` FROM users WHERE id = ?`, id))
 	return u, notFound(err)

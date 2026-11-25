@@ -1,5 +1,7 @@
 // REST client cho server go-chat. Kiểu dữ liệu khớp với package model bên Go.
 
+import { deviceId } from "./device";
+
 export type User = {
   id: number;
   username: string;
@@ -418,6 +420,7 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
         headers: {
           ...(body !== undefined && !form ? { "Content-Type": "application/json" } : {}),
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          "X-Device-ID": deviceId(),
         },
         body: body === undefined ? undefined : form ? body : JSON.stringify(body),
       });
@@ -660,6 +663,7 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", `${serverUrl}/api/channels/${channelId}/messages`);
         if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+        xhr.setRequestHeader("X-Device-ID", deviceId());
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) onProgress?.(e.loaded / e.total);
         };

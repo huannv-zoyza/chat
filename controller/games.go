@@ -497,6 +497,17 @@ func (a *API) gameAction(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusForbidden, newAccountMsg("vào bàn cược", *until))
 				return
 			}
+			var others []int64
+			for _, p := range s.g.Players() {
+				others = append(others, p.ID)
+			}
+			if shared, err := a.sharesDeviceWith(r.Context(), me.ID, others...); err != nil {
+				internalError(w, r, err)
+				return
+			} else if shared {
+				writeError(w, http.StatusForbidden, sharedDeviceMsg)
+				return
+			}
 			wUpd, err := a.store.LockGameBet(r.Context(), me.ID, msg.ID, betAmount)
 			if err != nil {
 				if errors.Is(err, store.ErrInsufficientBalance) {

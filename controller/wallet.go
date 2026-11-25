@@ -184,6 +184,13 @@ func (a *API) transferCoins(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, newAccountMsg("chuyển xu", *until))
 		return
 	}
+	if shared, err := a.sharesDeviceWith(r.Context(), me.ID, req.ToUserID); err != nil {
+		internalError(w, r, err)
+		return
+	} else if shared {
+		writeError(w, http.StatusForbidden, sharedDeviceMsg)
+		return
+	}
 	note := strings.TrimSpace(req.Note)
 	if utf8.RuneCountInString(note) > 120 {
 		note = string([]rune(note)[:120])

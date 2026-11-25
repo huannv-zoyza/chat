@@ -98,7 +98,14 @@ func (a *API) register(w http.ResponseWriter, r *http.Request) {
 		internalError(w, r, err)
 		return
 	}
-	user, err := a.store.RegisterUser(r.Context(), username, email, hash, displayName, clientIP(r))
+	user, err := a.store.RegisterUser(r.Context(), username, email, hash, displayName, store.Signup{
+		IP: clientIP(r), Device: deviceID(r), MaxPerDevice: maxAccountsPerDevice,
+	})
+	if errors.Is(err, store.ErrDeviceLimit) {
+		writeError(w, http.StatusTooManyRequests, fmt.Sprintf(
+			"Máy này đã tạo đủ %d tài khoản, không tạo thêm được (chống tạo tài khoản ảo gom xu).", maxAccountsPerDevice))
+		return
+	}
 	if errors.Is(err, store.ErrConflict) {
 		writeError(w, http.StatusConflict, "Tên đăng nhập hoặc email đã được dùng.")
 		return
@@ -147,6 +154,7 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "Tài khoản đã bị khoá.")
 		return
 	}
+	a.touchDevice(r, user.ID)
 	a.issueSession(w, r, http.StatusOK, user)
 }
 

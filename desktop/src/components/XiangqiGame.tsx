@@ -4,6 +4,7 @@ import type { XiangqiState } from "../lib/games";
 import { XiangqiPiece } from "./XiangqiPiece";
 import { playPieceCapture, playPiecePlace, playVictorySound } from "../lib/sound";
 import { Dialog } from "./ui";
+import { Emo } from "./Emoji";
 
 export type XiangqiCtx = {
   messageId?: number;
@@ -262,7 +263,9 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
       {/* Thanh mức cược & Quỹ thưởng */}
       {betAmount > 0 && (
         <div className="xq-bet-bar" style={{ width: BOARD_WIDTH }}>
-          <span>🪙 Cược: {betAmount.toLocaleString("vi-VN")} xu / người</span>
+          <span>
+            <Emo e="🪙" /> Cược: {betAmount.toLocaleString("vi-VN")} xu / người
+          </span>
           <span>
             {game.status === "ended"
               ? winnerPlayer

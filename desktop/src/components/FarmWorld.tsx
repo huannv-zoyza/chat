@@ -15,6 +15,7 @@ import {
   type Plot,
   type PlotState,
 } from "../lib/farm";
+import { SvgEmo, SvgLabel } from "./Emoji";
 
 /*
  * Nông trại vẽ isometric bằng SVG (kiểu FarmVille / Hay Day): mặt đất là lưới ô thoi 2:1, mọi vật là khối
@@ -160,6 +161,9 @@ function Sprite({
   z?: number;
 }) {
   const [cx, cy] = pt(x, y, z);
+  const style = { transformOrigin: `${cx}px ${cy}px` };
+  if (typeof children === "string")
+    return <SvgEmo e={children} x={cx} y={cy + size * 0.12} size={size} className={className} style={style} />;
   return (
     <text
       x={cx}
@@ -167,7 +171,7 @@ function Sprite({
       fontSize={size}
       textAnchor="middle"
       className={className}
-      style={{ transformOrigin: `${cx}px ${cy}px` }}
+      style={style}
     >
       {children}
     </text>
@@ -417,16 +421,7 @@ function Barn({
             stroke="#7a4b22"
             strokeWidth={2.5}
           />
-          <text
-            x={0}
-            y={3}
-            textAnchor="middle"
-            fontSize={12}
-            fontWeight={800}
-            fill="#4a2f14"
-          >
-            {label}
-          </text>
+          <SvgLabel text={label} y={3} fontSize={12} fontWeight={800} fill="#4a2f14" />
         </g>
       )}
     </g>
@@ -701,16 +696,14 @@ function AnimalSprite({
     return (
       <g className={`iso-animal${me ? " iso-click" : ""}`} onClick={onClick}>
         <Shadow x={x} y={y} r={0.3} o={0.25} />
-        <text
+        <SvgEmo
+          e={emoji}
           x={cx}
           y={cy + 4}
-          fontSize={34}
-          textAnchor="middle"
+          size={34}
           className="iso-graze"
           style={{ transformOrigin: `${cx}px ${cy}px` }}
-        >
-          {emoji}
-        </text>
+        />
       </g>
     );
   return (
@@ -721,9 +714,7 @@ function AnimalSprite({
           className="iso-bubble is-ready"
         >
           <circle r={15} />
-          <text y={6} textAnchor="middle" fontSize={17}>
-            {product ?? "⭐"}
-          </text>
+          <SvgEmo e={product ?? "⭐"} x={0} y={6} size={17} />
         </g>
       ) : a.state === "hungry" ? (
         me && (
@@ -732,9 +723,7 @@ function AnimalSprite({
             className="iso-bubble is-hungry"
           >
             <circle r={12} />
-            <text y={5} textAnchor="middle" fontSize={13}>
-              🍽️
-            </text>
+            <SvgEmo e="🍽️" x={0} y={5} size={13} />
           </g>
         )
       ) : (
@@ -993,14 +982,10 @@ export function FarmWorld({
       16.3,
       <g key="truck" className="iso-click iso-truck" onClick={h.onOrders}>
         <Shadow x={20.5} y={16.3} r={0.6} o={0.22} />
-        <text x={tx} y={ty + 6} fontSize={56} textAnchor="middle">
-          🚚
-        </text>
+        <SvgEmo e="🚚" x={tx} y={ty + 6} size={56} />
         <g transform={`translate(${tx}, ${ty - 62})`} className="iso-sign">
           <rect x={-40} y={-13} width={80} height={24} rx={12} />
-          <text y={4} textAnchor="middle">
-            📦 Đơn hàng
-          </text>
+          <SvgLabel text="📦 Đơn hàng" y={4} />
         </g>
       </g>,
     );
@@ -1312,9 +1297,7 @@ export function FarmWorld({
             onClick={h.onExpand}
           >
             <rect x={-62} y={-14} width={124} height={26} rx={13} />
-            <text y={4} textAnchor="middle">
-              🪧 Mở rộng · {view.expansion.next.price}🪙
-            </text>
+            <SvgLabel text={`🪧 Mở rộng · ${view.expansion.next.price}🪙`} y={4} />
           </g>
         )}
       </svg>
@@ -1415,9 +1398,7 @@ function BuildSign({
       onClick={onClick}
     >
       <rect x={-78} y={-15} width={156} height={28} rx={14} />
-      <text y={4} textAnchor="middle">
-        🔨 {text}
-      </text>
+      <SvgLabel text={`🔨 ${text}`} y={4} />
     </g>
   );
 }

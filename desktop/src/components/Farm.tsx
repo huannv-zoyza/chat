@@ -27,6 +27,7 @@ import {
 } from "../lib/farm";
 import { playCoinSound } from "../lib/sound";
 import { useChat } from "../state/ChatProvider";
+import { Emo, emo } from "./Emoji";
 import { FarmWorld } from "./FarmWorld";
 import { Avatar, Dialog, EmptyState, Icon } from "./ui";
 
@@ -420,7 +421,7 @@ function Farm() {
           <div className="farm-hud-right">
             {mine?.wallet && (
               <span className="farm-coins" title="Số xu của bạn">
-                <span aria-hidden>🪙</span>
+                <span aria-hidden><Emo e="🪙" /></span>
                 {mine.wallet.balance.toLocaleString("vi-VN")}
                 {mine.wallet.debt > 0 && (
                   <small title="Đang nợ: 50% xu kiếm được tự trả nợ">
@@ -435,7 +436,7 @@ function Farm() {
                 className="farm-home"
                 onClick={() => setVisit(null)}
               >
-                🏠 <span>Về nhà</span>
+                <Emo e="🏠" /> <span>Về nhà</span>
               </button>
             )}
           </div>
@@ -457,7 +458,7 @@ function Farm() {
                           void act(null, () => api.farmHarvest("all"))
                         }
                       >
-                        🧺 Thu hoạch tất cả <b>{ripeCount}</b>
+                        <Emo e="🧺" /> Thu hoạch tất cả <b>{ripeCount}</b>
                       </button>
                     ) : (
                       <span className="farm-tip">{fieldTip(view, now)}</span>
@@ -466,7 +467,7 @@ function Farm() {
                     <div className="farm-visiting">
                       <span>
                         <span className="farm-visiting-title">
-                          👀 Đang thăm vườn của <b>{displayName(view.user)}</b>
+                          <Emo e="👀" /> Đang thăm vườn của <b>{displayName(view.user)}</b>
                         </span>
                         <small>
                           {view.steals_left !== undefined && (
@@ -480,7 +481,7 @@ function Farm() {
                         className="btn btn-primary"
                         onClick={() => setVisit(null)}
                       >
-                        🏠 Về vườn của tôi
+                        <Emo e="🏠" /> Về vườn của tôi
                       </button>
                     </div>
                   )}
@@ -511,7 +512,7 @@ function Farm() {
                 <div className="farm-pops" aria-hidden>
                   {pops.map((x) => (
                     <span key={x.id} className={`farm-pop is-${x.tone}`}>
-                      {x.text}
+                      {emo(x.text)}
                     </span>
                   ))}
                 </div>
@@ -523,7 +524,7 @@ function Farm() {
             )}
             {toast && (
               <div className={`farm-toast is-${toast.tone}`} role="status">
-                {toast.text}
+                {emo(toast.text)}
               </div>
             )}
             {error && view && (
@@ -555,7 +556,9 @@ function Farm() {
                     if (t.id === "log") setNewLogs(0);
                   }}
                 >
-                  <span aria-hidden>{t.icon}</span>
+                  <span aria-hidden>
+                    <Emo e={t.icon} />
+                  </span>
                   <span>{t.label}</span>
                   {t.id === "log" && newLogs > 0 && (
                     <i className="farm-tab-dot" />
@@ -741,7 +744,7 @@ function fieldTip(view: FarmView, now: number): ReactNode {
         {empty > 0 && <> · còn {empty} ô trống</>}
       </>
     );
-  if (empty > 0) return <>Chạm vào ô đất để gieo hạt 🌱</>;
+  if (empty > 0) return <>Chạm vào ô đất để gieo hạt <Emo e="🌱" /></>;
   return "Ruộng đầy rồi, chờ cây lớn nhé.";
 }
 
@@ -816,17 +819,17 @@ function SeedPicker({
                 onClick={() => onPlant(c, all)}
               >
                 <span className="seed-emoji" aria-hidden>
-                  {locked ? "🔒" : c.emoji}
+                  <Emo e={locked ? "🔒" : c.emoji} />
                 </span>
                 <b>{c.name}</b>
-                <span className="seed-time">⏱ {formatGrow(c.grow_sec)}</span>
+                <span className="seed-time"><Emo e="⏱" /> {formatGrow(c.grow_sec)}</span>
                 {locked ? (
                   <span className="seed-lock">Mở ở cấp {c.level}</span>
                 ) : (
                   <span className="seed-money">
-                    <span>{c.seed} 🪙</span>
+                    <span>{c.seed} <Emo e="🪙" /></span>
                     <span aria-hidden>→</span>
-                    <span className="seed-sell">{c.sell} 🪙</span>
+                    <span className="seed-sell">{c.sell} <Emo e="🪙" /></span>
                   </span>
                 )}
                 {!locked && (
@@ -851,7 +854,7 @@ function SeedPicker({
         </label>
       )}
       <p className="seed-note">
-        Đang có <b>{balance.toLocaleString("vi-VN")} 🪙</b>. Cây chín để quá 12
+        Đang có <b>{balance.toLocaleString("vi-VN")} <Emo e="🪙" /></b>. Cây chín để quá 12
         giờ sẽ héo, nhớ ghé thu hoạch nhé.
       </p>
     </Dialog>
@@ -907,7 +910,7 @@ function QuestsPanel({
           className={`quest-chest${farm.chest.ready && !farm.chest.claimed ? " is-ready" : ""}`}
         >
           <span className="quest-chest-icon" aria-hidden>
-            {farm.chest.claimed ? "📭" : "🎁"}
+            <Emo e={farm.chest.claimed ? "📭" : "🎁"} />
           </span>
           <div>
             <b>Rương thưởng ngày</b>
@@ -920,7 +923,7 @@ function QuestsPanel({
               ))}
             </span>
             <small>
-              Xong cả 4 nhiệm vụ: +{farm.chest.xu} 🪙 +{farm.chest.xp} XP
+              Xong cả 4 nhiệm vụ: +{farm.chest.xu} <Emo e="🪙" /> +{farm.chest.xp} XP
             </small>
           </div>
           {farm.chest.claimed ? (
@@ -957,7 +960,7 @@ function QuestCard({
       className={`quest${q.done ? " is-done" : ""}${q.claimed ? " is-claimed" : ""}`}
     >
       <span className="quest-icon" aria-hidden>
-        {QUEST_ICON[q.id] ?? "⭐"}
+        <Emo e={QUEST_ICON[q.id] ?? "⭐"} />
       </span>
       <div className="quest-main">
         <b>{q.title}</b>
@@ -965,7 +968,7 @@ function QuestCard({
           <i style={{ width: `${pct}%` }} />
         </span>
         <small>
-          {Math.min(q.progress, q.goal)}/{q.goal} · thưởng {q.xu} 🪙 {q.xp} XP
+          {Math.min(q.progress, q.goal)}/{q.goal} · thưởng {q.xu} <Emo e="🪙" /> {q.xp} XP
         </small>
       </div>
       {q.claimed ? (
@@ -1055,7 +1058,7 @@ function DailyCheckin() {
         >
           {claimed ? "Hôm nay đã nhận" : `Nhận ${STREAK[todayIdx]} xu`}
         </button>
-        {msg && <span className="checkin-msg">{msg}</span>}
+        {msg && <span className="checkin-msg">{emo(msg)}</span>}
       </div>
     </div>
   );
@@ -1108,7 +1111,7 @@ function NeighborsPanel({
     <div className="farm-section">
       <p className="farm-foot">
         Ghé vườn hàng xóm để tưới giúp, bắt sâu… hoặc trộm rau khi họ quên hái
-        🫣
+        <Emo e="🫣" />
       </p>
       <ul className="neighbor-list">
         {me && (
@@ -1120,7 +1123,7 @@ function NeighborsPanel({
             >
               <Avatar user={me} size={36} />
               <span className="neighbor-main">
-                <b>🏠 Vườn của tôi</b>
+                <b><Emo e="🏠" /> Vườn của tôi</b>
                 <small>Cấp {myLevel}</small>
               </span>
             </button>
@@ -1138,18 +1141,18 @@ function NeighborsPanel({
                 <b>{displayName(n.user)}</b>
                 <small>
                   Cấp {n.level}
-                  {n.dog && " · 🐕 có chó"}
+                  {n.dog && emo(" · 🐕 có chó")}
                 </small>
               </span>
               <span className="neighbor-badges">
                 {n.stealable > 0 && (
                   <span className="nb is-steal" title="Ô chín có thể trộm">
-                    🧺 {n.stealable}
+                    <Emo e="🧺" /> {n.stealable}
                   </span>
                 )}
                 {n.needs_help > 0 && (
                   <span className="nb is-help" title="Ô cần tưới / bắt sâu">
-                    💧 {n.needs_help}
+                    <Emo e="💧" /> {n.needs_help}
                   </span>
                 )}
               </span>
@@ -1201,15 +1204,17 @@ function ShopPanel({
     <div className="farm-section">
       <div className="shop-card">
         <span className="shop-icon" aria-hidden>
-          🟫
+          <Emo e="🟫" />
         </span>
         <div>
           <b>Mở rộng ruộng</b>
           <small>
             Đang có {farm.plot_count}/{farm.max_plots} ô
-            {exp
-              ? ` · lên ${exp.plots} ô: ${exp.price} 🪙, cần cấp ${exp.level}`
-              : np && ` · ô tiếp theo ${np.price} 🪙, cần cấp ${np.level}`}
+            {emo(
+              exp
+                ? ` · lên ${exp.plots} ô: ${exp.price} 🪙, cần cấp ${exp.level}`
+                : np && ` · ô tiếp theo ${np.price} 🪙, cần cấp ${np.level}`,
+            )}
           </small>
         </div>
         <button
@@ -1218,7 +1223,7 @@ function ShopPanel({
           disabled={!!plotBlock || busy}
           onClick={onBuyPlot}
         >
-          {plotBlock ?? `Mua ${np?.price} 🪙`}
+          {emo(plotBlock ?? `Mua ${np?.price} 🪙`)}
         </button>
       </div>
       {(farm.buildings ?? []).map((b) => {
@@ -1236,14 +1241,16 @@ function ShopPanel({
         return (
           <div key={b.id} className="shop-card">
             <span className="shop-icon" aria-hidden>
-              {b.id === "coop" ? "🛖" : "🌿"}
+              <Emo e={b.id === "coop" ? "🛖" : "🌿"} />
             </span>
             <div>
               <b>{b.name}</b>
               <small>
-                {b.built
-                  ? `Đang nuôi ${count}/${b.cap} con${b.upgrade_price ? ` · nới chuồng ${b.upgrade_price} 🪙` : ""}`
-                  : `Xây để nuôi ${b.id === "coop" ? "gà" : "bò, dê, cừu, heo"} · cần cấp ${b.level}`}
+                {emo(
+                  b.built
+                    ? `Đang nuôi ${count}/${b.cap} con${b.upgrade_price ? ` · nới chuồng ${b.upgrade_price} 🪙` : ""}`
+                    : `Xây để nuôi ${b.id === "coop" ? "gà" : "bò, dê, cừu, heo"} · cần cấp ${b.level}`,
+                )}
               </small>
             </div>
             {b.built ? (
@@ -1254,7 +1261,7 @@ function ShopPanel({
                   disabled={busy || balance < b.upgrade_price}
                   onClick={() => onUpgradeBuilding(b.id)}
                 >
-                  Nới · {b.upgrade_price} 🪙
+                  Nới · {b.upgrade_price} <Emo e="🪙" />
                 </button>
               ) : (
                 <span className="quest-claimed">Tối đa</span>
@@ -1266,7 +1273,7 @@ function ShopPanel({
                 disabled={!!block || busy}
                 onClick={() => onBuild(b.id)}
               >
-                {block ?? `Xây · ${b.price} 🪙`}
+                {emo(block ?? `Xây · ${b.price} 🪙`)}
               </button>
             )}
           </div>
@@ -1302,13 +1309,13 @@ function ShopPanel({
               className={`animal-card${farm.level < k.level ? " is-locked" : ""}`}
             >
               <span className="animal-emoji" aria-hidden>
-                {k.emoji}
+                <Emo e={k.emoji} />
               </span>
               <div>
                 <b>{k.name}</b>
                 <small>
-                  Ăn {k.feed_qty} {feed?.emoji ?? ""}{" "}
-                  {feed?.name.toLowerCase() ?? k.feed} → {prod?.emoji}{" "}
+                  Ăn {k.feed_qty} <Emo e={feed?.emoji} />{" "}
+                  {feed?.name.toLowerCase() ?? k.feed} → <Emo e={prod?.emoji} />{" "}
                   {prod?.name.toLowerCase()} sau {formatGrow(k.time_sec)}
                 </small>
               </div>
@@ -1318,7 +1325,7 @@ function ShopPanel({
                 disabled={!!block || busy}
                 onClick={() => onBuyAnimal(k.id)}
               >
-                {block ?? `${k.price} 🪙`}
+                {emo(block ?? `${k.price} 🪙`)}
               </button>
             </li>
           );
@@ -1327,12 +1334,12 @@ function ShopPanel({
 
       <div className="shop-card">
         <span className="shop-icon" aria-hidden>
-          🐕
+          <Emo e="🐕" />
         </span>
         <div>
           <b>Chó giữ nhà</b>
           <small>
-            Đuổi kẻ trộm 50% số lần, bắt nộp phạt 10 🪙 cho bạn.
+            Đuổi kẻ trộm 50% số lần, bắt nộp phạt 10 <Emo e="🪙" /> cho bạn.
             {dogLeft > 0
               ? ` Còn canh ${formatLeft(dogLeft)}.`
               : " 24 giờ / lần mua."}
@@ -1344,7 +1351,7 @@ function ShopPanel({
           disabled={busy || balance < 150 || dogLeft > 48 * 3600_000}
           onClick={onBuyDog}
         >
-          {dogLeft > 0 ? "Thêm 24h · 150 🪙" : "Mua · 150 🪙"}
+          {emo(dogLeft > 0 ? "Thêm 24h · 150 🪙" : "Mua · 150 🪙")}
         </button>
       </div>
 
@@ -1367,7 +1374,7 @@ function ShopPanel({
                 className={c.level > farm.level ? "is-locked" : ""}
               >
                 <td>
-                  <span aria-hidden>{c.emoji}</span> {c.name}
+                  <Emo e={c.emoji} /> {c.name}
                 </td>
                 <td>{formatGrow(c.grow_sec)}</td>
                 <td>+{c.sell - c.seed}</td>
@@ -1427,7 +1434,7 @@ function OrdersPanel({
                       className={have >= it.qty ? "is-ok" : ""}
                       title={info?.name}
                     >
-                      <span aria-hidden>{info?.emoji ?? "📦"}</span>
+                      <Emo e={info?.emoji ?? "📦"} />
                       <b>
                         {Math.min(have, it.qty)}/{it.qty}
                       </b>
@@ -1437,7 +1444,7 @@ function OrdersPanel({
               </ul>
               <div className="order-foot">
                 <span className="order-reward">
-                  +{o.xu} 🪙 · +{o.xp} XP
+                  +{o.xu} <Emo e="🪙" /> · +{o.xp} XP
                 </span>
                 <button
                   type="button"
@@ -1446,7 +1453,7 @@ function OrdersPanel({
                   onClick={() => onDiscard(o.id!)}
                   title="Huỷ đơn"
                 >
-                  🗑️
+                  <Emo e="🗑️" />
                 </button>
                 <button
                   type="button"
@@ -1460,7 +1467,7 @@ function OrdersPanel({
             </li>
           ) : (
             <li key={o.slot} className="order-card is-empty">
-              <span aria-hidden>🚚💨</span>
+              <span aria-hidden><Emo e="🚚" /><Emo e="💨" /></span>
               <small>
                 Đơn mới tới sau{" "}
                 {o.next_at
@@ -1518,7 +1525,7 @@ function StoragePanel({
             }
             onClick={onUpgrade}
           >
-            Nới kho · {st.next_upgrade.price} 🪙
+            Nới kho · {st.next_upgrade.price} <Emo e="🪙" />
           </button>
         )}
       </div>
@@ -1535,12 +1542,12 @@ function StoragePanel({
               return (
                 <li key={i.id}>
                   <span className="stock-emoji" aria-hidden>
-                    {i.emoji}
+                    <Emo e={i.emoji} />
                   </span>
                   <span className="stock-main">
                     <b>{i.name}</b>
                     <small>
-                      ×{n} · {i.price} 🪙/cái
+                      ×{n} · {i.price} <Emo e="🪙" />/cái
                     </small>
                   </span>
                   <button
@@ -1569,7 +1576,7 @@ function StoragePanel({
             disabled={busy}
             onClick={() => onSell("all")}
           >
-            Bán tất cả · {total.toLocaleString("vi-VN")} 🪙
+            Bán tất cả · {total.toLocaleString("vi-VN")} <Emo e="🪙" />
           </button>
         </>
       )}
@@ -1601,7 +1608,7 @@ function MarketList({
   );
   return (
     <>
-      <h3 className="farm-h">🛒 Chợ: mua thức ăn</h3>
+      <h3 className="farm-h"><Emo e="🛒" /> Chợ: mua thức ăn</h3>
       <p className="farm-foot">
         Thiếu thức ăn cho vật nuôi thì mua ở đây (đắt hơn tự trồng).
       </p>
@@ -1609,12 +1616,12 @@ function MarketList({
         {goods.map((i) => (
           <li key={i.id}>
             <span className="stock-emoji" aria-hidden>
-              {i.emoji}
+              <Emo e={i.emoji} />
             </span>
             <span className="stock-main">
               <b>{i.name}</b>
               <small>
-                {i.buy_price} 🪙/cái
+                {i.buy_price} <Emo e="🪙" />/cái
                 {feeds.has(i.id) ? ` · ${feeds.get(i.id)} ăn` : ""}
               </small>
             </span>
@@ -1699,7 +1706,7 @@ function LogPanel({
             <Avatar user={l.actor} size={28} />
           </button>
           <span>
-            {logText(l, farm.crops)}
+            {emo(logText(l, farm.crops))}
             <small>{ago(l.at, now)}</small>
           </span>
         </li>
@@ -1731,7 +1738,7 @@ function LeaderPanel({
       {rows.map((r, i) => (
         <li key={r.user.id} className={r.user.id === meId ? "is-me" : ""}>
           <span className="farm-rank">
-            {i < 3 ? ["🥇", "🥈", "🥉"][i] : i + 1}
+            {i < 3 ? <Emo e={["🥇", "🥈", "🥉"][i]} /> : i + 1}
           </span>
           <button
             type="button"
@@ -1813,7 +1820,7 @@ export function FarmSidebarCard() {
       onClick={() => farmScreen.open()}
     >
       <span className="farm-card-icon" aria-hidden>
-        🌾
+        <Emo e="🌾" />
       </span>
       <span className="farm-card-text">
         <b>Nông trại</b>

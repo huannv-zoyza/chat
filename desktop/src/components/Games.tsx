@@ -32,6 +32,7 @@ import { BauCua } from "./BauCuaGame";
 import { autoOpenVillage, village } from "../lib/village";
 import { formatXu } from "./Wallet";
 import { Avatar, Dialog, FormError, Icon } from "./ui";
+import { Emo, emo } from "./Emoji";
 
 /* ---------- Tiện ích ---------- */
 
@@ -592,9 +593,11 @@ function Lobby({ ctx }: { ctx: Ctx }) {
           Bàn cờ 9×10 chuẩn · Luật WXF · {mins} phút/nước · {firstStr}
         </p>
         <div className={`xq-bet-pill${xqBet > 0 ? " is-paid" : ""}`}>
-          {xqBet > 0
-            ? `🪙 Mức cược: ${xqBet.toLocaleString("vi-VN")} xu / người · Thắng nhận ${(xqBet * 2).toLocaleString("vi-VN")} xu`
-            : "🤝 Giao hữu miễn phí (0 xu)"}
+          {emo(
+            xqBet > 0
+              ? `🪙 Mức cược: ${xqBet.toLocaleString("vi-VN")} xu / người · Thắng nhận ${(xqBet * 2).toLocaleString("vi-VN")} xu`
+              : "🤝 Giao hữu miễn phí (0 xu)",
+          )}
         </div>
       </div>
     );
@@ -614,7 +617,7 @@ function Lobby({ ctx }: { ctx: Ctx }) {
         Chạm {need} ván thắng ·{" "}
         {bet > 0 ? (
           <span className="rps-bet-badge">
-            🪙 Cược <b>{formatXu(bet)} xu</b> (thắng ăn {formatXu(bet * 2)} xu)
+            <Emo e="🪙" /> Cược <b>{formatXu(bet)} xu</b> (thắng ăn {formatXu(bet * 2)} xu)
           </span>
         ) : (
           <span>Chơi vui (miễn phí)</span>
@@ -1771,7 +1774,9 @@ function Rps({ ctx }: { ctx: Ctx }) {
     <div className="rps">
       {bet > 0 && (
         <div className="rps-pot">
-          <span>🪙 Cược {formatXu(bet)} xu / người</span>
+          <span>
+            <Emo e="🪙" /> Cược {formatXu(bet)} xu / người
+          </span>
           <b>🏆 Pot: {formatXu(pot)} xu</b>
         </div>
       )}
@@ -2171,7 +2176,7 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
                 <span>
                   Mức cược xu
                   {walletBalance !== null && (
-                    <small className="rps-wallet-hint"> (ví của bạn: 🪙 {formatXu(walletBalance)} xu)</small>
+                    <small className="rps-wallet-hint"> (ví của bạn: <Emo e="🪙" /> {formatXu(walletBalance)} xu)</small>
                   )}
                 </span>
                 <div className="rps-bet-grid" role="radiogroup" aria-label="Mức cược xu">

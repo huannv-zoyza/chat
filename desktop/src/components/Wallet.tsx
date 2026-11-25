@@ -4,6 +4,7 @@ import { displayName } from "../lib/format";
 import { playCoinSound } from "../lib/sound";
 import { useChat } from "../state/ChatProvider";
 import { Avatar, Dialog, FormError } from "./ui";
+import { Emo } from "./Emoji";
 
 const TX_META: Record<string, { icon: string; label: string }> = {
   daily: { icon: "📅", label: "Nhận xu hằng ngày" },
@@ -56,7 +57,7 @@ export function WalletButton({ onOpen }: { onOpen: () => void }) {
       onClick={onOpen}
       title="Ví xu"
     >
-      <span aria-hidden>🪙</span>
+      <span aria-hidden><Emo e="🪙" /></span>
       <span className="wallet-btn-amount">{formatXu(w.balance)} xu</span>
       {w.debt > 0 && <span className="wallet-btn-debt">nợ {formatXu(w.debt)}</span>}
     </button>
@@ -192,7 +193,7 @@ export function WalletDialog({ channelId, onClose }: { channelId: number | null;
       <div className="wallet">
         <div className="wallet-sum">
           <p className="wallet-balance">
-            <span aria-hidden>🪙</span> {formatXu(balance)} <small>xu</small>
+            <span aria-hidden><Emo e="🪙" /></span> {formatXu(balance)} <small>xu</small>
           </p>
           {debt > 0 && <p className="wallet-debt">Đang nợ ngân hàng {formatXu(debt)} xu</p>}
           {!!wallet?.in_tables && <p className="wallet-note">{formatXu(wallet.in_tables)} xu đang trên bàn / đặt cược</p>}
@@ -399,7 +400,7 @@ export function WalletDialog({ channelId, onClose }: { channelId: number | null;
                     return (
                       <li key={t.id} className="wallet-tx-item">
                         <span className="wallet-tx-icon" aria-hidden>
-                          {meta.icon}
+                          <Emo e={meta.icon} />
                         </span>
                         <div className="wallet-tx-body">
                           <div className="wallet-tx-title">{t.note || meta.label}</div>

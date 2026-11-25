@@ -1,6 +1,7 @@
 import { useState, type CSSProperties, type FormEvent } from "react";
 import { ApiError, createApi, normalizeServerUrl, type User } from "../lib/api";
 import { FormError } from "./ui";
+import { Emo } from "./Emoji";
 
 type Mode = "login" | "register";
 
@@ -83,7 +84,7 @@ export function AuthScreen({ initialServer, fixedServer, notice, onAuthenticated
               🩴 <b>Huy</b> ném dép vào <b>Nam</b>
             </li>
             <li className="auth-bubble is-coin" style={{ "--i": 3 } as CSSProperties}>
-              🪙 Linh vừa nhận 100 xu điểm danh
+              <Emo e="🪙" /> Linh vừa nhận 100 xu điểm danh
             </li>
           </ul>
         </div>

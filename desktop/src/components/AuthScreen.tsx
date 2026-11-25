@@ -69,14 +69,14 @@ export function AuthScreen({ initialServer, fixedServer, notice, onAuthenticated
           {mode === "login" ? (
             <label className="field">
               <span>Tên đăng nhập hoặc email</span>
-              <input autoFocus autoComplete="username" value={login} onChange={(e) => setLogin(e.target.value)} />
+              <input autoFocus data-autofocus autoComplete="username" value={login} onChange={(e) => setLogin(e.target.value)} />
             </label>
           ) : (
             <>
               <label className="field">
                 <span>Tên hiển thị</span>
                 <input
-                  autoFocus
+                  autoFocus data-autofocus
                   value={displayName}
                   maxLength={64}
                   onChange={(e) => setDisplayName(e.target.value)}

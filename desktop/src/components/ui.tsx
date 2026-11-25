@@ -69,7 +69,13 @@ export function Dialog({ title, onClose, children, wide, className }: DialogProp
 
   useEffect(() => {
     const d = ref.current;
-    if (d && !d.open) d.showModal();
+    if (!d || d.open) return;
+    // showModal() tự focus nút đầu tiên (nút ✕) và autoFocus của React chạy lúc hộp thoại còn
+    // đóng nên không ăn. Đánh dấu ô cần gõ bằng data-autofocus; không có thì focus chính hộp thoại.
+    d.showModal();
+    const wanted = d.querySelector<HTMLElement>("[data-autofocus]");
+    if (wanted) wanted.focus();
+    else d.focus();
   }, []);
 
   return (
@@ -91,6 +97,7 @@ export function Dialog({ title, onClose, children, wide, className }: DialogProp
       onTouchEnd={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.stopPropagation()}
       aria-labelledby="dialog-title"
+      tabIndex={-1}
     >
       <div className="dialog-body">
         <header className="dialog-header">

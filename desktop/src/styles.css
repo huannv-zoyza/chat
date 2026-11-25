@@ -1098,7 +1098,7 @@ button {
   padding: 0 3px;
   border-radius: 3px;
   background: var(--btn);
-  color: #fff;
+  color: var(--btn-text);
   font-size: 0.5625rem;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -1301,7 +1301,7 @@ button {
   border: 2px solid var(--surface);
   border-radius: 50%;
   background: var(--btn);
-  color: #fff;
+  color: var(--btn-text);
 }
 .composer-files .file-card {
   max-width: 16rem;
@@ -11810,4 +11810,199 @@ button.villager:focus-visible .villager-name {
 }
 .sidebar-reminders.is-due {
   color: var(--ink-text);
+}
+
+/* =========================================================
+   Giao diện mềm & mượt (11/2026)
+   Bo góc lớn hơn, bóng nhẹ, nút chính vàng ở chế độ tối, viền
+   bớt cứng, phản hồi khi bấm, "đã xem" không chiếm dòng riêng.
+   ========================================================= */
+
+:root {
+  --radius: 10px;
+  --radius-lg: 16px;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --shadow-sm: 0 1px 2px rgb(23 32 42 / 0.06), 0 3px 10px rgb(23 32 42 / 0.06);
+  --shadow: 0 20px 50px rgb(23 32 42 / 0.18), 0 2px 6px rgb(23 32 42 / 0.06);
+  --ring: color-mix(in srgb, var(--focus) 22%, transparent);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --btn: #e8b42c;
+    --btn-hover: #f3c652;
+    --btn-text: #2a1f03;
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 14px rgb(0 0 0 / 0.22);
+    --shadow: 0 24px 60px rgb(0 0 0 / 0.55), 0 2px 8px rgb(0 0 0 / 0.3);
+  }
+}
+:root[data-theme="dark"] {
+  --btn: #e8b42c;
+  --btn-hover: #f3c652;
+  --btn-text: #2a1f03;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 14px rgb(0 0 0 / 0.22);
+  --shadow: 0 24px 60px rgb(0 0 0 / 0.55), 0 2px 8px rgb(0 0 0 / 0.3);
+}
+
+/* Phản hồi khi rê / bấm: đổi màu mượt, nút lún nhẹ khi nhấn */
+.btn,
+.chip,
+.icon-btn,
+.tool-btn,
+.send-btn,
+.channel,
+.sidebar-quick-btn,
+.sidebar-reminders,
+.wallet-btn,
+.me-card,
+.member,
+.attach-menu button {
+  transition:
+    background-color 0.15s var(--ease),
+    border-color 0.15s var(--ease),
+    color 0.15s var(--ease),
+    box-shadow 0.15s var(--ease),
+    transform 0.12s var(--ease);
+}
+.btn:active:not(:disabled),
+.chip:active,
+.icon-btn:active,
+.tool-btn:active,
+.send-btn:active:not(:disabled),
+.sidebar-quick-btn:active {
+  transform: scale(0.96);
+}
+
+/* Nút */
+.btn {
+  border-radius: var(--radius);
+}
+.btn-primary {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+}
+.btn-primary:hover:not(:disabled) {
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--btn) 35%, transparent);
+}
+.btn-sm {
+  border-radius: 8px;
+}
+
+/* Thanh đầu kênh: nút không viền, chỉ hiện nền khi rê/bật */
+.room-actions .chip {
+  border-color: transparent;
+}
+.room-actions .chip:hover,
+.room-actions .chip.is-on {
+  border-color: transparent;
+  background: var(--line-soft);
+  color: var(--text);
+}
+
+/* Ô nhập: vòng sáng mềm khi đang gõ thay vì viền dày */
+.field input,
+.field textarea,
+.search,
+.field select {
+  border-radius: var(--radius);
+  transition:
+    border-color 0.15s var(--ease),
+    box-shadow 0.15s var(--ease);
+}
+.field input:focus-visible,
+.field textarea:focus-visible,
+.search:focus-visible,
+.input-prefix:focus-within {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+/* Ô soạn tin: thẻ nổi nhẹ, khi gõ chỉ sáng viền mềm */
+.composer-box {
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color 0.15s var(--ease),
+    box-shadow 0.15s var(--ease);
+}
+.composer-box:focus-within {
+  border-color: color-mix(in srgb, var(--focus) 60%, var(--line));
+  box-shadow:
+    0 0 0 3px var(--ring),
+    var(--shadow-sm);
+}
+.composer-box.is-invalid,
+.composer-box.is-invalid:focus-within {
+  border-color: var(--warn);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 20%, transparent);
+}
+.send-btn {
+  border-radius: 10px;
+}
+.send-btn:disabled {
+  background: transparent;
+}
+
+/* Tin nhắn: vạch "tin của mình" dịu lại, không còn là sọc vàng chạy dọc màn hình */
+.msg-mine {
+  border-left-color: color-mix(in srgb, var(--signal) 38%, transparent);
+}
+.msg-mentioned {
+  border-left-color: var(--signal);
+}
+
+/* "Đã xem": nằm đè góc dưới phải của tin vừa xem, không đẩy chat thêm một dòng */
+.seen-by {
+  position: relative;
+  z-index: 2;
+  height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  overflow: visible;
+}
+.seen-by > * {
+  transform: translateY(-100%);
+}
+
+/* Thanh bên */
+.channel {
+  padding: 0.42rem 0.6rem;
+  border-radius: 8px;
+}
+
+/* Hộp thoại: bo lớn, nền sau mờ nhoè */
+@media (min-width: 721px) {
+  .dialog {
+    border-radius: var(--radius-lg);
+  }
+}
+.dialog::backdrop {
+  backdrop-filter: blur(3px);
+}
+.dialog:focus {
+  outline: none;
+}
+
+/* Menu "+" */
+.attach-menu {
+  border-radius: 12px;
+  animation: menu-in 0.14s var(--ease);
+}
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn:active:not(:disabled),
+  .chip:active,
+  .icon-btn:active,
+  .tool-btn:active,
+  .send-btn:active:not(:disabled),
+  .sidebar-quick-btn:active {
+    transform: none;
+  }
+  .attach-menu {
+    animation: none;
+  }
 }

@@ -122,7 +122,7 @@ export function MembersPanel({
                         className="btn btn-sm btn-danger"
                         disabled={kicking}
                         onClick={() => void kick(m.id)}
-                        autoFocus
+                        autoFocus data-autofocus
                       >
                         Mời ra
                       </button>

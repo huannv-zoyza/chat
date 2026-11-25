@@ -220,7 +220,7 @@ export function SearchDialog({ onClose, onJumped }: { onClose: () => void; onJum
     <Dialog title="Tìm tin nhắn" onClose={onClose} wide>
       <input
         className="search"
-        autoFocus
+        autoFocus data-autofocus
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Gõ từ khoá (không cần dấu: “pho bo” tìm được “phở bò”)"

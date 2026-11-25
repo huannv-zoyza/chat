@@ -50,7 +50,7 @@ export function NewDMDialog({ onClose, onOpened }: { onClose: () => void; onOpen
     <Dialog title="Tin nhắn mới" onClose={onClose}>
       <input
         className="search"
-        autoFocus
+        autoFocus data-autofocus
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Tìm theo tên hoặc @username"

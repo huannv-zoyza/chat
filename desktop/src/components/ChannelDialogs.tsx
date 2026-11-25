@@ -88,7 +88,7 @@ export function CreateChannelDialog({ onClose }: { onClose: () => void }) {
           <span>Tên kênh</span>
           <div className="input-prefix">
             <span aria-hidden>{isPrivate ? <Icon name="lock" size={16} /> : "#"}</span>
-            <input autoFocus value={name} maxLength={40} onChange={(e) => setName(e.target.value)} placeholder="du-an-moi" />
+            <input autoFocus data-autofocus value={name} maxLength={40} onChange={(e) => setName(e.target.value)} placeholder="du-an-moi" />
           </div>
           {name && preview !== name.trim() && <small>Sẽ được lưu là {preview}</small>}
         </label>
@@ -162,7 +162,7 @@ export function BrowseChannelsDialog({
     <Dialog title="Khám phá kênh" onClose={onClose} wide>
       <input
         className="search"
-        autoFocus
+        autoFocus data-autofocus
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Tìm theo tên hoặc mô tả"
@@ -354,7 +354,7 @@ export function JoinByLinkDialog({ initialCode, onClose }: { initialCode?: strin
         <label className="field">
           <span>Link mời</span>
           <input
-            autoFocus
+            autoFocus data-autofocus
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="http://…/invite/…"

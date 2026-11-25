@@ -2055,7 +2055,7 @@ function Align({ onDone }: { onDone: () => void }) {
         value={v}
         onChange={(e) => setV(Number(e.target.value))}
         aria-label="Căn chỉnh"
-        autoFocus
+        autoFocus data-autofocus
       />
       <p className="st-muted">{ok ? "Giữ nguyên…" : "Kéo kim vào vạch xanh (hoặc dùng phím ← →)."}</p>
     </div>

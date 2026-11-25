@@ -138,7 +138,7 @@ export function ConfirmDeleteDialog({ message, onClose }: { message: Message; on
           <button type="button" className="btn" onClick={onClose} disabled={busy}>
             Huỷ
           </button>
-          <button type="button" className="btn btn-danger" onClick={() => void confirm()} disabled={busy} autoFocus>
+          <button type="button" className="btn btn-danger" onClick={() => void confirm()} disabled={busy} autoFocus data-autofocus>
             {busy ? "Đang xoá…" : "Xoá tin nhắn"}
           </button>
         </div>

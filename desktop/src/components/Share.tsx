@@ -170,7 +170,7 @@ export function ShareDialog({ message, onClose }: { message: Message; onClose: (
         <>
           <input
             className="search"
-            autoFocus
+            autoFocus data-autofocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Tìm kênh hoặc người để gửi tới"

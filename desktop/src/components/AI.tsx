@@ -153,7 +153,7 @@ export function AIImageDialog({
                 ? "Ví dụ: biến thành nhân vật hoạt hình 3D cầm kiếm ánh sáng, giữ nguyên khuôn mặt"
                 : "Ví dụ: chú chó corgi đội mũ bảo hiểm chạy xe máy trên phố Sài Gòn, tranh vẽ tay"
             }
-            autoFocus
+            autoFocus data-autofocus
           />
           <small>
             Viết tiếng Việt thoải mái, AI tự dịch sang mô tả cho máy vẽ. Càng cụ thể (vật, bối cảnh, phong cách) ảnh

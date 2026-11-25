@@ -59,10 +59,12 @@ type DialogProps = {
   onClose: () => void;
   children: ReactNode;
   wide?: boolean;
+  /** Lớp thêm cho hộp thoại (cỡ riêng…). */
+  className?: string;
 };
 
 /** Dùng <dialog> gốc: có sẵn khoá focus, đóng bằng Esc, nền mờ. */
-export function Dialog({ title, onClose, children, wide }: DialogProps) {
+export function Dialog({ title, onClose, children, wide, className }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -73,7 +75,7 @@ export function Dialog({ title, onClose, children, wide }: DialogProps) {
   return (
     <dialog
       ref={ref}
-      className={`dialog${wide ? " dialog-wide" : ""}`}
+      className={`dialog${wide ? " dialog-wide" : ""}${className ? ` ${className}` : ""}`}
       onCancel={(e) => {
         e.preventDefault();
         onClose();

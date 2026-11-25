@@ -1649,232 +1649,237 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
   };
 
   return (
-    <Dialog title="Chơi game" onClose={onClose}>
-      <form className="dialog-form" onSubmit={submit}>
-        {!dm && (
-          <div className="game-groups" role="tablist" aria-label="Lọc trò chơi">
-            {PICKER_GROUPS.map((g) => (
-              <button
-                key={g.id}
-                type="button"
-                role="tab"
-                aria-selected={group === g.id}
-                className={`game-group${group === g.id ? " is-active" : ""}`}
-                onClick={() => setGroup(g.id)}
-              >
-                {g.label}
-              </button>
+    <Dialog title="Chơi game" onClose={onClose} className="dialog-games">
+      <form className="dialog-form game-dialog" onSubmit={submit}>
+        <div className="game-dialog-pick">
+          {!dm && (
+            <div className="game-groups" role="tablist" aria-label="Lọc trò chơi">
+              {PICKER_GROUPS.map((g) => (
+                <button
+                  key={g.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={group === g.id}
+                  className={`game-group${group === g.id ? " is-active" : ""}`}
+                  onClick={() => setGroup(g.id)}
+                >
+                  {g.label}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="game-picker" role="radiogroup" aria-label="Trò chơi">
+            {shown.map((k) => (
+              <label key={k} className={`game-pick${kind === k ? " is-chosen" : ""}`} title={GAME_INFO[k].blurb}>
+                <input type="radio" name="game-kind" value={k} checked={kind === k} onChange={() => setKind(k)} />
+                <span className="game-pick-icon" aria-hidden>
+                  {GAME_INFO[k].icon}
+                </span>
+                <b className="game-pick-title">{GAME_INFO[k].title}</b>
+                <small className="game-pick-players">{GAME_INFO[k].players.split(" · ")[0]}</small>
+              </label>
             ))}
           </div>
-        )}
-        <div className="game-picker" role="radiogroup" aria-label="Trò chơi">
-          {shown.map((k) => (
-            <label key={k} className={`game-pick${kind === k ? " is-chosen" : ""}`} title={GAME_INFO[k].blurb}>
-              <input type="radio" name="game-kind" value={k} checked={kind === k} onChange={() => setKind(k)} />
-              <span className="game-pick-icon" aria-hidden>
-                {GAME_INFO[k].icon}
-              </span>
-              <b className="game-pick-title">{GAME_INFO[k].title}</b>
-              <small className="game-pick-players">{GAME_INFO[k].players.split(" · ")[0]}</small>
-            </label>
-          ))}
         </div>
-        <p className="game-pick-detail">
-          <b>
-            {GAME_INFO[kind].icon} {GAME_INFO[kind].title}
-          </b>{" "}
-          · {GAME_INFO[kind].players}. {GAME_INFO[kind].blurb}
-        </p>
 
-        {kind === "station" && (
-          <>
-            <div className="game-opts">
-              <label className="field">
-                <span>Số kẻ phản bội</span>
-                <select value={st.traitors} onChange={(e) => setOpt("traitors", Number(e.target.value))}>
-                  <option value={0}>Tự động (1 / 2 / 3)</option>
-                  <option value={1}>1</option>
-                  <option value={2}>2</option>
-                  <option value={3}>3</option>
-                </select>
+        <div className="game-dialog-side">
+          <p className="game-pick-detail">
+            <b>
+              {GAME_INFO[kind].icon} {GAME_INFO[kind].title}
+            </b>{" "}
+            · {GAME_INFO[kind].players}. {GAME_INFO[kind].blurb}
+          </p>
+
+          {kind === "station" && (
+            <>
+              <div className="game-opts">
+                <label className="field">
+                  <span>Số kẻ phản bội</span>
+                  <select value={st.traitors} onChange={(e) => setOpt("traitors", Number(e.target.value))}>
+                    <option value={0}>Tự động (1 / 2 / 3)</option>
+                    <option value={1}>1</option>
+                    <option value={2}>2</option>
+                    <option value={3}>3</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Hồi chiêu giết</span>
+                  <select value={st.kill_cooldown} onChange={(e) => setOpt("kill_cooldown", Number(e.target.value))}>
+                    {[15, 20, 25, 30, 45].map((v) => (
+                      <option key={v} value={v}>
+                        {v} giây
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Nhiệm vụ mỗi người</span>
+                  <select value={st.tasks} onChange={(e) => setOpt("tasks", Number(e.target.value))}>
+                    {[3, 4, 5, 6, 8].map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Lượt họp khẩn mỗi người</span>
+                  <select value={st.emergencies} onChange={(e) => setOpt("emergencies", Number(e.target.value))}>
+                    {[1, 2, 3].map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Thảo luận</span>
+                  <select value={st.discuss} onChange={(e) => setOpt("discuss", Number(e.target.value))}>
+                    {[15, 30, 45, 60, 90].map((v) => (
+                      <option key={v} value={v}>
+                        {v} giây
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Bỏ phiếu</span>
+                  <select value={st.vote} onChange={(e) => setOpt("vote", Number(e.target.value))}>
+                    {[30, 60, 90, 120].map((v) => (
+                      <option key={v} value={v}>
+                        {v} giây
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <label className="check-field">
+                <input
+                  type="checkbox"
+                  checked={st.hide_ejects}
+                  onChange={(e) => setOpt("hide_ejects", e.target.checked)}
+                />
+                <span>
+                  Giấu danh tính người bị đẩy ra
+                  <small>Không cho biết người bị loại có phải kẻ phản bội không (khó hơn).</small>
+                </span>
               </label>
-              <label className="field">
-                <span>Hồi chiêu giết</span>
-                <select value={st.kill_cooldown} onChange={(e) => setOpt("kill_cooldown", Number(e.target.value))}>
-                  {[15, 20, 25, 30, 45].map((v) => (
-                    <option key={v} value={v}>
-                      {v} giây
-                    </option>
-                  ))}
-                </select>
+            </>
+          )}
+          {kind === "werewolf" && (
+            <>
+              <div className="game-opts">
+                <label className="field">
+                  <span>Ban ngày (thảo luận + bỏ phiếu)</span>
+                  <select value={day} onChange={(e) => setDay(Number(e.target.value))}>
+                    <option value={60}>1 phút</option>
+                    <option value={120}>2 phút</option>
+                    <option value={180}>3 phút</option>
+                    <option value={300}>5 phút</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Ban đêm</span>
+                  <select value={night} onChange={(e) => setNight(Number(e.target.value))}>
+                    <option value={30}>30 giây</option>
+                    <option value={45}>45 giây</option>
+                    <option value={60}>1 phút</option>
+                    <option value={90}>1 phút 30</option>
+                  </select>
+                </label>
+              </div>
+              <label className="check-field">
+                <input type="checkbox" checked={hideRoles} onChange={(e) => setHideRoles(e.target.checked)} />
+                <span>
+                  Giấu vai người chết
+                  <small>Chỉ lộ vai của mọi người khi hết ván (khó hơn).</small>
+                </span>
               </label>
-              <label className="field">
-                <span>Nhiệm vụ mỗi người</span>
-                <select value={st.tasks} onChange={(e) => setOpt("tasks", Number(e.target.value))}>
-                  {[3, 4, 5, 6, 8].map((v) => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>Lượt họp khẩn mỗi người</span>
-                <select value={st.emergencies} onChange={(e) => setOpt("emergencies", Number(e.target.value))}>
-                  {[1, 2, 3].map((v) => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>Thảo luận</span>
-                <select value={st.discuss} onChange={(e) => setOpt("discuss", Number(e.target.value))}>
-                  {[15, 30, 45, 60, 90].map((v) => (
-                    <option key={v} value={v}>
-                      {v} giây
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>Bỏ phiếu</span>
-                <select value={st.vote} onChange={(e) => setOpt("vote", Number(e.target.value))}>
-                  {[30, 60, 90, 120].map((v) => (
-                    <option key={v} value={v}>
-                      {v} giây
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
+            </>
+          )}
+          {kind === "spy" && (
+            <label className="field">
+              <span>Số gián điệp</span>
+              <select value={spies} onChange={(e) => setSpies(Number(e.target.value))}>
+                <option value={0}>Tự động (1, từ 8 người là 2)</option>
+                <option value={1}>1</option>
+                <option value={2}>2</option>
+                <option value={3}>3</option>
+              </select>
+            </label>
+          )}
+          {kind === "caro" && (
             <label className="check-field">
-              <input
-                type="checkbox"
-                checked={st.hide_ejects}
-                onChange={(e) => setOpt("hide_ejects", e.target.checked)}
-              />
+              <input type="checkbox" checked={blockRule} onChange={(e) => setBlockRule(e.target.checked)} />
               <span>
-                Giấu danh tính người bị đẩy ra
-                <small>Không cho biết người bị loại có phải kẻ phản bội không (khó hơn).</small>
+                Luật chặn hai đầu
+                <small>Hàng 5 bị chặn cả hai đầu thì không tính thắng.</small>
               </span>
             </label>
-          </>
-        )}
-        {kind === "werewolf" && (
-          <>
-            <div className="game-opts">
+          )}
+          {kind === "chess" && (
+            <>
               <label className="field">
-                <span>Ban ngày (thảo luận + bỏ phiếu)</span>
-                <select value={day} onChange={(e) => setDay(Number(e.target.value))}>
-                  <option value={60}>1 phút</option>
-                  <option value={120}>2 phút</option>
-                  <option value={180}>3 phút</option>
-                  <option value={300}>5 phút</option>
+                <span>Thời gian mỗi nước đi</span>
+                <select value={chessMinutes} onChange={(e) => setChessMinutes(Number(e.target.value))}>
+                  <option value={1}>1 phút (Chớp - Blitz)</option>
+                  <option value={3}>3 phút (Tiêu chuẩn)</option>
+                  <option value={5}>5 phút (Nhanh - Rapid)</option>
+                  <option value={10}>10 phút (Dài)</option>
                 </select>
               </label>
               <label className="field">
-                <span>Ban đêm</span>
-                <select value={night} onChange={(e) => setNight(Number(e.target.value))}>
-                  <option value={30}>30 giây</option>
-                  <option value={45}>45 giây</option>
-                  <option value={60}>1 phút</option>
-                  <option value={90}>1 phút 30</option>
+                <span>Cầm quân Trắng (đi trước)</span>
+                <select value={chessFirst} onChange={(e) => setChessFirst(e.target.value as any)}>
+                  <option value="random">Ngẫu nhiên (50/50)</option>
+                  <option value="host">Chủ phòng cầm Trắng</option>
+                  <option value="guest">Khách cầm Trắng</option>
                 </select>
               </label>
-            </div>
-            <label className="check-field">
-              <input type="checkbox" checked={hideRoles} onChange={(e) => setHideRoles(e.target.checked)} />
-              <span>
-                Giấu vai người chết
-                <small>Chỉ lộ vai của mọi người khi hết ván (khó hơn).</small>
-              </span>
-            </label>
-          </>
-        )}
-        {kind === "spy" && (
-          <label className="field">
-            <span>Số gián điệp</span>
-            <select value={spies} onChange={(e) => setSpies(Number(e.target.value))}>
-              <option value={0}>Tự động (1, từ 8 người là 2)</option>
-              <option value={1}>1</option>
-              <option value={2}>2</option>
-              <option value={3}>3</option>
-            </select>
-          </label>
-        )}
-        {kind === "caro" && (
-          <label className="check-field">
-            <input type="checkbox" checked={blockRule} onChange={(e) => setBlockRule(e.target.checked)} />
-            <span>
-              Luật chặn hai đầu
-              <small>Hàng 5 bị chặn cả hai đầu thì không tính thắng.</small>
-            </span>
-          </label>
-        )}
-        {kind === "chess" && (
-          <>
+            </>
+          )}
+          {kind === "xiangqi" && (
+            <>
+              <label className="field">
+                <span>Thời gian mỗi nước đi</span>
+                <select value={xiangqiMinutes} onChange={(e) => setXiangqiMinutes(Number(e.target.value))}>
+                  <option value={1}>1 phút (Chớp)</option>
+                  <option value={3}>3 phút (Tiêu chuẩn)</option>
+                  <option value={5}>5 phút (Nhanh)</option>
+                  <option value={10}>10 phút (Dài)</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Cầm quân Đỏ (đi trước)</span>
+                <select value={xiangqiFirst} onChange={(e) => setXiangqiFirst(e.target.value as any)}>
+                  <option value="random">Ngẫu nhiên (50/50)</option>
+                  <option value="host">Chủ phòng cầm Đỏ</option>
+                  <option value="guest">Khách cầm Đỏ</option>
+                </select>
+              </label>
+            </>
+          )}
+          {kind === "baucua" && (
             <label className="field">
-              <span>Thời gian mỗi nước đi</span>
-              <select value={chessMinutes} onChange={(e) => setChessMinutes(Number(e.target.value))}>
-                <option value={1}>1 phút (Chớp - Blitz)</option>
-                <option value={3}>3 phút (Tiêu chuẩn)</option>
-                <option value={5}>5 phút (Nhanh - Rapid)</option>
-                <option value={10}>10 phút (Dài)</option>
+              <span>Mỗi người cầm cái</span>
+              <select value={rollsPerDealer} onChange={(e) => setRollsPerDealer(Number(e.target.value))}>
+                <option value={1}>1 lượt lắc</option>
+                <option value={3}>3 lượt lắc</option>
+                <option value={5}>5 lượt lắc</option>
               </select>
             </label>
+          )}
+          {kind === "rps" && (
             <label className="field">
-              <span>Cầm quân Trắng (đi trước)</span>
-              <select value={chessFirst} onChange={(e) => setChessFirst(e.target.value as any)}>
-                <option value="random">Ngẫu nhiên (50/50)</option>
-                <option value="host">Chủ phòng cầm Trắng</option>
-                <option value="guest">Khách cầm Trắng</option>
+              <span>Thể thức</span>
+              <select value={bestOf} onChange={(e) => setBestOf(Number(e.target.value))}>
+                <option value={1}>1 ván quyết định</option>
+                <option value={3}>Chạm 2 (3 ván)</option>
+                <option value={5}>Chạm 3 (5 ván)</option>
               </select>
             </label>
-          </>
-        )}
-        {kind === "xiangqi" && (
-          <>
-            <label className="field">
-              <span>Thời gian mỗi nước đi</span>
-              <select value={xiangqiMinutes} onChange={(e) => setXiangqiMinutes(Number(e.target.value))}>
-                <option value={1}>1 phút (Chớp)</option>
-                <option value={3}>3 phút (Tiêu chuẩn)</option>
-                <option value={5}>5 phút (Nhanh)</option>
-                <option value={10}>10 phút (Dài)</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>Cầm quân Đỏ (đi trước)</span>
-              <select value={xiangqiFirst} onChange={(e) => setXiangqiFirst(e.target.value as any)}>
-                <option value="random">Ngẫu nhiên (50/50)</option>
-                <option value="host">Chủ phòng cầm Đỏ</option>
-                <option value="guest">Khách cầm Đỏ</option>
-              </select>
-            </label>
-          </>
-        )}
-        {kind === "baucua" && (
-          <label className="field">
-            <span>Mỗi người cầm cái</span>
-            <select value={rollsPerDealer} onChange={(e) => setRollsPerDealer(Number(e.target.value))}>
-              <option value={1}>1 lượt lắc</option>
-              <option value={3}>3 lượt lắc</option>
-              <option value={5}>5 lượt lắc</option>
-            </select>
-          </label>
-        )}
-        {kind === "rps" && (
-          <label className="field">
-            <span>Thể thức</span>
-            <select value={bestOf} onChange={(e) => setBestOf(Number(e.target.value))}>
-              <option value={1}>1 ván quyết định</option>
-              <option value={3}>Chạm 2 (3 ván)</option>
-              <option value={5}>Chạm 3 (5 ván)</option>
-            </select>
-          </label>
-        )}
+          )}
+        </div>
 
         <FormError>{error}</FormError>
         <div className="dialog-actions">

@@ -6017,10 +6017,10 @@ button.game-player:disabled {
 }
 .game-pick-title {
   max-width: 100%;
-  overflow: hidden;
   font-size: var(--step--1);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 .game-pick-players {
   font-size: var(--step--2);
@@ -6042,6 +6042,34 @@ button.game-player:disabled {
 @media (max-width: 480px) {
   .game-picker {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Hộp thoại "Chơi game": ngang, trái chọn trò, phải mô tả + tuỳ chọn; hẹp thì xếp một cột. */
+.dialog.dialog-games {
+  width: min(960px, calc(100vw - 2rem));
+}
+.game-dialog {
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  align-items: start;
+  column-gap: 1.5rem;
+}
+.game-dialog > .form-error,
+.game-dialog > .dialog-actions {
+  grid-column: 1 / -1;
+}
+.game-dialog-pick,
+.game-dialog-side {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.game-dialog .game-picker {
+  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+}
+@media (max-width: 760px) {
+  .game-dialog {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 .game-opts {

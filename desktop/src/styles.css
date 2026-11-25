@@ -11975,6 +11975,7 @@ button.villager:focus-visible .villager-name {
   }
 }
 .dialog::backdrop {
+  -webkit-backdrop-filter: blur(3px);
   backdrop-filter: blur(3px);
 }
 .dialog:focus {

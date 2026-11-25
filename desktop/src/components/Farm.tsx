@@ -407,10 +407,16 @@ function Farm() {
           </button>
           {view && (
             <div className={`farm-owner${view.me ? " is-mine" : ""}`}>
-              {/* vườn của mình: chỉ cần cấp độ; đi thăm: thêm avatar chủ vườn (tên và nút
-                  về nhà đã có ở dải "Đang thăm vườn của …") */}
-              {!view.me && <Avatar user={view.user} size={30} />}
-              <LevelBar view={view} />
+              {/* vườn của mình: chỉ cấp độ + XP; đi thăm: avatar, tên, cấp của chủ vườn */}
+              {view.me ? (
+                <LevelBar view={view} />
+              ) : (
+                <>
+                  <Avatar user={view.user} size={30} />
+                  <span className="farm-owner-name">{displayName(view.user)}</span>
+                  <span className="farm-level-badge">Cấp {view.level}</span>
+                </>
+              )}
             </div>
           )}
           <div className="farm-hud-right">
@@ -424,6 +430,16 @@ function Farm() {
                   </small>
                 )}
               </span>
+            )}
+            {visit && (
+              <button
+                type="button"
+                className="farm-home"
+                onClick={() => setVisit(null)}
+                aria-label="Về vườn của tôi"
+              >
+                <Emo e="🏠" /> <span>Về nhà</span>
+              </button>
             )}
           </div>
         </header>
@@ -450,26 +466,15 @@ function Farm() {
                       <span className="farm-tip">{fieldTip(view, now)}</span>
                     )
                   ) : (
-                    <div className="farm-visiting">
-                      <span>
-                        <span className="farm-visiting-title">
-                          <Emo e="👀" /> Đang thăm vườn của <b>{displayName(view.user)}</b>
-                        </span>
-                        <small>
-                          {view.steals_left !== undefined && (
-                            <>Còn {view.steals_left} lượt trộm · </>
-                          )}
-                          Chạm ô chín để trộm, ô đang lớn để tưới giúp
-                        </small>
-                      </span>
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        onClick={() => setVisit(null)}
-                      >
-                        <Emo e="🏠" /> Về nhà
-                      </button>
-                    </div>
+                    <span className="farm-tip is-visit">
+                      <Emo e="🫣" />
+                      {view.steals_left !== undefined && (
+                        <>
+                          Còn <b>{view.steals_left}</b> lượt trộm ·{" "}
+                        </>
+                      )}
+                      ô chín: trộm · ô đang lớn: tưới giúp
+                    </span>
                   )}
                 </div>
                 <FarmWorld

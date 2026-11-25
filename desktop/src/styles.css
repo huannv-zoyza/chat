@@ -15390,45 +15390,8 @@ button.villager:focus-visible .villager-name {
 }
 
 /* đang thăm vườn người khác: thanh lớn giữa màn hình, nút về nhà nổi bật */
-.farm-visiting {
-  display: flex;
-  align-items: center;
-  gap: 0.9rem;
-  padding: 0.45rem 0.5rem 0.45rem 1.1rem;
-  border: 3px solid var(--wood-dk);
-  border-radius: 999px;
-  background: #fff8e6;
-  color: var(--ink-brown);
-  box-shadow: 0 4px 0 var(--wood-dk), 0 10px 22px rgb(60 40 10 / 0.25);
-}
-.farm-visiting > span {
-  display: grid;
-  font-size: var(--step--1);
-  line-height: 1.3;
-}
-.farm-visiting small {
-  color: var(--muted);
-  font-size: var(--step--2);
-  font-weight: 600;
-}
-.farm-visiting .btn {
-  white-space: nowrap;
-  border-radius: 999px;
-}
 .neighbor.is-home {
   border-style: dashed;
-}
-@media (max-width: 960px) {
-  .farm-visiting {
-    gap: 0.5rem;
-    padding-left: 0.8rem;
-  }
-  .farm-visiting small {
-    display: none;
-  }
-}
-.farm-visiting-title {
-  white-space: nowrap;
 }
 
 /* =========================================================
@@ -16161,49 +16124,6 @@ button.villager:focus-visible .villager-name {
 .farm-level-badge {
   white-space: nowrap;
 }
-@media (max-width: 960px) {
-  /* đang thăm vườn người khác: tên đã có ở dải "Đang thăm vườn của …", HUD chỉ còn avatar + cấp;
-     nút về nhà nằm luôn trong dải đó */
-  .farm-owner:not(.is-mine) {
-    height: 2.2rem;
-    padding: 0 0.6rem 0 0.15rem;
-  }
-  .farm-owner:not(.is-mine) .farm-owner-name {
-    display: none;
-  }
-  .farm-owner:not(.is-mine) .farm-level {
-    margin-top: 0;
-  }
-  .farm-owner:not(.is-mine) .farm-level-bar {
-    width: 3.2rem;
-    height: 0.55rem;
-  }
-  .farm-hud .farm-home {
-    display: none;
-  }
-  .farm-visiting {
-    max-width: 100%;
-    gap: 0.4rem;
-    padding: 0.2rem 0.25rem 0.2rem 0.7rem;
-    border-width: 2px;
-    box-shadow:
-      0 3px 0 var(--wood-dk),
-      0 6px 14px rgb(60 40 10 / 0.2);
-  }
-  .farm-visiting > span {
-    min-width: 0;
-    font-size: 0.8rem;
-  }
-  .farm-visiting-title {
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .farm-visiting .btn {
-    flex-shrink: 0;
-    padding: 0.3rem 0.75rem;
-    font-size: 0.8rem;
-  }
-}
 .farm-owner:not(.is-mine) {
   height: 2.6rem;
   padding: 0 0.85rem 0 0.2rem;
@@ -16215,5 +16135,49 @@ button.villager:focus-visible .villager-name {
   .farm-owner:not(.is-mine) {
     height: 2.2rem;
     padding: 0 0.6rem 0 0.15rem;
+  }
+}
+
+/* Đang thăm vườn người khác: chủ vườn nằm ngay trong HUD (avatar · tên · cấp), nút về nhà cạnh
+   ô xu, gợi ý trộm/tưới là chip nhỏ giống chip "Chín sau …" */
+.farm-owner:not(.is-mine) {
+  gap: 0.45rem;
+  max-width: 22rem;
+}
+.farm-owner:not(.is-mine) .farm-owner-name {
+  min-width: 0;
+  font-size: 0.95rem;
+}
+.farm-owner:not(.is-mine) .farm-level-badge {
+  flex-shrink: 0;
+  font-size: var(--step--2);
+}
+.farm-tip.is-visit {
+  background: rgb(255 240 214 / 0.92);
+}
+@media (max-width: 960px) {
+  .farm-owner:not(.is-mine) {
+    flex: 0 1 auto;
+    gap: 0.35rem;
+    padding: 0 0.55rem 0 0.15rem;
+  }
+  .farm-owner:not(.is-mine) .farm-owner-name {
+    max-width: none;
+    font-size: 0.8rem;
+  }
+  .farm-owner:not(.is-mine) .farm-level-badge {
+    font-size: 0.68rem;
+  }
+  .farm-hud-right {
+    gap: 0.4rem;
+  }
+  .farm-home {
+    width: 2.2rem;
+    height: 2.2rem;
+    padding: 0;
+    justify-content: center;
+  }
+  .farm-home .emo {
+    margin: 0;
   }
 }

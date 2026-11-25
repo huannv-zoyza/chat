@@ -118,6 +118,37 @@ export type SpectatorInfo = {
   avatar?: string | null;
 };
 
+export type WatchPartyItem = {
+  id: number;
+  channel_id: number;
+  video_id: string;
+  url: string;
+  title: string;
+  author: string;
+  thumbnail_url: string;
+  duration_sec: number;
+  position: number;
+  status: "playing" | "queued" | "played";
+  added_by: PublicUser;
+  created_at: string;
+};
+
+export type WatchPartyState = {
+  channel_id: number;
+  current_item?: WatchPartyItem;
+  queue: WatchPartyItem[];
+  history: WatchPartyItem[];
+  is_playing: boolean;
+  anchor_pos_sec: number;
+  anchor_updated_ms: number;
+  server_now_ms: number;
+  loop_mode: "off" | "queue" | "single";
+  listeners: PublicUser[];
+  listener_count: number;
+  joined: boolean;
+  version: number;
+};
+
 export type LiveGameItem = {
   message_id: number;
   channel_id: number;
@@ -425,6 +456,27 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     createGame: (channelId: number, b: { kind: GameKind; options?: Record<string, unknown>; client_id: string }) =>
       request<Message>("POST", `/api/channels/${channelId}/games`, b),
     liveGames: (channelId: number) => request<LiveGameItem[]>("GET", `/api/channels/${channelId}/live-games`),
+    getWatchParty: (channelId: number) => request<WatchPartyState>("GET", `/api/channels/${channelId}/watch-party`),
+    addWatchPartyItem: (channelId: number, b: { url: string; title?: string; announce_in_chat?: boolean }) =>
+      request<{ item: WatchPartyItem; state: WatchPartyState }>("POST", `/api/channels/${channelId}/watch-party/items`, b),
+    updateWatchPartyItem: (
+      channelId: number,
+      itemId: number,
+      b: { title?: string; url?: string; duration_sec?: number },
+    ) => request<WatchPartyState>("PATCH", `/api/channels/${channelId}/watch-party/items/${itemId}`, b),
+    deleteWatchPartyItem: (channelId: number, itemId: number) =>
+      request<WatchPartyState>("DELETE", `/api/channels/${channelId}/watch-party/items/${itemId}`),
+    reorderWatchPartyQueue: (channelId: number, item_ids: number[]) =>
+      request<WatchPartyState>("PUT", `/api/channels/${channelId}/watch-party/queue/reorder`, { item_ids }),
+    clearWatchPartyQueue: (channelId: number, include_current = false) =>
+      request<WatchPartyState>(
+        "DELETE",
+        `/api/channels/${channelId}/watch-party/queue${include_current ? "?include_current=1" : ""}`,
+      ),
+    controlWatchParty: (
+      channelId: number,
+      b: { action: "play" | "pause" | "seek" | "next" | "prev" | "loop"; position_sec?: number; loop_mode?: string },
+    ) => request<WatchPartyState>("POST", `/api/channels/${channelId}/watch-party/control`, b),
     gameLeaderboard: (kind?: string) =>
       request<GameLeaderboard>("GET", `/api/games/leaderboard${kind ? `?kind=${encodeURIComponent(kind)}` : ""}`),
     gameAction: (messageId: number, action: string, data?: unknown) =>

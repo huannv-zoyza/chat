@@ -1,5 +1,6 @@
 import { useEffect, useState, type MouseEvent } from "react";
 import type { LinkPreview as Preview } from "../lib/api";
+import { isDM } from "../lib/channel";
 import { extractLinks } from "../lib/links";
 import { openExternal } from "../lib/notify";
 import { isTauri } from "../lib/platform";
@@ -65,10 +66,15 @@ export function LinkPreviews({ content }: { content: string }) {
 }
 
 function LinkCard({ url }: { url: string }) {
-  const { api } = useChat();
+  const { api, state, dispatch, joinWatchParty } = useChat();
   const [p, setP] = useState<Preview | null>(null);
   const [playing, setPlaying] = useState(false);
   const [imgBroken, setImgBroken] = useState(false);
+  const [wpBusy, setWpBusy] = useState(false);
+  const [wpAdded, setWpAdded] = useState(false);
+
+  const activeChannel = state.activeId !== null ? state.channels[state.activeId] : undefined;
+  const canWatchParty = !!activeChannel && !isDM(activeChannel);
 
   useEffect(() => {
     let alive = true;
@@ -132,6 +138,49 @@ function LinkCard({ url }: { url: string }) {
             </button>
           )}
         </div>
+        {canWatchParty && activeChannel && (
+          <div className="wp-link-actions">
+            <button
+              type="button"
+              className="btn btn-xs btn-secondary"
+              disabled={wpBusy}
+              onClick={() => {
+                setWpBusy(true);
+                void api
+                  .addWatchPartyItem(activeChannel.id, { url, title: p.title })
+                  .then((res) => {
+                    dispatch({ type: "watchParty.set", state: res.state });
+                    dispatch({ type: "watchParty.open", channelId: activeChannel.id });
+                    setWpAdded(true);
+                    window.setTimeout(() => setWpAdded(false), 3000);
+                  })
+                  .finally(() => setWpBusy(false));
+              }}
+            >
+              {wpAdded ? "✓ Đã thêm vào Hàng đợi" : "📋 Thêm vào Queue Nghe chung"}
+            </button>
+            {!state.watchParties[activeChannel.id]?.joined && (
+              <button
+                type="button"
+                className="btn btn-xs btn-primary"
+                disabled={wpBusy}
+                onClick={() => {
+                  setWpBusy(true);
+                  void api
+                    .addWatchPartyItem(activeChannel.id, { url, title: p.title })
+                    .then((res) => {
+                      dispatch({ type: "watchParty.set", state: res.state });
+                      joinWatchParty(activeChannel.id);
+                      dispatch({ type: "watchParty.open", channelId: activeChannel.id });
+                    })
+                    .finally(() => setWpBusy(false));
+                }}
+              >
+                🎧 Thêm &amp; Join ngay
+              </button>
+            )}
+          </div>
+        )}
       </div>
     );
   }

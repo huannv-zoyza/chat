@@ -15,6 +15,7 @@ import type {
   SpectatorInfo,
   ThreadSummary,
   User,
+  WatchPartyState,
 } from "./api";
 
 /* ---------- Giao thức (khớp controller/events.go và controller/socket.go) ---------- */
@@ -29,6 +30,7 @@ export type ServerEvent =
       group_calls?: GroupRoom[];
       /** Trợ lý AI (không có: máy chủ tắt AI). */
       ai?: AIInfo;
+      watch_parties?: WatchPartyState[];
     }
   | { type: "groupcall.state"; channel_id: number; started_at?: string; participants?: GroupParticipant[] }
   | { type: "groupcall.started"; channel_id: number; by: PublicUser; video?: boolean }
@@ -47,6 +49,8 @@ export type ServerEvent =
   | { type: "poll.updated"; channel_id: number; message_id: number; poll: Poll }
   | { type: "game.updated"; channel_id: number; message_id: number; game: GameView }
   | { type: "game.spectators"; channel_id: number; message_id: number; count: number; spectators: SpectatorInfo[] }
+  | { type: "watchparty.state"; state: WatchPartyState }
+  | { type: "watchparty.error"; channel_id: number; message: string }
   | { type: "game.map"; message_id: number; map: StationMap }
   | { type: "game.frame"; message_id: number; frame: StFrame }
   | { type: "reminder.due"; reminder: Reminder }
@@ -108,6 +112,9 @@ export type ClientRequest =
       forwarded?: boolean;
     }
   | { type: "game.spectate" | "game.unspectate"; message_id: number }
+  | { type: "watchparty.join" | "watchparty.leave"; channel_id: number }
+  | { type: "watchparty.ended"; channel_id: number; item_id: number }
+  | { type: "watchparty.sync_duration"; channel_id: number; item_id: number; duration_sec: number }
   | { type: "typing"; channel_id: number; parent_id?: number }
   | { type: "read"; channel_id: number; message_id: number }
   | { type: "ping" };
@@ -285,6 +292,24 @@ export class ChatSocket {
 
   unspectateGame(messageId: number) {
     if (this.status === "open") this.rawSend({ type: "game.unspectate", message_id: messageId });
+  }
+
+  joinWatchParty(channelId: number) {
+    if (this.status === "open") this.rawSend({ type: "watchparty.join", channel_id: channelId });
+  }
+
+  leaveWatchParty(channelId: number) {
+    if (this.status === "open") this.rawSend({ type: "watchparty.leave", channel_id: channelId });
+  }
+
+  watchPartyEnded(channelId: number, itemId: number) {
+    if (this.status === "open") this.rawSend({ type: "watchparty.ended", channel_id: channelId, item_id: itemId });
+  }
+
+  watchPartySyncDuration(channelId: number, itemId: number, durationSec: number) {
+    if (this.status === "open") {
+      this.rawSend({ type: "watchparty.sync_duration", channel_id: channelId, item_id: itemId, duration_sec: durationSec });
+    }
   }
 
   markRead(channelId: number, messageId: number) {

@@ -21,6 +21,7 @@ import { EmojiPicker } from "./EmojiPicker";
 import { StickerPicker } from "./StickerPicker";
 import { CreatePollDialog } from "./Polls";
 import { CreateGameDialog } from "./Games";
+import { AddWatchPartyDialog } from "./WatchParty";
 import { AIImageDialog } from "./AI";
 import { createPortal } from "react-dom";
 import { FileCard, formatSize, useObjectUrls } from "./MessageParts";
@@ -62,16 +63,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const [attachOpen, setAttachOpen] = useState(false);
   const [pollOpen, setPollOpen] = useState(false);
   const [gameOpen, setGameOpen] = useState(false);
+  const [watchPartyOpen, setWatchPartyOpen] = useState(false);
   const [drawOpen, setDrawOpen] = useState(false);
   const attachRef = useRef<HTMLDivElement>(null);
   // Bình chọn: chỉ ở dòng chính của kênh (tin nhắn riêng được mã hoá đầu cuối)
   const canPoll = !parentId && !isDM(channel);
+  // Nghe chung / Xem chung: chỉ ở dòng chính của kênh
+  const canWatchParty = !parentId && !isDM(channel);
   // Trò chơi: dòng chính; tin nhắn riêng chỉ có trò 2 người
   const canGame = !parentId;
   // AI chỉ trong kênh (tin nhắn riêng mã hoá đầu cuối, máy chủ không đọc được)
   const aiOn = !isDM(channel) && !!state.ai;
   const canDraw = aiOn && !!state.ai?.image && !parentId;
-  const hasMenu = canPoll || canGame;
+  const hasMenu = canPoll || canGame || canWatchParty;
   useEffect(() => {
     if (!attachOpen) return;
     const onDown = (e: MouseEvent) => {
@@ -349,6 +353,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           <CreateGameDialog channelId={channel.id} dm={isDM(channel)} onClose={() => setGameOpen(false)} />,
           document.body,
         )}
+      {watchPartyOpen &&
+        createPortal(
+          <AddWatchPartyDialog channelId={channel.id} onClose={() => setWatchPartyOpen(false)} />,
+          document.body,
+        )}
       {stickerOpen && (
         <StickerPicker
           onPick={(embed) => {
@@ -445,6 +454,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                   >
                     <Icon name="game" size={17} />
                     Chơi game
+                  </button>
+                )}
+                {canWatchParty && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setAttachOpen(false);
+                      setWatchPartyOpen(true);
+                    }}
+                  >
+                    <Icon name="play" size={17} />
+                    Nghe nhạc / Xem chung
                   </button>
                 )}
               </div>

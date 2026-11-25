@@ -13,6 +13,7 @@ import type {
   SpectatorInfo,
   ThreadSummary,
   User,
+  WatchPartyState,
 } from "../lib/api";
 import type { AIInfo } from "../lib/socket";
 import type { MessageLinkInfo } from "../lib/api";
@@ -107,6 +108,12 @@ export type ChatState = {
   freshThrows: Record<number, true>;
   /** Vừa bị ném đồ: hiện hiệu ứng toàn màn hình (key đổi mỗi lần ném). */
   hit: { item: string; fromId: number; key: number } | null;
+  /** channelId -> trạng thái phòng nghe nhạc/xem chung */
+  watchParties: Record<number, WatchPartyState>;
+  /** Lệch đồng hồ ước lượng (server_now_ms - Date.now()) */
+  watchPartyClockOffsetMs: number;
+  /** Kênh đang mở panel nghe chung (null = thu gọn) */
+  watchPartyOpenChannelId: number | null;
 };
 
 export function initialState(me: User): ChatState {
@@ -140,6 +147,9 @@ export function initialState(me: User): ChatState {
     nicknames: {},
     freshThrows: {},
     hit: null,
+    watchParties: {},
+    watchPartyClockOffsetMs: 0,
+    watchPartyOpenChannelId: null,
   };
 }
 
@@ -147,7 +157,9 @@ export function initialState(me: User): ChatState {
 
 export type Action =
   | { type: "status"; status: SocketStatus }
-  | { type: "ready"; me: User; online: number[]; ai: AIInfo | null }
+  | { type: "ready"; me: User; online: number[]; ai: AIInfo | null; watchParties?: WatchPartyState[] }
+  | { type: "watchParty.set"; state: WatchPartyState }
+  | { type: "watchParty.open"; channelId: number | null }
   | { type: "me.updated"; me: User }
   | { type: "channels.loaded"; channels: Channel[] }
   | { type: "channel.upsert"; channel: Channel; keepUnread?: boolean }
@@ -299,8 +311,34 @@ export function reducer(s: ChatState, a: Action): ChatState {
     case "ready": {
       const online: Record<number, true> = {};
       for (const id of a.online) online[id] = true;
-      return { ...s, me: a.me, online, users: withUsers(s.users, [a.me]), ai: a.ai };
+      const watchParties: Record<number, WatchPartyState> = {};
+      let offset = s.watchPartyClockOffsetMs;
+      for (const wp of a.watchParties ?? []) {
+        watchParties[wp.channel_id] = wp;
+        if (wp.server_now_ms) offset = wp.server_now_ms - Date.now();
+      }
+      return {
+        ...s,
+        me: a.me,
+        online,
+        users: withUsers(s.users, [a.me]),
+        ai: a.ai,
+        watchParties,
+        watchPartyClockOffsetMs: offset,
+      };
     }
+
+    case "watchParty.set": {
+      const offset = a.state.server_now_ms ? a.state.server_now_ms - Date.now() : s.watchPartyClockOffsetMs;
+      return {
+        ...s,
+        watchParties: { ...s.watchParties, [a.state.channel_id]: a.state },
+        watchPartyClockOffsetMs: offset,
+      };
+    }
+
+    case "watchParty.open":
+      return { ...s, watchPartyOpenChannelId: a.channelId };
 
     case "me.updated":
       return { ...s, me: a.me, users: withUsers(s.users, [a.me]) };

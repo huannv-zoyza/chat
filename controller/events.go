@@ -27,6 +27,7 @@ import (
 //	member.joined    {channel_id, user}                      có người vào kênh
 //	member.left      {channel_id, user_id}                   có người rời kênh
 //	wallet.updated   {balance, debt}                         ví xu của mình thay đổi
+//	watchparty.state {state}                                 trạng thái phòng nghe nhạc/xem chung thay đổi
 //	nickname.updated {channel_id, user_id, nickname}         biệt danh trong kênh thay đổi (rỗng = xoá)
 //	reaction.updated {channel_id, message_id, parent_id?, reactions}  cảm xúc của một tin thay đổi
 //	thread.updated   {channel_id, message_id, thread}        luồng trả lời của tin gốc thay đổi
@@ -44,6 +45,8 @@ type readyEvent struct {
 	GroupCalls []groupCallState `json:"group_calls"`
 	// Trợ lý AI (nil: máy chủ tắt AI).
 	AI *aiInfo `json:"ai,omitempty"`
+	// Các phòng nghe nhạc / xem video chung đang hoạt động trong các kênh tham gia.
+	WatchParties []model.WatchPartyState `json:"watch_parties,omitempty"`
 }
 
 type messageNewEvent struct {

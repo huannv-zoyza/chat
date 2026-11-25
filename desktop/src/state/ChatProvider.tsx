@@ -122,6 +122,11 @@ type ChatContextValue = {
   loadOlder: (channelId: number) => Promise<void>;
   loadMembers: (channelId: number) => Promise<void>;
   loadLiveGames: (channelId: number) => Promise<void>;
+  loadWatchParty: (channelId: number) => Promise<void>;
+  joinWatchParty: (channelId: number) => void;
+  leaveWatchParty: (channelId: number) => void;
+  watchPartyEnded: (channelId: number, itemId: number) => void;
+  watchPartySyncDuration: (channelId: number, itemId: number, durationSec: number) => void;
   reconnectNow: () => void;
   onLogout: () => void;
 };
@@ -429,7 +434,13 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       }),
 
       sock.on("ready", (ev) => {
-        dispatch({ type: "ready", me: ev.user, online: ev.online_user_ids, ai: ev.ai ?? null });
+        dispatch({
+          type: "ready",
+          me: ev.user,
+          online: ev.online_user_ids,
+          ai: ev.ai ?? null,
+          watchParties: ev.watch_parties,
+        });
         api
           .getWallet()
           .then((w) => dispatch({ type: "wallet.set", balance: w.balance, debt: w.debt }))
@@ -591,6 +602,8 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       sock.on("member.joined", (ev) => dispatch({ type: "member.joined", channelId: ev.channel_id, user: ev.user })),
       sock.on("member.left", (ev) => dispatch({ type: "member.left", channelId: ev.channel_id, userId: ev.user_id })),
       sock.on("wallet.updated", (ev) => dispatch({ type: "wallet.set", balance: ev.balance, debt: ev.debt })),
+      sock.on("watchparty.state", (ev) => dispatch({ type: "watchParty.set", state: ev.state })),
+      sock.on("watchparty.error", (ev) => dispatch({ type: "notice", text: ev.message })),
       sock.on("nickname.updated", (ev) =>
         dispatch({ type: "nickname.set", channelId: ev.channel_id, userId: ev.user_id, nickname: ev.nickname }),
       ),
@@ -922,6 +935,21 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       },
 
       loadLiveGames,
+
+      loadWatchParty: async (channelId) => {
+        try {
+          const st = await api.getWatchParty(channelId);
+          dispatch({ type: "watchParty.set", state: st });
+        } catch {
+          // ignore
+        }
+      },
+
+      joinWatchParty: (channelId) => socketRef.current?.joinWatchParty(channelId),
+      leaveWatchParty: (channelId) => socketRef.current?.leaveWatchParty(channelId),
+      watchPartyEnded: (channelId, itemId) => socketRef.current?.watchPartyEnded(channelId, itemId),
+      watchPartySyncDuration: (channelId, itemId, durationSec) =>
+        socketRef.current?.watchPartySyncDuration(channelId, itemId, durationSec),
 
       reconnectNow: () => socketRef.current?.reconnectNow(),
     }),

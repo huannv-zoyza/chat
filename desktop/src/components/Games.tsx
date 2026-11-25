@@ -1586,10 +1586,20 @@ function Rps({ ctx }: { ctx: Ctx }) {
 
 /* ---------- Mở phòng chơi ---------- */
 
+/** Trò đối kháng 2 người (phần còn lại là trò chơi đông người). */
+const DUEL_KINDS = new Set<GameKind>(["caro", "rps", "chess", "xiangqi"]);
+const PICKER_GROUPS = [
+  { id: "all", label: "Tất cả" },
+  { id: "party", label: "Chơi đông người" },
+  { id: "duel", label: "Đấu 2 người" },
+] as const;
+
 export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number; dm: boolean; onClose: () => void }) {
   const { createGame } = useChat();
-  const kinds = (Object.keys(GAME_INFO) as GameKind[]).filter((k) => !dm || k === "caro" || k === "rps" || k === "chess" || k === "xiangqi" || k === "baucua");
+  const kinds = (Object.keys(GAME_INFO) as GameKind[]).filter((k) => !dm || DUEL_KINDS.has(k) || k === "baucua");
   const [kind, setKind] = useState<GameKind>(kinds[0]);
+  const [group, setGroup] = useState<(typeof PICKER_GROUPS)[number]["id"]>("all");
+  const shown = kinds.filter((k) => group === "all" || (group === "duel") === DUEL_KINDS.has(k));
   const [day, setDay] = useState(120);
   const [night, setNight] = useState(45);
   const [hideRoles, setHideRoles] = useState(false);
@@ -1641,21 +1651,40 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
   return (
     <Dialog title="Chơi game" onClose={onClose}>
       <form className="dialog-form" onSubmit={submit}>
+        {!dm && (
+          <div className="game-groups" role="tablist" aria-label="Lọc trò chơi">
+            {PICKER_GROUPS.map((g) => (
+              <button
+                key={g.id}
+                type="button"
+                role="tab"
+                aria-selected={group === g.id}
+                className={`game-group${group === g.id ? " is-active" : ""}`}
+                onClick={() => setGroup(g.id)}
+              >
+                {g.label}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="game-picker" role="radiogroup" aria-label="Trò chơi">
-          {kinds.map((k) => (
-            <label key={k} className={`game-pick${kind === k ? " is-chosen" : ""}`}>
+          {shown.map((k) => (
+            <label key={k} className={`game-pick${kind === k ? " is-chosen" : ""}`} title={GAME_INFO[k].blurb}>
               <input type="radio" name="game-kind" value={k} checked={kind === k} onChange={() => setKind(k)} />
               <span className="game-pick-icon" aria-hidden>
                 {GAME_INFO[k].icon}
               </span>
-              <span className="game-pick-text">
-                <b>{GAME_INFO[k].title}</b>
-                <small>{GAME_INFO[k].players}</small>
-                <span>{GAME_INFO[k].blurb}</span>
-              </span>
+              <b className="game-pick-title">{GAME_INFO[k].title}</b>
+              <small className="game-pick-players">{GAME_INFO[k].players.split(" · ")[0]}</small>
             </label>
           ))}
         </div>
+        <p className="game-pick-detail">
+          <b>
+            {GAME_INFO[kind].icon} {GAME_INFO[kind].title}
+          </b>{" "}
+          · {GAME_INFO[kind].players}. {GAME_INFO[kind].blurb}
+        </p>
 
         {kind === "station" && (
           <>

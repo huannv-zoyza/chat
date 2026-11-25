@@ -5956,17 +5956,42 @@ button.game-player:disabled {
 }
 
 /* hộp thoại chọn trò */
+.game-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.game-group {
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--step--1);
+  font-weight: 600;
+  cursor: pointer;
+}
+.game-group.is-active {
+  border-color: var(--signal);
+  background: var(--signal-soft);
+  color: var(--text);
+}
 .game-picker {
   display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
   gap: 0.45rem;
 }
 .game-pick {
+  position: relative;
   display: flex;
-  gap: 0.65rem;
-  align-items: flex-start;
-  padding: 0.6rem 0.7rem;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  min-width: 0;
+  padding: 0.65rem 0.4rem 0.55rem;
   border: 1px solid var(--line);
   border-radius: 10px;
+  text-align: center;
   cursor: pointer;
 }
 .game-pick:hover {
@@ -5987,22 +6012,37 @@ button.game-player:disabled {
   pointer-events: none;
 }
 .game-pick-icon {
-  font-size: 1.5rem;
-  line-height: 1.2;
+  font-size: 1.75rem;
+  line-height: 1.15;
 }
-.game-pick-text {
-  display: grid;
-  gap: 0.1rem;
+.game-pick-title {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: var(--step--1);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.game-pick-text small {
+.game-pick-players {
   font-size: var(--step--2);
   font-weight: 600;
   color: var(--muted);
 }
-.game-pick-text span {
-  font-size: var(--step--1);
+.game-pick-detail {
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  background: var(--raised);
   color: var(--muted);
-  line-height: 1.4;
+  font-size: var(--step--1);
+  line-height: 1.45;
+}
+.game-pick-detail b {
+  color: var(--text);
+}
+@media (max-width: 480px) {
+  .game-picker {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .game-opts {
   display: grid;

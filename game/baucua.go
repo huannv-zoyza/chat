@@ -21,8 +21,6 @@ import (
 const (
 	baucuaBetTime    = 20 * time.Second
 	baucuaRevealTime = 5 * time.Second
-	baucuaLoan       = 500
-	baucuaLoanBelow  = 10
 	baucuaHistory    = 10
 )
 
@@ -196,28 +194,34 @@ func (g *baucua) roll(now time.Time) {
 			}
 		}
 	}
+	// Cái không đủ chip đền thì "cháy túi": chia số chip còn lại cho người thắng theo tỉ lệ,
+	// không vay ngân hàng (vay chỉ ở Ví, theo luật vay chung).
 	g.LastBust, g.LastBustAmount = 0, 0
+	var total int64
+	for _, w := range owed {
+		total += w
+	}
+	avail := g.Chips[d]
+	var paid int64
 	for _, uid := range g.DealerOrder {
 		win := owed[uid]
 		if win == 0 {
 			continue
 		}
+		if avail < total {
+			win = win * avail / total
+		}
 		g.Chips[uid] += win
 		res[uid] += win
 		res[d] -= win
-		if g.Chips[d] >= win {
-			g.Chips[d] -= win
-			continue
-		}
-		short := win - g.Chips[d]
-		g.Chips[d] = 0
-		g.Loans[d] += short
-		g.LastBustAmount += short
+		paid += win
 	}
-	if g.LastBustAmount > 0 {
+	g.Chips[d] -= paid
+	if avail < total {
 		g.LastBust = d
+		g.LastBustAmount = total - paid
 		g.Busts[d]++
-		g.logf("💸 %s cháy túi, vay ngân hàng %d xu.", g.name(d), g.LastBustAmount)
+		g.logf("💸 %s cháy túi: chỉ đền được %d/%d xu, chia theo tỉ lệ.", g.name(d), paid, total)
 	}
 	g.LastResult = res
 	g.Bets = map[int64]map[string]int64{}
@@ -311,12 +315,9 @@ func (g *baucua) act(p int64, action string, data json.RawMessage, now time.Time
 		}
 		g.roll(now)
 	case "loan":
-		if g.Chips[p] >= baucuaLoanBelow {
-			return Error("Bạn còn xu, chưa vay được.")
-		}
-		g.Chips[p] += baucuaLoan
-		g.Loans[p] += baucuaLoan
-		g.logf("🏦 %s vay ngân hàng %d xu.", g.name(p), baucuaLoan)
+		// Trước đây được vay 500 xu ngay trong ván, không giới hạn. Giờ vay chỉ ở Ví (hết nợ mới vay,
+		// 3 ngày một lần); hết chip thì ngồi xem hoặc ra Nông trại kiếm thêm.
+		return Error("Không vay trong ván nữa. Hết xu thì vào Ví hoặc ra Nông trại kiếm thêm nhé.")
 	case "finish":
 		if p != g.HostID {
 			return Error("Chỉ chủ phòng mới kết thúc được.")

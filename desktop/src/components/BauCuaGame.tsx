@@ -72,7 +72,7 @@ export function BauCua({ ctx }: { ctx: Ctx }) {
       )}
       {s.phase === "reveal" && !rolling && !!s.last_bust && (
         <p className="baucua-bust">
-          💸 {s.last_bust === meId ? "Bạn" : nameOf(s.last_bust)} cháy túi! Vay ngân hàng {formatXu(s.last_bust_amount ?? 0)} xu
+          💸 {s.last_bust === meId ? "Bạn" : nameOf(s.last_bust)} cháy túi! Thiếu {formatXu(s.last_bust_amount ?? 0)} xu, người thắng được chia theo tỉ lệ
         </p>
       )}
 
@@ -141,11 +141,7 @@ export function BauCua({ ctx }: { ctx: Ctx }) {
               🥣 Lắc!
             </button>
           )}
-          {myChips < 10 && (
-            <button type="button" className="btn btn-sm" disabled={busy} onClick={() => act("loan")}>
-              🏦 Vay ngân hàng 500
-            </button>
-          )}
+          {myChips < 10 && <span className="baucua-broke">Hết xu rồi: ngồi xem, hoặc ra 🌾 Nông trại kiếm thêm nhé</span>}
           {game.host_id === meId && (!betting || !anyBets) && (
             <button type="button" className="btn btn-sm btn-danger-outline" disabled={busy} onClick={() => act("finish")}>
               Kết thúc ván

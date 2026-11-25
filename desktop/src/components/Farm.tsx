@@ -403,57 +403,60 @@ function Farm() {
                   )}
                 </div>
                 <div className="farm-iso">
-                  <div
-                    className="farm-plots"
-                    style={
-                      {
-                        "--cols": view.max_plots > 9 ? 4 : 3,
-                        "--rows": Math.ceil(
-                          (view.me ? view.max_plots : view.plot_count) /
-                            (view.max_plots > 9 ? 4 : 3),
-                        ),
-                      } as CSSProperties
-                    }
-                  >
-                    {view.plots.map((p) => (
-                      <PlotTile
-                        key={p.index}
-                        plot={p}
-                        view={view}
-                        now={now}
-                        busy={busy}
-                        pops={pops.filter((x) => x.plot === p.index)}
-                        onClick={() => onPlot(p)}
-                      />
-                    ))}
-                    {view.me &&
-                      Array.from(
-                        { length: view.max_plots - view.plot_count },
-                        (_, i) => (
-                          <button
-                            key={`lock${i}`}
-                            type="button"
-                            className="plot is-locked"
-                            onClick={() => setTab("shop")}
-                            aria-label="Ô đất chưa mở, mua ở cửa hàng"
-                          >
-                            <span className="plot-soil" aria-hidden />
-                            <span className="plot-stand" aria-hidden>
-                              <span className="plot-lock">
-                                {i === 0 ? "🪧" : "🌿"}
-                              </span>
-                              {i === 0 && view.next_plot && (
-                                <span className="plot-tag">
-                                  <span className="plot-meta">
-                                    Mở ô: {view.next_plot.price} 🪙 · cấp{" "}
-                                    {view.next_plot.level}
-                                  </span>
+                  <div className="farm-world">
+                    <WorldDecor dog={dogLeft > 0} />
+                    <div
+                      className="farm-plots"
+                      style={
+                        {
+                          "--cols": view.max_plots > 9 ? 4 : 3,
+                          "--rows": Math.ceil(
+                            (view.me ? view.max_plots : view.plot_count) /
+                              (view.max_plots > 9 ? 4 : 3),
+                          ),
+                        } as CSSProperties
+                      }
+                    >
+                      {view.plots.map((p) => (
+                        <PlotTile
+                          key={p.index}
+                          plot={p}
+                          view={view}
+                          now={now}
+                          busy={busy}
+                          pops={pops.filter((x) => x.plot === p.index)}
+                          onClick={() => onPlot(p)}
+                        />
+                      ))}
+                      {view.me &&
+                        Array.from(
+                          { length: view.max_plots - view.plot_count },
+                          (_, i) => (
+                            <button
+                              key={`lock${i}`}
+                              type="button"
+                              className="plot is-locked"
+                              onClick={() => setTab("shop")}
+                              aria-label="Ô đất chưa mở, mua ở cửa hàng"
+                            >
+                              <span className="plot-soil" aria-hidden />
+                              <span className="plot-stand" aria-hidden>
+                                <span className="plot-lock">
+                                  {i === 0 ? "🪧" : "🌿"}
                                 </span>
-                              )}
-                            </span>
-                          </button>
-                        ),
-                      )}
+                                {i === 0 && view.next_plot && (
+                                  <span className="plot-tag">
+                                    <span className="plot-meta">
+                                      Mở ô: {view.next_plot.price} 🪙 · cấp{" "}
+                                      {view.next_plot.level}
+                                    </span>
+                                  </span>
+                                )}
+                              </span>
+                            </button>
+                          ),
+                        )}
+                    </div>
                   </div>
                   {pops
                     .filter((x) => x.plot < 0)
@@ -589,50 +592,208 @@ function Farm() {
    Cảnh vật: trời theo giờ, mặt trời / trăng, mây, đồi, hàng rào
    ========================================================= */
 
-function Scenery({ tod, dog }: { tod: string; dog: boolean }) {
+function Scenery({ tod }: { tod: string; dog: boolean }) {
+  // ánh sáng theo giờ phủ lên cả thế giới (bình minh cam, hoàng hôn tím, đêm xanh thẫm)
+  return <div className={`farm-tint is-${tod}`} aria-hidden />;
+}
+
+/** Một vật đứng trên mặt đất (cây, thú, nhà…): x, y là % mặt đất, s là cỡ (rem). */
+function W({
+  x,
+  y,
+  s = 2.4,
+  c,
+  anim,
+  children,
+}: {
+  x: number;
+  y: number;
+  s?: number;
+  c?: string;
+  anim?: string;
+  children: ReactNode;
+}) {
   return (
-    <div className="farm-scene" aria-hidden>
-      <div className="farm-sky" />
-      {tod === "night" ? (
-        <span className="farm-moon" />
-      ) : (
-        <span className={`farm-sun is-${tod}`} />
-      )}
-      {tod === "night" && <span className="farm-stars" />}
-      <span className="farm-cloud c1" />
-      <span className="farm-cloud c2" />
-      <span className="farm-cloud c3" />
-      <span className="farm-hill h1" />
-      <span className="farm-hill h2" />
-      <span className="farm-hill h3" />
-      <span className="farm-ground" />
-      <span className="farm-path" />
-      <span className="farm-barn">
-        <span className="farm-barn-roof" />
-        <span className="farm-barn-door" />
-        <span className="farm-barn-window" />
-      </span>
-      <span className="farm-silo" />
-      <span className="farm-deco d-tree1">🌳</span>
-      <span className="farm-deco d-tree2">🌲</span>
-      <span className="farm-deco d-tree3">🌳</span>
-      <span className="farm-deco d-tree4">🌲</span>
-      <span className="farm-deco d-cow">🐄</span>
-      <span className="farm-deco d-hay">🌾</span>
-      <span className="farm-deco d-well">⛲</span>
-      <span className="farm-deco d-flower1">🌻</span>
-      <span className="farm-deco d-flower2">🌼</span>
-      <span className="farm-deco d-flower3">🌷</span>
-      <span className="farm-deco d-flower4">🌻</span>
-      <span className="farm-deco d-rock">🪨</span>
-      <span className="farm-deco d-farmer">🧑‍🌾</span>
-      <span className="farm-deco d-chick1">🐔</span>
-      <span className="farm-deco d-chick2">🐥</span>
-      <span className="farm-deco d-chick3">🐓</span>
-      {dog && (
-        <span className="farm-deco d-dog" title="Chó giữ nhà đang canh">
-          🐕
+    <i
+      className={`w${c ? ` ${c}` : ""}`}
+      style={
+        {
+          left: `${x}%`,
+          top: `${y}%`,
+          fontSize: `${s}rem`,
+          animationDelay: anim,
+        } as CSSProperties
+      }
+    >
+      {children}
+    </i>
+  );
+}
+
+const ORCHARD: [number, number, string][] = [
+  [80, 30, "🌳"],
+  [87, 30, "🌳"],
+  [94, 30, "🌳"],
+  [80, 40, "🌳"],
+  [87, 40, "🌳"],
+  [94, 40, "🌳"],
+  [80, 50, "🌳"],
+  [87, 50, "🌳"],
+  [94, 50, "🌳"],
+];
+const BORDER: [number, number, string, number][] = Array.from(
+  { length: 16 },
+  (_, i) => [
+    3 + i * 6.3,
+    i % 2 ? 4 : 7,
+    i % 3 === 0 ? "🌲" : "🌳",
+    i % 2 ? 3.4 : 3,
+  ],
+);
+const FLOWERS = ["🌷", "🌻", "🌼", "🌷", "🌸", "🌻"];
+
+/**
+ * Thế giới nông trại quanh ruộng (kiểu FarmVille): hàng cây bao quanh, nhà kho, silo, chuồng
+ * cừu/bò rào gỗ, chuồng gà, vườn cây ăn quả, luống hoa, ao vịt, đường đá. Ruộng nằm giữa.
+ */
+function WorldDecor({ dog }: { dog: boolean }) {
+  return (
+    <div className="world-decor" aria-hidden>
+      <span className="g-patch p1" />
+      <span className="g-patch p2" />
+      <span className="g-patch p3" />
+      <span className="g-path path-h" />
+      <span className="g-path path-v" />
+      <span className="g-pond" />
+      <span className="g-pen pen-animals" />
+      <span className="g-pen pen-chicks" />
+      <span className="g-bed bed-1" />
+      <span className="g-bed bed-2" />
+
+      {BORDER.map(([x, y, e, s], i) => (
+        <W key={`b${i}`} x={x} y={y} s={s}>
+          {e}
+        </W>
+      ))}
+      <W x={30} y={18} s={1} c="w-barn">
+        <span className="farm-barn">
+          <span className="farm-barn-roof" />
+          <span className="farm-barn-door" />
+          <span className="farm-barn-window" />
         </span>
+      </W>
+      <W x={38.5} y={17} s={1} c="w-silo">
+        <span className="farm-silo" />
+      </W>
+      <W x={44} y={19} s={2.2}>
+        🌾
+      </W>
+      <W x={47} y={20} s={1.9}>
+        🌾
+      </W>
+      <W x={24} y={21} s={1.8}>
+        🪵
+      </W>
+
+      {/* chuồng cừu, bò */}
+      <W x={8} y={36} s={2.6} c="w-graze">
+        🐄
+      </W>
+      <W x={15} y={33} s={2} c="w-graze" anim="-1.2s">
+        🐑
+      </W>
+      <W x={19} y={39} s={2} c="w-graze" anim="-2.4s">
+        🐑
+      </W>
+      <W x={11} y={45} s={2} c="w-graze" anim="-0.6s">
+        🐑
+      </W>
+      <W x={18} y={48} s={2.2} c="w-graze" anim="-1.8s">
+        🐖
+      </W>
+      <W x={6} y={49} s={1.9} c="w-graze" anim="-3s">
+        🐐
+      </W>
+
+      {/* chuồng gà */}
+      <W x={12} y={66} s={2.6}>
+        🛖
+      </W>
+      <W x={8} y={74} s={1.6} c="w-walk">
+        🐔
+      </W>
+      <W x={15} y={78} s={1.3} c="w-walk" anim="-3s">
+        🐥
+      </W>
+      <W x={19} y={71} s={1.6} c="w-walk" anim="-6s">
+        🐓
+      </W>
+      <W x={6} y={82} s={1.2} c="w-walk" anim="-1.5s">
+        🐥
+      </W>
+
+      {/* vườn cây ăn quả */}
+      {ORCHARD.map(([x, y, e], i) => (
+        <W key={`o${i}`} x={x} y={y} s={2.7}>
+          {e}
+          <b className="w-fruit">{i % 3 === 1 ? "🍊" : "🍎"}</b>
+        </W>
+      ))}
+
+      {/* ao vịt */}
+      <W x={92} y={68} s={1.5} c="w-swim">
+        🦆
+      </W>
+      <W x={95} y={72} s={1.3} c="w-swim" anim="-2s">
+        🦆
+      </W>
+      <W x={86} y={60} s={1.6}>
+        🪨
+      </W>
+
+      {/* luống hoa */}
+      {Array.from({ length: 14 }, (_, i) => (
+        <W
+          key={`f${i}`}
+          x={30 + (i % 7) * 2.6}
+          y={84 + Math.floor(i / 7) * 4}
+          s={1.4}
+        >
+          {FLOWERS[i % FLOWERS.length]}
+        </W>
+      ))}
+      {Array.from({ length: 12 }, (_, i) => (
+        <W
+          key={`g${i}`}
+          x={56 + (i % 6) * 2.8}
+          y={84 + Math.floor(i / 6) * 4}
+          s={1.4}
+        >
+          {FLOWERS[(i + 2) % FLOWERS.length]}
+        </W>
+      ))}
+
+      {/* ruộng lúa, ruộng rau trang trí cho dày như nông trại thật */}
+      {Array.from({ length: 18 }, (_, i) => (
+        <W key={`w${i}`} x={58.5 + (i % 6) * 2.4} y={13 + Math.floor(i / 6) * 3.6} s={1.7}>
+          🌾
+        </W>
+      ))}
+      {Array.from({ length: 12 }, (_, i) => (
+        <W key={`c${i}`} x={73 + (i % 4) * 2.6} y={62 + Math.floor(i / 4) * 3.4} s={1.5}>
+          {i % 2 ? "🥬" : "🌽"}
+        </W>
+      ))}
+      <W x={27} y={60} s={2.8} c="w-idle">
+        🧑‍🌾
+      </W>
+      <W x={70} y={24} s={2}>
+        🧺
+      </W>
+      {dog && (
+        <W x={71} y={58} s={2.3} c="w-wag">
+          🐕
+        </W>
       )}
     </div>
   );
@@ -717,16 +878,37 @@ function PlotTile({
       aria-label={`Ô ${plot.index + 1}: ${crop ? crop.name : "trống"}, ${label}${plot.bug ? ", có sâu" : ""}`}
     >
       <span className="plot-soil" aria-hidden />
-      {/* mọi thứ "đứng" trên ô (cây, nhãn, sâu…) nằm trong plot-stand: xoay ngược lại để dựng thẳng */}
-      <span className="plot-stand" aria-hidden>
-        {glyph && (
+      {/* một thửa là cả khóm cây: mỗi cây dựng đứng ở một điểm trên mặt ruộng */}
+      {glyph &&
+        plantSpots(plot.crop).map(([x, y], i) => (
           <span
-            className={`plot-crop${st === "growing" && live.progress < 0.67 ? " is-sprout" : ""}`}
-            style={{ "--grow": growScale } as CSSProperties}
+            key={i}
+            className="plot-stand"
+            style={
+              {
+                left: `${50 + x * 100}%`,
+                top: `${50 + y * 100}%`,
+              } as CSSProperties
+            }
+            aria-hidden
           >
-            {glyph}
+            <span
+              className={`plot-crop${st === "growing" && live.progress < 0.67 ? " is-sprout" : ""}${
+                plantSpots(plot.crop).length > 4 ? " is-small" : ""
+              }`}
+              style={
+                {
+                  "--grow": growScale,
+                  animationDelay: `${(i % 3) * -0.4}s`,
+                } as CSSProperties
+              }
+            >
+              {glyph}
+            </span>
           </span>
-        )}
+        ))}
+      {/* nhãn, sâu, nước… dựng ở giữa thửa */}
+      <span className="plot-stand" aria-hidden>
         {st === "ripe" && <span className="plot-sparkle">✨</span>}
         {plot.bug && st === "growing" && <span className="plot-bug">🐛</span>}
         {plot.waters > 0 && st === "growing" && (
@@ -752,6 +934,17 @@ function PlotTile({
       </span>
     </button>
   );
+}
+
+/** Vị trí các cây trên một thửa (lệch khỏi tâm, theo tỉ lệ cạnh thửa). Cây to (dưa, bí) 2×2, còn lại 3×3. */
+const SPOTS_3: [number, number][] = [-0.28, 0, 0.28].flatMap((y) =>
+  [-0.28, 0, 0.28].map((x) => [x, y] as [number, number]),
+);
+const SPOTS_2: [number, number][] = [-0.2, 0.2].flatMap((y) =>
+  [-0.2, 0.2].map((x) => [x, y] as [number, number]),
+);
+function plantSpots(crop?: string): [number, number][] {
+  return crop === "dua_hau" || crop === "bi_ngo" ? SPOTS_2 : SPOTS_3;
 }
 
 /** Nút gợi ý nổi trên ô khi rê chuột: việc sẽ xảy ra khi bấm. */

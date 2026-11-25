@@ -391,8 +391,8 @@ const RULES: Record<GameKind, string[]> = {
     "Vào bàn là mang toàn bộ xu trong ví thành chip. Hết ván chip còn lại tự về ví.",
     "Mỗi lượt có 20 giây đặt chip vào 6 con: Bầu, Cua, Tôm, Cá, Gà, Nai. Cái bấm Lắc sớm được.",
     "Con nào ra k mặt thì người cược ăn k lần tiền cược; con không ra thì cái ăn.",
-    "Cái xoay vòng theo thứ tự vào phòng. Cái không đủ trả là cháy túi: vay ngân hàng phần thiếu và mất cái ngay.",
-    "Hết xu thì bấm Vay ngân hàng 500 (thành nợ trong ví).",
+    "Cái xoay vòng theo thứ tự vào phòng. Cái không đủ trả là cháy túi: số chip còn lại chia cho người thắng theo tỉ lệ, rồi mất cái.",
+    "Không vay được trong ván. Hết xu thì ngồi xem, hoặc ra Nông trại kiếm thêm.",
   ],
 };
 

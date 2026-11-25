@@ -103,29 +103,29 @@ func TestBauCuaBustRotationAndEnd(t *testing.T) {
 	if b.dealer() != 3 {
 		t.Fatalf("dealer should be C: %d", b.dealer())
 	}
-	// B cược nai 100 ra 3 mặt: C phải trả 300, chỉ có 200 → cháy túi, nợ 100
+	// B cược nai 100 ra 3 mặt: C phải trả 300, chỉ có 200 → cháy túi, đền hết 200, không sinh nợ
 	must(t, bet(g, ps[1], "nai", 100))
 	must(t, g.Act(ps[2], "roll", nil, bcNow))
-	if b.Chips[3] != 0 || b.Loans[3] != 100 || b.Busts[3] != 1 || b.Chips[2] != 1300 {
-		t.Fatalf("bust: chips %v loans %v busts %v", b.Chips, b.Loans, b.Busts)
+	if b.Chips[3] != 0 || b.Loans[3] != 0 || b.Busts[3] != 1 || b.Chips[2] != 1200 || b.LastBustAmount != 100 {
+		t.Fatalf("bust: chips %v loans %v busts %v short %d", b.Chips, b.Loans, b.Busts, b.LastBustAmount)
 	}
 	g.Tick(bcNow.Add(time.Hour)) // C là cái cuối: hết vòng
 	if g.Status() != Ended || !strings.Contains(g.Result(), "Hết vòng cái") {
 		t.Fatalf("end: %s %s", g.Status(), g.Result())
 	}
-	if s := g.StakeOf(3); s.Chips != 0 || s.Loans != 100 {
+	if s := g.StakeOf(3); s.Chips != 0 || s.Loans != 0 {
 		t.Fatalf("stake C: %+v", s)
 	}
 }
 
 func TestBauCuaLoanFinishAndAbort(t *testing.T) {
 	g, b, ps := newBauCua(t, 3)
-	if err := g.Act(ps[1], "loan", nil, bcNow); err == nil {
-		t.Fatal("loan while rich")
-	}
+	// không còn vay trong ván, kể cả khi hết chip
 	b.Chips[3] = 5
-	must(t, g.Act(ps[2], "loan", nil, bcNow))
-	if b.Chips[3] != 505 || b.Loans[3] != 500 {
+	if err := g.Act(ps[2], "loan", nil, bcNow); err == nil {
+		t.Fatal("in-game loan should be gone")
+	}
+	if b.Chips[3] != 5 || b.Loans[3] != 0 {
 		t.Fatalf("loan: %v %v", b.Chips, b.Loans)
 	}
 	must(t, bet(g, ps[1], "ga", 100))
@@ -138,7 +138,7 @@ func TestBauCuaLoanFinishAndAbort(t *testing.T) {
 	// xoá tin giữa lượt: cược đang mở vẫn nằm trong chip của người cược
 	g.Abort("Tin ván đã bị xoá.")
 	st := g.Settle()
-	if g.Status() != Ended || len(st) != 3 || st[1].Chips != 1000 || st[2].Loans != 500 {
+	if g.Status() != Ended || len(st) != 3 || st[1].Chips != 1000 || st[2].Loans != 0 {
 		t.Fatalf("abort settle: %s %+v", g.Status(), st)
 	}
 }

@@ -152,7 +152,7 @@ function Farm() {
       setToast({ text, tone });
       window.setTimeout(
         () => setToast((t) => (t?.text === text ? null : t)),
-        tone === "level" ? 3600 : 2600,
+        tone === "level" ? 4000 : 3500,
       );
     },
     [],
@@ -176,12 +176,23 @@ function Farm() {
       api
         .getFarm()
         .then((f) => {
-          setMine(f);
-          setError(null);
+          // chỉ xoá lỗi "không tải được" của lần mở đầu; lỗi của một hành động (vd. thiếu thức ăn)
+          // phải giữ lại cho người ta đọc, không bị lần tải lại ngay sau đó xoá mất
+          setMine((prev) => {
+            if (!prev) setError(null);
+            return f;
+          });
         })
         .catch((err) => setError(errMsg(err))),
     [api],
   );
+
+  // thông báo lỗi tự ẩn sau 5 giây (bấm vào để ẩn ngay)
+  useEffect(() => {
+    if (!error) return;
+    const t = window.setTimeout(() => setError(null), 5000);
+    return () => window.clearTimeout(t);
+  }, [error]);
 
   useEffect(() => {
     void loadMine();

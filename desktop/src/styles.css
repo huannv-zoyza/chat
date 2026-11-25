@@ -15131,10 +15131,7 @@ button.villager:focus-visible .villager-name {
   height: 12%;
 }
 .farm-world::after {
-  left: 71%;
-  top: 58%;
-  width: 12%;
-  height: 11%;
+  display: none;
 }
 .g-pond {
   left: 84%;

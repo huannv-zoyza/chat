@@ -779,11 +779,6 @@ function WorldDecor({ dog }: { dog: boolean }) {
           🌾
         </W>
       ))}
-      {Array.from({ length: 12 }, (_, i) => (
-        <W key={`c${i}`} x={73 + (i % 4) * 2.6} y={62 + Math.floor(i / 4) * 3.4} s={1.5}>
-          {i % 2 ? "🥬" : "🌽"}
-        </W>
-      ))}
       <W x={27} y={60} s={2.8} c="w-idle">
         🧑‍🌾
       </W>
@@ -791,7 +786,7 @@ function WorldDecor({ dog }: { dog: boolean }) {
         🧺
       </W>
       {dog && (
-        <W x={71} y={58} s={2.3} c="w-wag">
+        <W x={77} y={72} s={2.3} c="w-wag">
           🐕
         </W>
       )}

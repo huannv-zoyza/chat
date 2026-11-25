@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"chat/database"
 	"chat/model"
@@ -79,9 +80,9 @@ func TestWalletFlow(t *testing.T) {
 	}
 
 	w, _ = st.TakeLoan(ctx, u.ID)
-	check(w, 500, 500)
+	check(w, 300, 360)
 	w, _ = st.RepayDebt(ctx, u.ID)
-	check(w, 0, 0)
+	check(w, 0, 60)
 	if _, err := st.RepayDebt(ctx, u.ID); !errors.Is(err, store.ErrNothingToRepay) {
 		t.Fatalf("repay without debt: %v", err)
 	}
@@ -102,19 +103,19 @@ func TestWalletFlow(t *testing.T) {
 	if err != nil || len(ws) != 1 {
 		t.Fatalf("payout: %v %v", err, ws)
 	}
-	check(ws[0], 1500, 500)
+	check(ws[0], 1500, 560)
 	ws, _ = st.PayOut(ctx, m.ID, "cashout", 0, pay, "ended", []byte(`{}`))
 	if len(ws) != 0 {
 		t.Fatalf("second payout changed wallets: %v", ws)
 	}
 	w, _ = st.GetWallet(ctx, u.ID)
-	check(w, 1500, 500)
+	check(w, 1500, 560)
 	if rows, _ := st.GamesNeedingCashout(ctx, "baucua"); len(rows) != 0 {
 		t.Fatalf("paid game still needs cashout: %v", rows)
 	}
 
 	rich, debtors, err := st.WalletBoard(ctx, ch.ID)
-	if err != nil || len(rich) != 1 || len(debtors) != 1 || debtors[0].Debt != 500 {
+	if err != nil || len(rich) != 1 || len(debtors) != 1 || debtors[0].Debt != 560 {
 		t.Fatalf("board: %v %v %v", err, rich, debtors)
 	}
 }
@@ -239,10 +240,119 @@ func TestTransferBlockedWhileInDebt(t *testing.T) {
 	if _, _, _, err := st.TransferCoins(ctx, u1.ID, u2.ID, 10, ""); !errors.Is(err, store.ErrTransferInDebt) {
 		t.Fatalf("expected ErrTransferInDebt, got %v", err)
 	}
-	if _, err := st.RepayDebt(ctx, u1.ID); err != nil {
+	// vay 300 nhưng nợ 360: bạn gửi thêm xu mới trả hết được
+	if _, _, _, err := st.TransferCoins(ctx, u2.ID, u1.ID, 100, ""); err != nil {
 		t.Fatal(err)
+	}
+	if w, err := st.RepayDebt(ctx, u1.ID); err != nil || w.Debt != 0 {
+		t.Fatalf("repay: %v %+v", err, w)
 	}
 	if _, _, _, err := st.TransferCoins(ctx, u1.ID, u2.ID, 10, ""); err != nil {
 		t.Fatalf("transfer after repaying: %v", err)
+	}
+}
+
+// Vay: chỉ khi hết nợ và dưới 100 xu, +300 / nợ 360, 3 ngày một lần.
+func TestLoanRulesAndCooldown(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	now := time.Date(2026, 11, 20, 3, 0, 0, 0, time.UTC)
+	st.SetClock(func() time.Time { return now })
+	u, _ := st.CreateUser(ctx, "poor", "poor@x.vn", "h", "Poor")
+	friend, _ := st.CreateUser(ctx, "rich", "rich@x.vn", "h", "Rich")
+
+	if _, err := st.TakeLoan(ctx, u.ID); !errors.Is(err, store.ErrLoanNotAllowed) {
+		t.Fatalf("loan with 1000 xu: %v", err)
+	}
+	st.TransferCoins(ctx, u.ID, friend.ID, 950, "")
+	if at, _ := st.LoanAvailableAt(ctx, u.ID); at != nil {
+		t.Fatalf("never borrowed but must wait until %v", at)
+	}
+	w, err := st.TakeLoan(ctx, u.ID)
+	if err != nil || w.Balance != 350 || w.Debt != 360 {
+		t.Fatalf("loan: %v %+v", err, w)
+	}
+	// còn nợ: không vay tiếp được (kể cả khi đã tiêu hết)
+	st.TransferCoins(ctx, friend.ID, u.ID, 10, "")
+	if _, err := st.TakeLoan(ctx, u.ID); !errors.Is(err, store.ErrLoanInDebt) {
+		t.Fatalf("loan while in debt: %v", err)
+	}
+	// trả hết nợ, tiêu cho dưới 100: vẫn phải chờ 72h kể từ lần vay trước
+	st.TransferCoins(ctx, friend.ID, u.ID, 100, "")
+	if w, _ := st.RepayDebt(ctx, u.ID); w.Debt != 0 || w.Balance != 100 {
+		t.Fatalf("after repay: %+v", w)
+	}
+	// số dư 100 là chưa dưới 100
+	if _, err := st.TakeLoan(ctx, u.ID); !errors.Is(err, store.ErrLoanNotAllowed) {
+		t.Fatalf("loan at 100: %v", err)
+	}
+	// hết nợ nên chuyển xu được: đẩy số dư xuống 50
+	if _, _, _, err := st.TransferCoins(ctx, u.ID, friend.ID, 50, ""); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(71 * time.Hour)
+	_, err = st.TakeLoan(ctx, u.ID)
+	var cd *store.LoanCooldownError
+	if !errors.Is(err, store.ErrLoanCooldown) || !errors.As(err, &cd) {
+		t.Fatalf("loan during cooldown: %v", err)
+	}
+	want := time.Date(2026, 11, 23, 3, 0, 0, 0, time.UTC)
+	if !cd.Until.Equal(want) {
+		t.Fatalf("cooldown until %v, want %v", cd.Until, want)
+	}
+	if at, _ := st.LoanAvailableAt(ctx, u.ID); at == nil || !at.Equal(want) {
+		t.Fatalf("LoanAvailableAt = %v", at)
+	}
+	now = now.Add(time.Hour)
+	if at, _ := st.LoanAvailableAt(ctx, u.ID); at != nil {
+		t.Fatalf("cooldown over but LoanAvailableAt = %v", at)
+	}
+	if w, err := st.TakeLoan(ctx, u.ID); err != nil || w.Balance != 350 || w.Debt != 360 {
+		t.Fatalf("loan after cooldown: %v %+v", err, w)
+	}
+}
+
+// Điểm danh liên tục: thưởng tăng theo chuỗi, đứt thì về 1; đang nợ thì nửa thưởng trả nợ.
+func TestDailyStreakAndAutoRepay(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	u, _ := st.CreateUser(ctx, "daily", "daily@x.vn", "h", "Daily")
+	day := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	bal := int64(store.WalletStart)
+	for i, want := range []int64{100, 120, 140, 160, 180, 200, 300, 100, 120} {
+		today := day.AddDate(0, 0, i).Format("2006-01-02")
+		w, err := st.ClaimDaily(ctx, u.ID, today)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bal += want
+		if w.Balance != bal || w.Streak != i+1 || w.StreakOn(today) != i+1 {
+			t.Fatalf("day %d: %+v, want balance %d", i+1, w, bal)
+		}
+	}
+	// hôm sau vẫn thấy chuỗi (chưa điểm danh), bỏ một ngày thì đứt
+	w, _ := st.GetWallet(ctx, u.ID)
+	if w.StreakOn("2026-11-10") != 9 || w.StreakOn("2026-11-11") != 0 {
+		t.Fatalf("streak view: %d %d", w.StreakOn("2026-11-10"), w.StreakOn("2026-11-11"))
+	}
+	w, _ = st.ClaimDaily(ctx, u.ID, "2026-11-11")
+	if w.Streak != 1 || w.Balance != bal+100 {
+		t.Fatalf("broken streak: %+v", w)
+	}
+	bal += 100
+
+	// đang nợ: điểm danh 120 xu thì 60 tự trả nợ
+	v, _ := st.CreateUser(ctx, "debtor2", "d2@x.vn", "h", "D2")
+	st.TransferCoins(ctx, v.ID, u.ID, 950, "")
+	st.TakeLoan(ctx, v.ID) // 350 / 360
+	st.ClaimDaily(ctx, v.ID, "2026-11-11")
+	w, _ = st.ClaimDaily(ctx, v.ID, "2026-11-12") // ngày 2: 120
+	// ngày 1: +100, trả 50 -> 400/310; ngày 2: +120, trả 60 -> 460/250
+	if w.Balance != 460 || w.Debt != 250 {
+		t.Fatalf("auto repay: %+v", w)
+	}
+	items, _, _ := st.ListWalletTransactions(ctx, v.ID, "auto_repay", 0, 10)
+	if len(items) != 2 || items[0].Amount != -60 || items[0].DebtDelta != -60 {
+		t.Fatalf("auto_repay rows: %+v", items)
 	}
 }

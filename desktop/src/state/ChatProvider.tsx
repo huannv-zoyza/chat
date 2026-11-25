@@ -36,6 +36,7 @@ import { playCoinSound, playMentionSound, playMessageSound, playThrowSound } fro
 import { channelLabel, dmPeerId, isDM } from "../lib/channel";
 import { e2ee } from "../lib/e2ee";
 import { load, save } from "../lib/storage";
+import { farmEvents } from "../lib/farm";
 import {
   type Action,
   type ChatState,
@@ -614,6 +615,7 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       }),
       sock.on("watchparty.state", (ev) => dispatch({ type: "watchParty.set", state: ev.state })),
       sock.on("watchparty.error", (ev) => dispatch({ type: "notice", text: ev.message })),
+      sock.on("farm.updated", (ev) => farmEvents.emit(ev.log)),
       sock.on("nickname.updated", (ev) =>
         dispatch({ type: "nickname.set", channelId: ev.channel_id, userId: ev.user_id, nickname: ev.nickname }),
       ),

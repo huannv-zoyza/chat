@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"strings"
 	"time"
 	"unicode"
@@ -20,12 +21,23 @@ var (
 )
 
 type Store struct {
-	db *sql.DB
+	db   *sql.DB
+	now  func() time.Time // đồng hồ (test thay được bằng SetClock)
+	rand func() float64   // số ngẫu nhiên [0,1) cho sâu / chó (test thay được bằng SetRand)
 }
 
 func New(db *sql.DB) *Store {
-	return &Store{db: db}
+	return &Store{db: db, now: time.Now, rand: rand.Float64}
 }
+
+// Now: giờ hiện tại theo đồng hồ của store.
+func (s *Store) Now() time.Time { return s.now() }
+
+// SetClock thay đồng hồ (chỉ dùng trong test, gọi trước khi có request).
+func (s *Store) SetClock(now func() time.Time) { s.now = now }
+
+// SetRand thay nguồn ngẫu nhiên [0,1) (chỉ dùng trong test).
+func (s *Store) SetRand(r func() float64) { s.rand = r }
 
 func isUniqueViolation(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed")

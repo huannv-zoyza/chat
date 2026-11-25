@@ -1,0 +1,8 @@
+DROP TABLE IF EXISTS farm_log;
+DROP TABLE IF EXISTS farm_claims;
+DROP TABLE IF EXISTS farm_visits;
+DROP TABLE IF EXISTS farm_counters;
+DROP TABLE IF EXISTS farm_crop_acts;
+DROP TABLE IF EXISTS farm_plots;
+DROP TABLE IF EXISTS farms;
+ALTER TABLE wallets DROP COLUMN streak;

@@ -80,7 +80,17 @@ export type MessageLinkInfo = {
 
 export type GameKind = "station" | "werewolf" | "spy" | "caro" | "rps" | "chess" | "xiangqi" | "baucua";
 
-export type Wallet = { balance: number; debt: number; can_claim: boolean; can_loan: boolean; in_tables: number };
+export type Wallet = {
+  balance: number;
+  debt: number;
+  can_claim: boolean;
+  can_loan: boolean;
+  in_tables: number;
+  /** Số ngày điểm danh liên tục (0: đã đứt chuỗi). */
+  streak?: number;
+  /** Lúc vay lại được (đang trong 3 ngày chờ), null nếu không phải chờ. */
+  loan_available_at?: string | null;
+};
 export type WalletTransaction = {
   id: number;
   user_id: number;
@@ -95,6 +105,9 @@ export type WalletTransaction = {
 };
 export type BoardEntry = { user: PublicUser; balance: number; debt: number };
 export type WalletBoard = { rich: BoardEntry[]; debtors: BoardEntry[] };
+
+/** Nông trại: xem specs/FARM_SPEC.md. */
+export type { FarmView, Neighbor, LeaderRow } from "./farm";
 
 /** Bot tích hợp của kênh. outgoing_url / signing_secret chỉ chủ kênh thấy. */
 export type Integration = {
@@ -566,6 +579,24 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     nicknames: (channelId: number) => request<Record<string, string>>("GET", `/api/channels/${channelId}/nicknames`),
     setNickname: (channelId: number, userId: number, nickname: string) =>
       request<void>("PUT", `/api/channels/${channelId}/nicknames/${userId}`, { nickname }),
+    getFarm: () => request<import("./farm").FarmView>("GET", "/api/farm"),
+    visitFarm: (userId: number) => request<import("./farm").FarmView>("GET", `/api/farm/users/${userId}`),
+    farmNeighbors: () => request<import("./farm").Neighbor[]>("GET", "/api/farm/neighbors"),
+    farmLeaderboard: () => request<import("./farm").LeaderRow[]>("GET", "/api/farm/leaderboard"),
+    farmPlant: (plot: number, crop: string) =>
+      request<import("./farm").FarmView>("POST", "/api/farm/plant", { plot, crop }),
+    farmHarvest: (plot: number | "all") =>
+      request<import("./farm").FarmView>("POST", "/api/farm/harvest", plot === "all" ? { all: true } : { plot }),
+    farmClear: (plot: number) => request<import("./farm").FarmView>("POST", "/api/farm/clear", { plot }),
+    farmWater: (userId: number, plot: number) =>
+      request<import("./farm").FarmView>("POST", "/api/farm/water", { user_id: userId, plot }),
+    farmBug: (userId: number, plot: number) =>
+      request<import("./farm").FarmView>("POST", "/api/farm/bug", { user_id: userId, plot }),
+    farmSteal: (userId: number, plot: number) =>
+      request<import("./farm").FarmView>("POST", "/api/farm/steal", { user_id: userId, plot }),
+    farmBuyPlot: () => request<import("./farm").FarmView>("POST", "/api/farm/buy-plot"),
+    farmBuyDog: () => request<import("./farm").FarmView>("POST", "/api/farm/buy-dog"),
+    farmClaim: (questId: string) => request<import("./farm").FarmView>("POST", `/api/farm/quests/${questId}/claim`),
     listIntegrations: (channelId: number) => request<Integration[]>("GET", `/api/channels/${channelId}/integrations`),
     createIntegration: (channelId: number, name: string, outgoingUrl: string) =>
       request<Integration>("POST", `/api/channels/${channelId}/integrations`, { name, outgoing_url: outgoingUrl }),

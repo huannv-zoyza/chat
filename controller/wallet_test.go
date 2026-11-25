@@ -2,16 +2,34 @@ package controller_test
 
 import (
 	"context"
+	"sync"
 	"testing"
+	"time"
 )
 
 type walletView struct {
-	Balance  int64 `json:"balance"`
-	Debt     int64 `json:"debt"`
-	CanClaim bool  `json:"can_claim"`
-	CanLoan  bool  `json:"can_loan"`
-	InTables int64 `json:"in_tables"`
+	Balance         int64   `json:"balance"`
+	Debt            int64   `json:"debt"`
+	CanClaim        bool    `json:"can_claim"`
+	CanLoan         bool    `json:"can_loan"`
+	InTables        int64   `json:"in_tables"`
+	LoanAvailableAt *string `json:"loan_available_at"`
+	Streak          int     `json:"streak"`
 }
+
+// testClock: đồng hồ điều khiển được cho store (dùng chung cho request song song).
+type testClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func (e *env) clock(start time.Time) *testClock {
+	c := &testClock{now: start}
+	e.st.SetClock(func() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.now })
+	return c
+}
+
+func (c *testClock) advance(d time.Duration) { c.mu.Lock(); c.now = c.now.Add(d); c.mu.Unlock() }
 
 func (e *env) wallet(token string) walletView {
 	e.t.Helper()
@@ -26,7 +44,8 @@ func TestWalletAPI(t *testing.T) {
 	e := newEnv(t)
 	alice := e.register("alice", "Alice")
 	bob := e.register("bob", "Bob")
-	if w := e.wallet(alice.Token); w.Balance != 1000 || w.Debt != 0 || !w.CanClaim || w.CanLoan {
+	if w := e.wallet(alice.Token); w.Balance != 1000 || w.Debt != 0 || !w.CanClaim || w.CanLoan ||
+		w.Streak != 0 || w.LoanAvailableAt != nil {
 		t.Fatalf("new wallet: %+v", w)
 	}
 	wa := e.dial(alice.Token)
@@ -39,6 +58,9 @@ func TestWalletAPI(t *testing.T) {
 	}
 	if code := e.do("POST", "/api/wallet/claim", alice.Token, nil, nil); code != 409 {
 		t.Fatalf("claim twice: %d", code)
+	}
+	if w := e.wallet(alice.Token); w.Streak != 1 || w.CanClaim {
+		t.Fatalf("after claim: %+v", w)
 	}
 	if code := e.do("POST", "/api/wallet/loan", alice.Token, nil, nil); code != 400 {
 		t.Fatalf("loan while rich: %d", code)
@@ -56,6 +78,57 @@ func TestWalletAPI(t *testing.T) {
 	if code := e.do("GET", "/api/channels/"+itoa(ch.ID)+"/wallet-board", alice.Token, nil, &board); code != 200 ||
 		len(board.Rich) != 1 || board.Debtors == nil {
 		t.Fatalf("board: %d %+v", code, board)
+	}
+}
+
+func TestWalletLoanRulesAPI(t *testing.T) {
+	e := newEnv(t)
+	clk := e.clock(time.Date(2026, 11, 20, 3, 0, 0, 0, time.UTC)) // 10:00 ngày 20/11 giờ VN
+	alice := e.register("alice", "Alice")
+	bob := e.register("bob", "Bob")
+	e.do("POST", "/api/wallet/transfer", alice.Token, map[string]any{"to_user_id": bob.User.ID, "amount": 950}, nil)
+	if w := e.wallet(alice.Token); !w.CanLoan || w.LoanAvailableAt != nil {
+		t.Fatalf("poor wallet: %+v", w)
+	}
+	var w walletView
+	if code := e.do("POST", "/api/wallet/loan", alice.Token, nil, &w); code != 200 || w.Balance != 350 || w.Debt != 360 ||
+		w.CanLoan || w.LoanAvailableAt == nil || *w.LoanAvailableAt != "2026-11-23T03:00:00Z" {
+		t.Fatalf("loan: %d %+v", code, w)
+	}
+	var errResp struct{ Error string }
+	if code := e.do("POST", "/api/wallet/loan", alice.Token, nil, &errResp); code != 400 ||
+		errResp.Error != "Bạn còn nợ, trả hết rồi mới vay tiếp được." {
+		t.Fatalf("loan in debt: %d %q", code, errResp.Error)
+	}
+	e.do("POST", "/api/wallet/transfer", bob.Token, map[string]any{"to_user_id": alice.User.ID, "amount": 100}, nil)
+	e.do("POST", "/api/wallet/repay", alice.Token, nil, nil) // 90 / 0
+	clk.advance(48 * time.Hour)
+	if code := e.do("POST", "/api/wallet/loan", alice.Token, nil, &errResp); code != 400 ||
+		errResp.Error != "Mỗi 3 ngày chỉ vay được một lần. Vay lại được lúc 10:00 ngày 23/11." {
+		t.Fatalf("loan in cooldown: %d %q", code, errResp.Error)
+	}
+	clk.advance(24 * time.Hour)
+	if w := e.wallet(alice.Token); !w.CanLoan || w.LoanAvailableAt != nil {
+		t.Fatalf("after cooldown: %+v", w)
+	}
+	if code := e.do("POST", "/api/wallet/loan", alice.Token, nil, &w); code != 200 || w.Balance != 390 || w.Debt != 360 {
+		t.Fatalf("loan after cooldown: %d %+v", code, w)
+	}
+
+	// điểm danh hai ngày liền: 100 rồi 120, đang nợ nên nửa số đó trả nợ
+	if code := e.do("POST", "/api/wallet/claim", alice.Token, nil, &w); code != 200 || w.Balance != 440 || w.Debt != 310 || w.Streak != 1 {
+		t.Fatalf("claim day 1: %d %+v", code, w)
+	}
+	clk.advance(24 * time.Hour)
+	if w := e.wallet(alice.Token); w.Streak != 1 || !w.CanClaim {
+		t.Fatalf("next day before claim: %+v", w)
+	}
+	if code := e.do("POST", "/api/wallet/claim", alice.Token, nil, &w); code != 200 || w.Balance != 500 || w.Debt != 250 || w.Streak != 2 {
+		t.Fatalf("claim day 2: %d %+v", code, w)
+	}
+	clk.advance(48 * time.Hour)
+	if w := e.wallet(alice.Token); w.Streak != 0 {
+		t.Fatalf("broken streak: %+v", w)
 	}
 }
 

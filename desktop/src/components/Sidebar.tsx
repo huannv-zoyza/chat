@@ -7,6 +7,7 @@ import { Avatar, Icon } from "./ui";
 import { ChannelSigil } from "./ChannelDialogs";
 import { channelTitle, dmPeerId, isDM } from "../lib/channel";
 import { useGroupCall } from "../lib/groupcall";
+import { FarmSidebarCard } from "./Farm";
 
 const STATUS_LABEL: Record<SocketStatus, string> = {
   idle: "Đang kết nối",
@@ -193,6 +194,7 @@ export function Sidebar({
         )}
       </div>
 
+      <FarmSidebarCard />
       <div className="sidebar-tools">
         <WalletButton onOpen={onOpenWallet} />
         <button

@@ -50,6 +50,7 @@ export type ServerEvent =
   | { type: "game.updated"; channel_id: number; message_id: number; game: GameView }
   | { type: "game.spectators"; channel_id: number; message_id: number; count: number; spectators: SpectatorInfo[] }
   | { type: "watchparty.state"; state: WatchPartyState }
+  | { type: "farm.updated"; log: import("./farm").FarmLog }
   | { type: "watchparty.error"; channel_id: number; message: string }
   | { type: "game.map"; message_id: number; map: StationMap }
   | { type: "game.frame"; message_id: number; frame: StFrame }

@@ -18,8 +18,8 @@ import (
 // Ví xu ảo.
 //
 //	GET  /api/wallet                     số dư, nợ, nhận được hôm nay chưa, vay được không, xu đang trên bàn
-//	POST /api/wallet/claim               nhận 100 xu mỗi ngày (giờ VN)
-//	POST /api/wallet/loan                vay ngân hàng 500 xu khi còn dưới 100
+//	POST /api/wallet/claim               điểm danh mỗi ngày (giờ VN), thưởng theo chuỗi ngày liên tục
+//	POST /api/wallet/loan                vay ngân hàng 300 xu (nợ 360) khi hết nợ, còn dưới 100, 3 ngày một lần
 //	POST /api/wallet/repay               trả nợ bằng số dư
 //	GET  /api/channels/{id}/wallet-board đại gia và con nợ của kênh
 //
@@ -30,11 +30,13 @@ var vnZone = time.FixedZone("ICT", 7*3600)
 func vnToday(now time.Time) string { return now.In(vnZone).Format("2006-01-02") }
 
 type walletResp struct {
-	Balance  int64 `json:"balance"`
-	Debt     int64 `json:"debt"`
-	CanClaim bool  `json:"can_claim"`
-	CanLoan  bool  `json:"can_loan"`
-	InTables int64 `json:"in_tables"`
+	Balance         int64   `json:"balance"`
+	Debt            int64   `json:"debt"`
+	CanClaim        bool    `json:"can_claim"`
+	CanLoan         bool    `json:"can_loan"`
+	InTables        int64   `json:"in_tables"`
+	LoanAvailableAt *string `json:"loan_available_at"` // còn phải chờ mới vay lại được; null nếu không
+	Streak          int     `json:"streak"`            // số ngày điểm danh liên tục (0 nếu đã đứt)
 }
 
 type walletUpdatedEvent struct {
@@ -48,13 +50,24 @@ func (a *API) pushWallet(w store.Wallet) {
 }
 
 func (a *API) walletResponse(w store.Wallet) walletResp {
-	return walletResp{
+	today := vnToday(a.store.Now())
+	resp := walletResp{
 		Balance:  w.Balance,
 		Debt:     w.Debt,
-		CanClaim: w.LastClaim != vnToday(time.Now()),
-		CanLoan:  w.Balance < store.LoanBelow,
+		CanClaim: w.LastClaim != today,
 		InTables: a.chipsOnTables(w.UserID),
+		Streak:   w.StreakOn(today),
 	}
+	until, err := a.store.LoanAvailableAt(context.Background(), w.UserID)
+	if err != nil {
+		log.Printf("loan available at %d: %v", w.UserID, err)
+	}
+	if until != nil {
+		s := until.UTC().Format(time.RFC3339)
+		resp.LoanAvailableAt = &s
+	}
+	resp.CanLoan = w.Balance < store.LoanBelow && w.Debt == 0 && until == nil && err == nil
+	return resp
 }
 
 func (a *API) getWallet(w http.ResponseWriter, r *http.Request) {
@@ -69,11 +82,17 @@ func (a *API) getWallet(w http.ResponseWriter, r *http.Request) {
 func (a *API) walletAction(fn func(r *http.Request, userID int64) (store.Wallet, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		wal, err := fn(r, currentUser(r).ID)
+		var cooldown *store.LoanCooldownError
 		switch {
 		case errors.Is(err, store.ErrAlreadyClaimed):
 			writeError(w, http.StatusConflict, "Hôm nay bạn nhận rồi, mai quay lại nhé.")
 		case errors.Is(err, store.ErrLoanNotAllowed):
 			writeError(w, http.StatusBadRequest, "Chỉ vay được khi còn dưới 100 xu.")
+		case errors.Is(err, store.ErrLoanInDebt):
+			writeError(w, http.StatusBadRequest, "Bạn còn nợ, trả hết rồi mới vay tiếp được.")
+		case errors.As(err, &cooldown):
+			writeError(w, http.StatusBadRequest, "Mỗi 3 ngày chỉ vay được một lần. Vay lại được lúc "+
+				cooldown.Until.In(vnZone).Format("15:04")+" ngày "+cooldown.Until.In(vnZone).Format("02/01")+".")
 		case errors.Is(err, store.ErrNothingToRepay):
 			writeError(w, http.StatusBadRequest, "Bạn không có nợ.")
 		case err != nil:

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"chat/model"
 )
@@ -17,15 +18,21 @@ import (
 // mỗi lần là một transaction ghi cả ví lẫn trạng thái ván.
 
 const (
-	WalletStart = 1000
-	DailyAmount = 100
-	LoanAmount  = 500
-	LoanBelow   = 100 // chỉ được vay khi số dư dưới mức này
+	WalletStart  = 1000
+	LoanAmount   = 300            // mỗi lần vay nhận 300 xu
+	LoanDebt     = 360            // ... và nợ 360 (lãi 20%)
+	LoanBelow    = 100            // chỉ được vay khi số dư dưới mức này
+	LoanCooldown = 72 * time.Hour // mỗi 3 ngày vay một lần
 )
+
+// StreakRewards: thưởng điểm danh theo ngày thứ mấy trong chuỗi liên tục (vòng 7 ngày).
+var StreakRewards = []int64{100, 120, 140, 160, 180, 200, 300}
 
 var (
 	ErrAlreadyClaimed      = errors.New("already claimed today")
 	ErrLoanNotAllowed      = errors.New("loan not allowed")
+	ErrLoanInDebt          = errors.New("loan not allowed while in debt")
+	ErrLoanCooldown        = errors.New("loan cooldown")
 	ErrNothingToRepay      = errors.New("nothing to repay")
 	ErrInsufficientBalance = errors.New("insufficient balance")
 	ErrInvalidAmount       = errors.New("invalid amount")
@@ -35,11 +42,37 @@ var (
 	ErrBetAlreadyLocked    = errors.New("bet already locked")
 )
 
+// LoanCooldownError: vừa vay chưa đủ 3 ngày; Until là lúc vay lại được. errors.Is(err, ErrLoanCooldown) đúng.
+type LoanCooldownError struct{ Until time.Time }
+
+func (e *LoanCooldownError) Error() string {
+	return "loan cooldown until " + e.Until.Format(time.RFC3339)
+}
+func (e *LoanCooldownError) Is(target error) bool { return target == ErrLoanCooldown }
+
 type Wallet struct {
 	UserID    int64  `json:"-"`
 	Balance   int64  `json:"balance"`
 	Debt      int64  `json:"debt"`
 	LastClaim string `json:"-"`
+	Streak    int    `json:"-"` // chuỗi điểm danh tính tới LastClaim
+}
+
+// StreakOn: số ngày điểm danh liên tục tính tới hôm nay (today "YYYY-MM-DD" giờ VN), 0 nếu đã đứt.
+func (w Wallet) StreakOn(today string) int {
+	if w.LastClaim != "" && (w.LastClaim == today || w.LastClaim == prevDay(today)) {
+		return w.Streak
+	}
+	return 0
+}
+
+// prevDay: ngày liền trước của "YYYY-MM-DD" (chuỗi rỗng nếu sai định dạng).
+func prevDay(day string) string {
+	t, err := time.Parse("2006-01-02", day)
+	if err != nil {
+		return ""
+	}
+	return t.AddDate(0, 0, -1).Format("2006-01-02")
 }
 
 // Payout: số chip trả về ví và nợ phát sinh trong ván của một người.
@@ -64,8 +97,8 @@ func loadWallet(ctx context.Context, q execQuerier, userID int64) (Wallet, error
 	}
 	w := Wallet{UserID: userID}
 	var last sql.NullString
-	err := q.QueryRowContext(ctx, `SELECT balance, debt, last_claim FROM wallets WHERE user_id = ?`, userID).
-		Scan(&w.Balance, &w.Debt, &last)
+	err := q.QueryRowContext(ctx, `SELECT balance, debt, last_claim, streak FROM wallets WHERE user_id = ?`, userID).
+		Scan(&w.Balance, &w.Debt, &last, &w.Streak)
 	w.LastClaim = last.String
 	return w, err
 }
@@ -96,36 +129,126 @@ func (s *Store) walletTx(ctx context.Context, userID int64, fn func(tx *sql.Tx, 
 }
 
 func addTx(ctx context.Context, tx *sql.Tx, userID int64, kind string, amount, debt int64) error {
+	return addTxNote(ctx, tx, userID, kind, amount, debt, "")
+}
+
+// addTxNote đổi ví userID (amount vào số dư, debt vào nợ) và ghi một dòng sổ giao dịch kèm ghi chú.
+func addTxNote(ctx context.Context, tx *sql.Tx, userID int64, kind string, amount, debt int64, note string) error {
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE wallets SET balance = balance + ?, debt = debt + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`,
 		amount, debt, userID); err != nil {
 		return err
 	}
 	_, err := tx.ExecContext(ctx,
-		`INSERT INTO wallet_tx (user_id, kind, amount, debt_delta) VALUES (?, ?, ?, ?)`, userID, kind, amount, debt)
+		`INSERT INTO wallet_tx (user_id, kind, amount, debt_delta, note) VALUES (?, ?, ?, ?, ?)`,
+		userID, kind, amount, debt, note)
 	return err
 }
 
-// ClaimDaily: nhận DailyAmount xu, mỗi ngày (today = "YYYY-MM-DD" giờ VN) một lần.
+// earn cộng amount xu kiếm được (nông trại, điểm danh) vào ví userID. Đang nợ thì một nửa số đó
+// (không quá số nợ) chuyển ngay sang trả nợ, ghi thêm dòng "auto_repay". Trả về số đã trừ nợ.
+func earn(ctx context.Context, tx *sql.Tx, userID int64, kind string, amount int64, note string) (int64, error) {
+	if amount <= 0 {
+		return 0, nil
+	}
+	w, err := loadWallet(ctx, tx, userID)
+	if err != nil {
+		return 0, err
+	}
+	if err := addTxNote(ctx, tx, userID, kind, amount, 0, note); err != nil {
+		return 0, err
+	}
+	repay := min(w.Debt, amount/2)
+	if repay <= 0 {
+		return 0, nil
+	}
+	return repay, addTxNote(ctx, tx, userID, "auto_repay", -repay, -repay, "Tự trừ nợ 50% tiền kiếm được")
+}
+
+// spend trừ amount xu khỏi ví userID; không đủ thì ErrInsufficientBalance (không đụng ràng buộc CHECK).
+func spend(ctx context.Context, tx *sql.Tx, userID int64, kind string, amount int64, note string) error {
+	w, err := loadWallet(ctx, tx, userID)
+	if err != nil {
+		return err
+	}
+	if w.Balance < amount {
+		return ErrInsufficientBalance
+	}
+	return addTxNote(ctx, tx, userID, kind, -amount, 0, note)
+}
+
+// ClaimDaily: điểm danh mỗi ngày (today = "YYYY-MM-DD" giờ VN) một lần. Hôm qua cũng điểm danh thì
+// chuỗi +1, không thì bắt đầu lại từ 1; thưởng theo StreakRewards (qua earn: đang nợ thì tự trừ nợ).
 func (s *Store) ClaimDaily(ctx context.Context, userID int64, today string) (Wallet, error) {
 	return s.walletTx(ctx, userID, func(tx *sql.Tx, w Wallet) error {
 		if w.LastClaim == today {
 			return ErrAlreadyClaimed
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE wallets SET last_claim = ? WHERE user_id = ?`, today, userID); err != nil {
+		streak := 1
+		if w.LastClaim != "" && w.LastClaim == prevDay(today) {
+			streak = w.Streak + 1
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE wallets SET last_claim = ?, streak = ? WHERE user_id = ?`,
+			today, streak, userID); err != nil {
 			return err
 		}
-		return addTx(ctx, tx, userID, "daily", DailyAmount, 0)
+		reward := StreakRewards[(streak-1)%len(StreakRewards)]
+		_, err := earn(ctx, tx, userID, "daily", reward, fmt.Sprintf("Điểm danh ngày %d liên tục", streak))
+		return err
 	})
 }
 
-// TakeLoan: vay LoanAmount xu (thành nợ), chỉ khi số dư dưới LoanBelow.
+// lastLoanAt: lúc vay ngân hàng gần nhất (ok=false nếu chưa vay bao giờ).
+func lastLoanAt(ctx context.Context, q execQuerier, userID int64) (time.Time, bool, error) {
+	var t time.Time
+	err := q.QueryRowContext(ctx,
+		`SELECT created_at FROM wallet_tx WHERE user_id = ? AND kind = 'loan' ORDER BY id DESC LIMIT 1`, userID).Scan(&t)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, false, nil
+	}
+	return t, err == nil, err
+}
+
+// LoanAvailableAt: lúc vay lại được nếu còn đang trong thời gian chờ, nil nếu không phải chờ.
+func (s *Store) LoanAvailableAt(ctx context.Context, userID int64) (*time.Time, error) {
+	last, ok, err := lastLoanAt(ctx, s.db, userID)
+	if err != nil || !ok {
+		return nil, err
+	}
+	until := last.Add(LoanCooldown)
+	if !s.now().Before(until) {
+		return nil, nil
+	}
+	return &until, nil
+}
+
+// TakeLoan: vay LoanAmount xu (nợ LoanDebt), chỉ khi hết nợ, số dư dưới LoanBelow và đã qua
+// LoanCooldown kể từ lần vay trước.
 func (s *Store) TakeLoan(ctx context.Context, userID int64) (Wallet, error) {
+	now := s.now()
 	return s.walletTx(ctx, userID, func(tx *sql.Tx, w Wallet) error {
+		if w.Debt > 0 {
+			return ErrLoanInDebt
+		}
 		if w.Balance >= LoanBelow {
 			return ErrLoanNotAllowed
 		}
-		return addTx(ctx, tx, userID, "loan", LoanAmount, LoanAmount)
+		last, ok, err := lastLoanAt(ctx, tx, userID)
+		if err != nil {
+			return err
+		}
+		if until := last.Add(LoanCooldown); ok && now.Before(until) {
+			return &LoanCooldownError{Until: until}
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE wallets SET balance = balance + ?, debt = debt + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`,
+			LoanAmount, LoanDebt, userID); err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx,
+			`INSERT INTO wallet_tx (user_id, kind, amount, debt_delta, note, created_at) VALUES (?, 'loan', ?, ?, ?, ?)`,
+			userID, LoanAmount, LoanDebt, "Vay ngân hàng", DBTime(now))
+		return err
 	})
 }
 

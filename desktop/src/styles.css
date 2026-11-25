@@ -12451,12 +12451,13 @@ button.villager:focus-visible .villager-name {
 /* Ảnh đang tải lên: mờ đi, thanh tiến trình dưới đáy */
 .image-thumb.is-uploading {
   position: relative;
+  width: fit-content;
 }
 .image-thumb.is-uploading img {
   opacity: 0.55;
   filter: saturate(0.7);
 }
-.upload-bar {
+.thumb-progress {
   position: absolute;
   left: 0.5rem;
   right: 0.5rem;
@@ -12466,7 +12467,7 @@ button.villager:focus-visible .villager-name {
   border-radius: 999px;
   background: rgb(0 0 0 / 0.35);
 }
-.upload-bar > span {
+.thumb-progress > span {
   display: block;
   height: 100%;
   border-radius: inherit;
@@ -12728,5 +12729,1594 @@ button.villager:focus-visible .villager-name {
   }
   .integ-entry .btn {
     width: 100%;
+  }
+}
+
+/* =========================================================
+   Nông trại
+   Thế giới riêng: trời đổi theo giờ, đồi cỏ, ô đất xới luống.
+   Bảng bên phải dùng màu của app (theo sáng/tối) để chữ dễ đọc.
+   ========================================================= */
+
+.farm {
+  --leaf: #3f8f3a;
+  --leaf-2: #5bb043;
+  --gold: #f5b324;
+  --gold-2: #ffd45c;
+  --soil: #8b5a34;
+  --soil-2: #7a4c2b;
+  --soil-lip: #5d391e;
+  --grass: #86c95a;
+  --grass-2: #6db347;
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: var(--canvas);
+  color: var(--text);
+  animation: farm-in 0.28s var(--ease);
+}
+@keyframes farm-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+}
+.farm-scroll {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ---- thanh trên cùng ---- */
+.farm-hud {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.6rem 1.1rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.farm-back,
+.farm-home {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 2.25rem;
+  padding: 0 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--raised);
+  color: var(--text);
+  font-weight: 600;
+  transition:
+    background-color 0.15s var(--ease),
+    transform 0.12s var(--ease);
+}
+.farm-back:hover,
+.farm-home:hover {
+  background: var(--line-soft);
+}
+.farm-back:active,
+.farm-home:active {
+  transform: scale(0.96);
+}
+.farm-owner {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+.farm-owner-name {
+  margin: 0;
+  overflow: hidden;
+  font-weight: 700;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.farm-level {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.15rem;
+  font-size: var(--step--2);
+}
+.farm-level-badge {
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  background: var(--leaf);
+  color: #fff;
+  font-weight: 700;
+}
+.farm-level-bar {
+  position: relative;
+  width: 7.5rem;
+  height: 0.45rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--line-soft);
+}
+.farm-level-bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--gold), var(--gold-2));
+  transition: width 0.6s var(--ease);
+}
+.farm-level-xp {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.farm-hud-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+.farm-coins {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 2.25rem;
+  padding: 0 0.85rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--gold) 18%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.farm-coins small {
+  margin-left: 0.25rem;
+  color: var(--warn);
+  font-weight: 600;
+}
+
+/* ---- thân: đồng ruộng + bảng ---- */
+.farm-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 22.5rem;
+  min-height: 0;
+}
+
+/* ---- cánh đồng ---- */
+.farm-field {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 0;
+  overflow: hidden auto;
+  padding: clamp(8.5rem, 27vh, 15rem) 1.5rem 2rem;
+  isolation: isolate;
+}
+.farm-scene {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.farm-sky {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, #7cc6ff 0%, #bfe6ff 30%, #e8f7ff 40%);
+  transition: background 1s;
+}
+.tod-dawn .farm-sky {
+  background: linear-gradient(180deg, #f4a28c 0%, #ffd0a6 28%, #fff1dc 40%);
+}
+.tod-dusk .farm-sky {
+  background: linear-gradient(180deg, #4a4f9e 0%, #d9806e 26%, #ffc58a 40%);
+}
+.tod-night .farm-sky {
+  background: linear-gradient(180deg, #08112a 0%, #172552 30%, #233463 40%);
+}
+.farm-sun {
+  position: absolute;
+  top: 6%;
+  right: 14%;
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff7c2 0%, #ffd84a 55%, #ffb81f 100%);
+  box-shadow:
+    0 0 40px 12px rgb(255 214 74 / 0.55),
+    0 0 120px 40px rgb(255 214 74 / 0.25);
+  animation: sun-glow 6s ease-in-out infinite alternate;
+}
+.farm-sun.is-dawn,
+.farm-sun.is-dusk {
+  top: 22%;
+  background: radial-gradient(circle, #ffe2b0 0%, #ff9d4d 60%, #f0663a 100%);
+  box-shadow: 0 0 60px 20px rgb(255 140 70 / 0.45);
+}
+.farm-sun.is-dawn {
+  right: auto;
+  left: 14%;
+}
+@keyframes sun-glow {
+  to {
+    box-shadow:
+      0 0 50px 18px rgb(255 214 74 / 0.6),
+      0 0 140px 50px rgb(255 214 74 / 0.28);
+  }
+}
+.farm-moon {
+  position: absolute;
+  top: 7%;
+  right: 16%;
+  width: 3.4rem;
+  height: 3.4rem;
+  border-radius: 50%;
+  box-shadow: inset -0.9rem 0.3rem 0 0 #f4f0d2;
+  transform: rotate(-20deg);
+  filter: drop-shadow(0 0 14px rgb(244 240 210 / 0.55));
+}
+.farm-stars {
+  position: absolute;
+  inset: 0 0 60% 0;
+  background-image:
+    radial-gradient(1.5px 1.5px at 12% 18%, #fff 60%, transparent),
+    radial-gradient(1px 1px at 28% 32%, #fff 60%, transparent),
+    radial-gradient(1.5px 1.5px at 44% 12%, #fff 60%, transparent),
+    radial-gradient(1px 1px at 58% 26%, #fff 60%, transparent),
+    radial-gradient(1.5px 1.5px at 71% 40%, #fff 60%, transparent),
+    radial-gradient(1px 1px at 88% 22%, #fff 60%, transparent),
+    radial-gradient(1px 1px at 6% 46%, #fff 60%, transparent),
+    radial-gradient(1.5px 1.5px at 36% 50%, #fff 60%, transparent);
+  animation: farm-twinkle 4s ease-in-out infinite alternate;
+}
+@keyframes farm-twinkle {
+  to {
+    opacity: 0.55;
+  }
+}
+.farm-cloud {
+  position: absolute;
+  width: 7rem;
+  height: 2.2rem;
+  border-radius: 999px;
+  background: #fff;
+  opacity: 0.9;
+  filter: blur(0.3px);
+  animation: cloud-drift 90s linear infinite;
+}
+.farm-cloud::before,
+.farm-cloud::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  background: inherit;
+}
+.farm-cloud::before {
+  left: 1.2rem;
+  bottom: 0.9rem;
+  width: 2.8rem;
+  height: 2.8rem;
+}
+.farm-cloud::after {
+  left: 3.2rem;
+  bottom: 0.6rem;
+  width: 2.2rem;
+  height: 2.2rem;
+}
+.farm-cloud.c1 {
+  top: 9%;
+  left: -10%;
+}
+.farm-cloud.c2 {
+  top: 17%;
+  left: -10%;
+  transform: scale(0.7);
+  animation-duration: 130s;
+  animation-delay: -60s;
+}
+.farm-cloud.c3 {
+  top: 5%;
+  left: -10%;
+  transform: scale(0.85);
+  animation-duration: 110s;
+  animation-delay: -30s;
+}
+.tod-night .farm-cloud {
+  opacity: 0.12;
+}
+.tod-dusk .farm-cloud {
+  background: #ffd9c4;
+}
+@keyframes cloud-drift {
+  to {
+    left: 110%;
+  }
+}
+.farm-hill {
+  position: absolute;
+  border-radius: 50%;
+}
+.farm-hill.h1 {
+  left: -15%;
+  top: 30%;
+  width: 70%;
+  height: 40%;
+  background: #a3d873;
+}
+.farm-hill.h2 {
+  right: -20%;
+  top: 27%;
+  width: 75%;
+  height: 46%;
+  background: #8fcd62;
+}
+.farm-barn {
+  position: absolute;
+  top: calc(31% - 3.6rem);
+  left: 9%;
+  width: 4.4rem;
+  height: 3.6rem;
+}
+.farm-barn::before {
+  content: "";
+  position: absolute;
+  inset: 1.4rem 0 0;
+  border-radius: 3px 3px 0 0;
+  background: #c8553d;
+  box-shadow: inset 0 -0.3rem 0 rgb(0 0 0 / 0.15);
+}
+.farm-barn-roof {
+  position: absolute;
+  inset: 0 -0.3rem auto;
+  height: 1.6rem;
+  background: #8e2f22;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+.farm-barn-door {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-left: -0.75rem;
+  background:
+    linear-gradient(45deg, transparent 45%, #fff 45% 55%, transparent 55%),
+    linear-gradient(-45deg, transparent 45%, #fff 45% 55%, transparent 55%),
+    #a13d2b;
+  border: 2px solid #fff;
+}
+.farm-tree {
+  position: absolute;
+  font-size: 2.6rem;
+  line-height: 1;
+  filter: drop-shadow(0 4px 0 rgb(0 0 0 / 0.12));
+}
+.farm-tree.t1 {
+  top: calc(30% - 2.4rem);
+  left: 24%;
+}
+.farm-tree.t2 {
+  top: calc(28% - 2.2rem);
+  right: 10%;
+  font-size: 2.2rem;
+}
+.farm-ground {
+  position: absolute;
+  inset: 38% 0 0;
+  background:
+    radial-gradient(circle at 20% 30%, rgb(255 255 255 / 0.12) 0 2px, transparent 3px) 0 0 / 46px 38px,
+    radial-gradient(circle at 70% 60%, rgb(0 0 0 / 0.06) 0 2px, transparent 3px) 0 0 / 58px 44px,
+    linear-gradient(180deg, var(--grass) 0%, var(--grass-2) 100%);
+}
+.farm-fence {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(38% - 1.3rem);
+  height: 1.6rem;
+  background:
+    linear-gradient(180deg, transparent 0.35rem, #c9935a 0.35rem 0.6rem, transparent 0.6rem 0.95rem, #c9935a 0.95rem 1.2rem, transparent 1.2rem),
+    repeating-linear-gradient(90deg, #b07a43 0 0.4rem, transparent 0.4rem 2.2rem);
+  opacity: 0.9;
+}
+.farm-dog {
+  position: absolute;
+  top: calc(38% - 1.6rem);
+  right: 7%;
+  font-size: 2.1rem;
+  line-height: 1;
+  transform-origin: 50% 100%;
+  animation: dog-wag 1.6s ease-in-out infinite;
+  filter: drop-shadow(0 3px 0 rgb(0 0 0 / 0.15));
+}
+@keyframes dog-wag {
+  50% {
+    transform: rotate(-5deg) translateY(-2px);
+  }
+}
+.tod-night .farm-hill,
+.tod-night .farm-ground,
+.tod-night .farm-fence,
+.tod-night .farm-barn,
+.tod-night .farm-tree {
+  filter: brightness(0.5) saturate(0.75);
+}
+.tod-dusk .farm-hill,
+.tod-dusk .farm-ground {
+  filter: brightness(0.85) sepia(0.15);
+}
+
+/* ---- dòng nhắc / thu hoạch tất cả ---- */
+.farm-banner {
+  display: flex;
+  justify-content: center;
+  min-height: 2.6rem;
+  margin-bottom: 1rem;
+}
+.farm-tip {
+  align-self: center;
+  padding: 0.45rem 1rem;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.82);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  color: #2f3b24;
+  font-size: var(--step--1);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.08);
+}
+.farm-tip b {
+  font-variant-numeric: tabular-nums;
+}
+.farm-harvest-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.6rem 1.25rem;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--gold-2), var(--gold));
+  color: #4a2f00;
+  font-weight: 800;
+  font-size: var(--step-0);
+  box-shadow:
+    0 4px 0 #c98a0e,
+    0 10px 24px rgb(201 138 14 / 0.4);
+  transition: transform 0.12s var(--ease);
+  animation: harvest-call 2.4s ease-in-out infinite;
+}
+.farm-harvest-all b {
+  display: grid;
+  place-items: center;
+  min-width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  background: #4a2f00;
+  color: var(--gold-2);
+  font-size: var(--step--1);
+}
+.farm-harvest-all:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 #c98a0e;
+}
+@keyframes harvest-call {
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+/* ---- lưới ô đất ---- */
+.farm-plots {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 3), minmax(0, 8.75rem));
+  gap: 1.1rem;
+  justify-content: center;
+  width: 100%;
+}
+.plot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  border-radius: 20px;
+  background: transparent;
+  color: #fff;
+  transition:
+    transform 0.16s var(--ease),
+    filter 0.16s var(--ease);
+}
+.plot-soil {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    repeating-linear-gradient(
+      180deg,
+      rgb(0 0 0 / 0) 0 0.7rem,
+      rgb(0 0 0 / 0.13) 0.7rem 0.85rem,
+      rgb(255 255 255 / 0.04) 0.85rem 0.95rem
+    ),
+    radial-gradient(120% 90% at 30% 20%, #a06a3f 0%, var(--soil) 55%, var(--soil-2) 100%);
+  box-shadow:
+    inset 0 2px 0 rgb(255 255 255 / 0.12),
+    inset 0 -6px 0 var(--soil-lip),
+    0 8px 0 -2px rgb(60 40 20 / 0.35),
+    0 14px 22px rgb(40 60 20 / 0.25);
+  transition: filter 0.3s;
+}
+.plot.is-wet .plot-soil {
+  filter: brightness(0.82) saturate(1.15);
+}
+.plot.is-withered .plot-soil {
+  filter: grayscale(0.55) brightness(0.9);
+}
+.plot.is-actionable {
+  cursor: pointer;
+}
+.plot:hover:not(:disabled) {
+  transform: translateY(-4px);
+}
+.plot:active:not(:disabled) {
+  transform: translateY(0) scale(0.97);
+}
+.plot:focus-visible {
+  outline: 3px solid var(--gold-2);
+  outline-offset: 4px;
+}
+.plot:disabled {
+  cursor: progress;
+}
+.plot-crop {
+  position: relative;
+  z-index: 1;
+  margin-top: -0.6rem;
+  font-size: 3.1rem;
+  line-height: 1;
+  transform: scale(var(--grow, 1));
+  transform-origin: 50% 100%;
+  filter: drop-shadow(0 5px 0 rgb(0 0 0 / 0.18));
+  transition: transform 0.6s var(--ease);
+}
+.plot-crop.is-sprout {
+  font-size: 2.4rem;
+  animation: sprout-sway 3s ease-in-out infinite;
+}
+@keyframes sprout-sway {
+  50% {
+    transform: rotate(-6deg) scale(var(--grow, 1));
+  }
+}
+.plot.is-ripe .plot-crop {
+  font-size: 3.6rem;
+  animation: ripe-bob 1.8s ease-in-out infinite;
+}
+.plot.is-ripe .plot-soil {
+  box-shadow:
+    inset 0 2px 0 rgb(255 255 255 / 0.12),
+    inset 0 -6px 0 var(--soil-lip),
+    0 0 0 3px var(--gold-2),
+    0 0 26px 4px rgb(255 212 92 / 0.55),
+    0 14px 22px rgb(40 60 20 / 0.25);
+}
+.plot.is-stealable .plot-soil {
+  box-shadow:
+    inset 0 -6px 0 var(--soil-lip),
+    0 0 0 3px #ff8a65,
+    0 0 26px 4px rgb(255 120 90 / 0.5);
+  animation: steal-pulse 1.4s ease-in-out infinite;
+}
+@keyframes ripe-bob {
+  50% {
+    transform: translateY(-5px) rotate(3deg);
+  }
+}
+@keyframes steal-pulse {
+  50% {
+    filter: brightness(1.12);
+  }
+}
+.plot-sparkle {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.55rem;
+  z-index: 2;
+  font-size: 1.1rem;
+  animation: sparkle 1.6s ease-in-out infinite;
+}
+@keyframes sparkle {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: scale(0.7) rotate(0);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15) rotate(20deg);
+  }
+}
+.plot-bug {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.55rem;
+  z-index: 2;
+  font-size: 1.35rem;
+  animation: bug-crawl 2.2s ease-in-out infinite;
+}
+@keyframes bug-crawl {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0);
+  }
+  25% {
+    transform: translate(-6px, 3px) rotate(-12deg);
+  }
+  50% {
+    transform: translate(-10px, 0) rotate(8deg);
+  }
+  75% {
+    transform: translate(-4px, -3px) rotate(-6deg);
+  }
+}
+.plot-drops {
+  position: absolute;
+  top: 0.45rem;
+  left: 0.55rem;
+  z-index: 2;
+  font-size: 0.75rem;
+  letter-spacing: -2px;
+}
+.plot-plus {
+  position: relative;
+  z-index: 1;
+  color: rgb(255 255 255 / 0.45);
+  font-size: 2.4rem;
+  font-weight: 300;
+  line-height: 1;
+  transition: color 0.15s;
+}
+.plot:hover .plot-plus {
+  color: rgb(255 255 255 / 0.85);
+}
+.plot-bar {
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  bottom: 2.15rem;
+  z-index: 2;
+  height: 0.32rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.3);
+}
+.plot-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #9be15d, #4fbf3a);
+  transition: width 1s linear;
+}
+.plot-meta {
+  position: absolute;
+  bottom: 0.7rem;
+  left: 50%;
+  z-index: 2;
+  max-width: calc(100% - 1rem);
+  overflow: hidden;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  background: rgb(30 18 8 / 0.5);
+  color: #fff;
+  font-size: var(--step--2);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  transform: translateX(-50%);
+}
+.plot.is-ripe .plot-meta {
+  background: var(--gold);
+  color: #4a2f00;
+}
+.plot.is-stealable .plot-meta {
+  background: #ff7a59;
+  color: #fff;
+}
+.plot-action {
+  position: absolute;
+  top: -0.9rem;
+  left: 50%;
+  z-index: 4;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: #fff;
+  color: #2f3b24;
+  font-size: var(--step--2);
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.18);
+  opacity: 0;
+  transform: translate(-50%, 4px);
+  transition:
+    opacity 0.14s var(--ease),
+    transform 0.14s var(--ease);
+  pointer-events: none;
+}
+.plot:hover .plot-action,
+.plot:focus-visible .plot-action {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+@media (hover: none) {
+  .plot-action {
+    display: none;
+  }
+}
+.plot.is-locked {
+  border: 2px dashed rgb(255 255 255 / 0.55);
+  background: rgb(255 255 255 / 0.12);
+  cursor: pointer;
+}
+.plot.is-locked:hover {
+  background: rgb(255 255 255 / 0.22);
+}
+.plot-lock {
+  font-size: 1.6rem;
+  opacity: 0.85;
+}
+.plot.is-locked .plot-meta {
+  background: rgb(30 40 20 / 0.45);
+}
+
+/* số bay lên khi thu hoạch / trộm */
+.farm-pop {
+  position: absolute;
+  top: 30%;
+  left: 50%;
+  z-index: 6;
+  color: var(--gold-2);
+  font-size: 1.25rem;
+  font-weight: 900;
+  white-space: nowrap;
+  text-shadow:
+    0 2px 0 #7a4b00,
+    0 0 10px rgb(0 0 0 / 0.35);
+  pointer-events: none;
+  animation: farm-pop 1.35s var(--ease) forwards;
+}
+.farm-pop.is-xp {
+  top: 46%;
+  color: #b9ecff;
+  font-size: 1rem;
+  text-shadow:
+    0 2px 0 #1f5a7a,
+    0 0 8px rgb(0 0 0 / 0.3);
+}
+.farm-pop.is-bad {
+  color: #ffb4a6;
+  text-shadow: 0 2px 0 #7a1f12;
+}
+.farm-plots > .farm-pop {
+  top: -2rem;
+}
+@keyframes farm-pop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 10px) scale(0.6);
+  }
+  18% {
+    opacity: 1;
+    transform: translate(-50%, -6px) scale(1.15);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -64px) scale(1);
+  }
+}
+
+/* thông báo nổi */
+.farm-toast {
+  position: absolute;
+  top: 1rem;
+  left: 50%;
+  z-index: 8;
+  max-width: min(32rem, calc(100% - 2rem));
+  padding: 0.6rem 1.1rem;
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  text-align: center;
+  box-shadow: var(--shadow);
+  transform: translateX(-50%);
+  animation: farm-toast 0.3s var(--ease);
+}
+.farm-toast.is-bad {
+  border-left: 4px solid var(--warn);
+}
+.farm-toast.is-good {
+  border-left: 4px solid var(--leaf-2);
+}
+.farm-toast.is-level {
+  border: 0;
+  background: linear-gradient(135deg, var(--gold-2), var(--gold));
+  color: #4a2f00;
+  font-weight: 800;
+}
+@keyframes farm-toast {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -10px);
+  }
+}
+.farm-loading {
+  display: grid;
+  place-items: center;
+  min-height: 12rem;
+}
+.farm-loading p {
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.85);
+  color: #2f3b24;
+  font-weight: 600;
+}
+
+/* ---- bảng bên phải ---- */
+.farm-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+}
+.farm-tabs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.2rem;
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--line);
+}
+.farm-tab {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 0.1rem;
+  padding: 0.4rem 0.1rem;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--step--2);
+  font-weight: 600;
+  transition:
+    background-color 0.15s var(--ease),
+    color 0.15s var(--ease);
+}
+.farm-tab > span:first-child {
+  font-size: 1.15rem;
+  line-height: 1.2;
+}
+.farm-tab:hover {
+  background: var(--raised);
+  color: var(--text);
+}
+.farm-tab[aria-selected="true"] {
+  background: color-mix(in srgb, var(--leaf) 14%, transparent);
+  color: var(--text);
+}
+.farm-tab-dot {
+  position: absolute;
+  top: 0.35rem;
+  right: 28%;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--warn);
+}
+.farm-tab-count {
+  position: absolute;
+  top: 0.15rem;
+  right: 18%;
+  min-width: 1.05rem;
+  height: 1.05rem;
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  background: var(--gold);
+  color: #4a2f00;
+  font-size: 0.65rem;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.05rem;
+}
+.farm-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.9rem;
+  animation: tab-panel-in 0.18s var(--ease);
+}
+.farm-section {
+  display: grid;
+  gap: 0.75rem;
+}
+.farm-h {
+  margin: 0.4rem 0 0;
+  font-size: var(--step-0);
+}
+.farm-foot {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+/* điểm danh */
+.checkin {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.8rem;
+  border-radius: 16px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--gold) 22%, var(--surface)), var(--surface));
+  border: 1px solid color-mix(in srgb, var(--gold) 40%, transparent);
+}
+.checkin-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.checkin-head small {
+  color: var(--muted);
+  font-size: var(--step--2);
+}
+.checkin-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.checkin-days li {
+  display: grid;
+  justify-items: center;
+  padding: 0.3rem 0;
+  border-radius: 10px;
+  background: var(--raised);
+  font-size: var(--step--2);
+}
+.checkin-days li span {
+  color: var(--muted);
+}
+.checkin-days li b {
+  font-variant-numeric: tabular-nums;
+}
+.checkin-days li.is-done {
+  background: color-mix(in srgb, var(--leaf) 18%, var(--raised));
+}
+.checkin-days li.is-done b::after {
+  content: " ✓";
+  color: var(--leaf-2);
+}
+.checkin-days li.is-today {
+  background: var(--gold);
+  color: #4a2f00;
+  box-shadow: 0 4px 10px rgb(245 179 36 / 0.35);
+}
+.checkin-days li.is-today span {
+  color: #6b4a00;
+}
+.checkin-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.checkin-msg {
+  font-weight: 700;
+  font-size: var(--step--1);
+}
+
+/* nhiệm vụ */
+.quest-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.quest {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  transition: border-color 0.2s;
+}
+.quest.is-done:not(.is-claimed) {
+  border-color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 10%, var(--surface));
+}
+.quest.is-claimed {
+  opacity: 0.6;
+}
+.quest-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.3rem;
+  height: 2.3rem;
+  border-radius: 12px;
+  background: var(--raised);
+  font-size: 1.2rem;
+}
+.quest-main {
+  display: grid;
+  flex: 1;
+  gap: 0.25rem;
+  min-width: 0;
+}
+.quest-main b {
+  font-size: var(--step--1);
+}
+.quest-main small {
+  color: var(--muted);
+  font-size: var(--step--2);
+  font-variant-numeric: tabular-nums;
+}
+.quest-bar {
+  height: 0.4rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--line-soft);
+}
+.quest-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--leaf-2), var(--leaf));
+  transition: width 0.5s var(--ease);
+}
+.quest.is-done .quest-bar i {
+  background: linear-gradient(90deg, var(--gold-2), var(--gold));
+}
+.quest-claimed {
+  color: var(--leaf-2);
+  font-weight: 800;
+  font-size: var(--step--1);
+}
+.quest-chest {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.8rem;
+  border: 1px dashed var(--line);
+  border-radius: 16px;
+}
+.quest-chest > div {
+  display: grid;
+  flex: 1;
+  gap: 0.25rem;
+}
+.quest-chest small {
+  color: var(--muted);
+  font-size: var(--step--2);
+}
+.quest-chest-icon {
+  font-size: 2rem;
+}
+.quest-chest.is-ready {
+  border: 1px solid var(--gold);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--gold) 22%, var(--surface)), var(--surface));
+  box-shadow: 0 6px 20px rgb(245 179 36 / 0.25);
+}
+.quest-chest.is-ready .quest-chest-icon {
+  animation: chest-wiggle 1.2s ease-in-out infinite;
+}
+@keyframes chest-wiggle {
+  0%,
+  60%,
+  100% {
+    transform: rotate(0);
+  }
+  70% {
+    transform: rotate(-12deg) scale(1.08);
+  }
+  80% {
+    transform: rotate(10deg) scale(1.08);
+  }
+  90% {
+    transform: rotate(-6deg);
+  }
+}
+.quest-dots {
+  display: flex;
+  gap: 0.25rem;
+}
+.quest-dots i {
+  width: 0.9rem;
+  height: 0.35rem;
+  border-radius: 999px;
+  background: var(--line);
+}
+.quest-dots i.is-on {
+  background: var(--gold);
+}
+
+/* hàng xóm */
+.neighbor-list,
+.farm-log,
+.farm-top {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.neighbor {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.55rem 0.6rem;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  transition:
+    background-color 0.15s var(--ease),
+    border-color 0.15s var(--ease);
+}
+.neighbor:hover {
+  background: var(--raised);
+}
+.neighbor.is-on {
+  border-color: color-mix(in srgb, var(--leaf) 45%, transparent);
+  background: color-mix(in srgb, var(--leaf) 10%, transparent);
+}
+.neighbor-main {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.neighbor-main b {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.neighbor-main small {
+  color: var(--muted);
+  font-size: var(--step--2);
+}
+.neighbor-badges {
+  display: flex;
+  gap: 0.25rem;
+}
+.nb {
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: var(--step--2);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.nb.is-steal {
+  background: color-mix(in srgb, #ff7a59 18%, transparent);
+  color: #e0583a;
+}
+.nb.is-help {
+  background: color-mix(in srgb, #3aa0e0 16%, transparent);
+  color: #2a86c4;
+}
+
+/* cửa hàng */
+.shop-card {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+.shop-card > div {
+  display: grid;
+  flex: 1;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.shop-card small {
+  color: var(--muted);
+  font-size: var(--step--2);
+  line-height: 1.45;
+}
+.shop-card .btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.shop-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 12px;
+  background: var(--raised);
+  font-size: 1.4rem;
+}
+.crop-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--step--1);
+}
+.crop-table th {
+  padding: 0.3rem 0.4rem;
+  color: var(--muted);
+  font-size: var(--step--2);
+  font-weight: 600;
+  text-align: left;
+}
+.crop-table td {
+  padding: 0.4rem;
+  border-top: 1px solid var(--line-soft);
+  font-variant-numeric: tabular-nums;
+}
+.crop-table td:nth-child(3) {
+  color: var(--leaf-2);
+  font-weight: 700;
+}
+.crop-table tr.is-locked td {
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+/* nhật ký */
+.farm-log li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.55rem 0.6rem;
+  border-radius: 12px;
+  background: var(--raised);
+  font-size: var(--step--1);
+}
+.farm-log li span {
+  display: grid;
+  gap: 0.1rem;
+}
+.farm-log li small {
+  color: var(--muted);
+  font-size: var(--step--2);
+}
+.farm-log li.is-steal {
+  background: color-mix(in srgb, #ff7a59 10%, var(--raised));
+}
+.farm-log-actor {
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+}
+
+/* xếp hạng */
+.farm-top li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 12px;
+}
+.farm-top li.is-me {
+  background: color-mix(in srgb, var(--gold) 14%, transparent);
+}
+.farm-rank {
+  width: 1.6rem;
+  text-align: center;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.farm-top-user {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+.farm-top-user b {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.farm-top-lv {
+  color: var(--leaf-2);
+  font-size: var(--step--2);
+  font-weight: 700;
+}
+.farm-top-xp {
+  min-width: 4rem;
+  color: var(--muted);
+  font-size: var(--step--2);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- chọn hạt ---- */
+.seed-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.seed-card {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 0.2rem;
+  width: 100%;
+  padding: 0.8rem 0.4rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  color: inherit;
+  text-align: center;
+  transition:
+    transform 0.14s var(--ease),
+    border-color 0.14s var(--ease),
+    box-shadow 0.14s var(--ease);
+}
+.seed-card:hover:not(:disabled) {
+  border-color: var(--leaf-2, #5bb043);
+  box-shadow: 0 8px 20px rgb(63 143 58 / 0.18);
+  transform: translateY(-3px);
+}
+.seed-card:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.seed-card:disabled {
+  cursor: not-allowed;
+}
+.seed-card.is-locked {
+  background: var(--raised);
+  opacity: 0.6;
+}
+.seed-emoji {
+  display: grid;
+  place-items: center;
+  width: 3.2rem;
+  height: 3.2rem;
+  margin-bottom: 0.2rem;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff6da, #f1dcae);
+  font-size: 1.9rem;
+}
+.seed-card b {
+  font-size: var(--step--1);
+}
+.seed-time,
+.seed-lock,
+.seed-profit {
+  color: var(--muted);
+  font-size: var(--step--2);
+}
+.seed-money {
+  display: flex;
+  gap: 0.25rem;
+  font-size: var(--step--2);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.seed-sell {
+  color: #3f8f3a;
+}
+.seed-profit {
+  color: #3f8f3a;
+}
+.seed-poor {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+.seed-all {
+  margin-top: 0.2rem;
+}
+.seed-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+/* ---- thẻ "Nông trại" ở thanh bên ---- */
+.farm-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin: 0.5rem 0.75rem 0.6rem;
+  padding: 0.6rem 0.75rem;
+  border: 0;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #2f7d32 0%, #4f9d3a 55%, #7cba3f 100%);
+  color: #fff;
+  text-align: left;
+  overflow: hidden;
+  box-shadow: 0 6px 16px rgb(47 125 50 / 0.3);
+  transition:
+    transform 0.14s var(--ease),
+    box-shadow 0.14s var(--ease);
+}
+.farm-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 30%, rgb(255 255 255 / 0.22) 50%, transparent 70%);
+  transform: translateX(-120%);
+}
+.farm-card.is-hot::after {
+  animation: farm-card-shine 2.8s ease-in-out infinite;
+}
+@keyframes farm-card-shine {
+  60%,
+  100% {
+    transform: translateX(120%);
+  }
+}
+.farm-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgb(47 125 50 / 0.38);
+}
+.farm-card:active {
+  transform: scale(0.98);
+}
+.farm-card-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 12px;
+  background: rgb(255 255 255 / 0.2);
+  font-size: 1.25rem;
+}
+.farm-card-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.farm-card-text small {
+  overflow: hidden;
+  color: rgb(255 255 255 / 0.85);
+  font-size: var(--step--2);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.farm-card-badge {
+  display: grid;
+  place-items: center;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: var(--signal);
+  color: var(--signal-ink);
+  font-size: var(--step--2);
+  font-weight: 800;
+}
+
+/* ---- điện thoại ---- */
+@media (max-width: 860px) {
+  .farm-scroll {
+    display: block;
+    overflow-y: auto;
+  }
+  .farm-hud {
+    position: sticky;
+    top: 0;
+    gap: 0.6rem;
+    padding: max(0.5rem, env(safe-area-inset-top)) 0.75rem 0.5rem;
+  }
+  .farm-back span,
+  .farm-home span {
+    display: none;
+  }
+  .farm-back,
+  .farm-home {
+    padding: 0 0.6rem;
+  }
+  .farm-level-bar {
+    width: 4.5rem;
+  }
+  .farm-level-xp {
+    display: none;
+  }
+  .farm-body {
+    display: block;
+  }
+  .farm-field {
+    min-height: 68vh;
+    overflow: visible;
+    padding: clamp(7.5rem, 22vh, 10rem) 0.9rem 1.6rem;
+  }
+  .farm-plots {
+    gap: 0.75rem;
+    grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  }
+  .plot {
+    border-radius: 16px;
+  }
+  .plot-crop {
+    font-size: 2.4rem;
+  }
+  .plot.is-ripe .plot-crop {
+    font-size: 2.8rem;
+  }
+  .plot-crop.is-sprout {
+    font-size: 1.9rem;
+  }
+  .plot-bar {
+    bottom: 1.85rem;
+  }
+  .plot-meta {
+    bottom: 0.5rem;
+  }
+  .farm-panel {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+  .farm-tabs {
+    position: sticky;
+    top: 3.4rem;
+    z-index: 4;
+    background: var(--surface);
+  }
+  .farm-panel-body {
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+  }
+  .seed-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .farm-barn {
+    left: 4%;
+    transform: scale(0.8);
+    transform-origin: bottom left;
+  }
+  .farm-tree.t1 {
+    left: 30%;
+    font-size: 2.1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .farm,
+  .farm-sun,
+  .farm-stars,
+  .farm-cloud,
+  .farm-dog,
+  .farm-harvest-all,
+  .plot-crop,
+  .plot.is-ripe .plot-crop,
+  .plot.is-stealable .plot-soil,
+  .plot-sparkle,
+  .plot-bug,
+  .quest-chest.is-ready .quest-chest-icon,
+  .farm-card.is-hot::after,
+  .farm-panel-body {
+    animation: none;
+  }
+  .farm-pop {
+    animation-duration: 0.01s;
   }
 }

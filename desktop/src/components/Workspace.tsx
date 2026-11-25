@@ -23,6 +23,7 @@ import { CallOverlay } from "./CallOverlay";
 import { GroupCallOverlay, UpdateBanner } from "./GroupCall";
 import { StationOverlay } from "./Station";
 import { VillageOverlay } from "./Village";
+import { FarmOverlay } from "./Farm";
 import { MessageLinkDialog } from "./Share";
 import { WatchPartyPlayerDock } from "./WatchParty";
 import { takePendingMessage } from "../lib/platform";
@@ -245,6 +246,7 @@ export function Workspace() {
       <GroupCallOverlay />
       <StationOverlay />
       <VillageOverlay />
+      <FarmOverlay />
       <WatchPartyPlayerDock />
       <MessageLinkDialog />
       {dialog === "reminders" && <RemindersDialog onClose={() => setDialog(null)} onJumped={openRoom} />}

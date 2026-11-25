@@ -256,7 +256,7 @@ export function LocalFiles({ files, progress }: { files: File[]; progress?: numb
   // đang tải lên: ảnh mờ đi, thanh tiến trình chạy dưới đáy ảnh
   const bar =
     progress !== undefined ? (
-      <span className="upload-bar" aria-hidden>
+      <span className="thumb-progress" aria-hidden>
         <span style={{ width: `${Math.max(4, Math.round(progress * 100))}%` }} />
       </span>
     ) : null;

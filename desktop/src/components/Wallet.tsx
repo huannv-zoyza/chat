@@ -18,7 +18,24 @@ const TX_META: Record<string, { icon: string; label: string }> = {
   bet_refund: { icon: "↩️", label: "Hoàn tiền cược" },
   bet_win: { icon: "🏆", label: "Thắng cược" },
   bet_loss: { icon: "♟️", label: "Thua cược" },
+  farm: { icon: "🌾", label: "Nông trại" },
+  auto_repay: { icon: "🧾", label: "Tự trừ nợ (50% xu kiếm được)" },
 };
+
+const STREAK_REWARD = [100, 120, 140, 160, 180, 200, 300];
+
+/** Vì sao chưa vay được: đang nợ, đang trong 3 ngày chờ, hay còn đủ xu. */
+function loanBlock(w: Wallet | null, balance: number, debt: number): string | null {
+  if (!w || w.can_loan) return null;
+  if (debt > 0) return "Trả hết nợ cũ rồi mới vay tiếp được";
+  if (w.loan_available_at) {
+    const d = new Date(w.loan_available_at);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `Vay lại được lúc ${pad(d.getHours())}:${pad(d.getMinutes())} ngày ${pad(d.getDate())}/${pad(d.getMonth() + 1)}`;
+  }
+  if (balance >= 100) return "Chỉ vay khi còn dưới 100 xu";
+  return "Chưa vay được lúc này";
+}
 
 const QUICK_TRANSFER = [50, 100, 500, 1000, 5000];
 
@@ -188,21 +205,29 @@ export function WalletDialog({ channelId, onClose }: { channelId: number | null;
             disabled={busy || !wallet?.can_claim}
             onClick={() => run(api.claimDaily)}
           >
-            {wallet?.can_claim === false ? "Mai quay lại nhé" : "Nhận 100 xu hôm nay"}
+            {wallet?.can_claim === false
+              ? "Mai quay lại nhé"
+              : `Nhận ${STREAK_REWARD[(wallet?.streak ?? 0) % 7]} xu hôm nay`}
           </button>
           <button
             type="button"
             className="btn"
             disabled={busy || !wallet?.can_loan}
             onClick={() => run(api.takeLoan)}
-            title={wallet?.can_loan ? undefined : "Chỉ vay khi còn dưới 100 xu"}
+            title={loanBlock(wallet, balance, debt) ?? "Vay 300 xu, trả 360 xu (lãi 20%)"}
           >
-            Vay 500 xu
+            Vay 300 xu
           </button>
           <button type="button" className="btn" disabled={busy || debt === 0 || balance === 0} onClick={() => run(api.repayDebt)}>
             Trả nợ
           </button>
         </div>
+        {loanBlock(wallet, balance, debt) && balance < 100 && (
+          <p className="wallet-note wallet-loan-note">
+            🏦 {loanBlock(wallet, balance, debt)}. Ra <b>Nông trại</b> trồng rau kiếm xu nhé 🌾
+          </p>
+        )}
+        {debt > 0 && <p className="wallet-note">Đang nợ: 50% số xu kiếm được từ nông trại và điểm danh sẽ tự trừ vào nợ.</p>}
         {notice && <p className="wallet-notice">{notice}</p>}
         <FormError>{error}</FormError>
 

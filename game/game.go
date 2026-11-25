@@ -251,6 +251,17 @@ func (g *Game) Act(p Player, action string, data json.RawMessage, now time.Time)
 		if err := g.begin(now); err != nil {
 			return err
 		}
+	case "setup":
+		su, ok := g.r.(lobbySetup)
+		if !ok || b.Status != Lobby {
+			return Error("Không đổi được tuỳ chọn lúc này.")
+		}
+		if p.ID != b.HostID {
+			return Error("Chỉ chủ phòng mới đổi được tuỳ chọn.")
+		}
+		if err := su.setup(data); err != nil {
+			return err
+		}
 	case "cancel":
 		if p.ID != b.HostID {
 			return Error("Chỉ chủ phòng mới huỷ được.")
@@ -281,6 +292,11 @@ func (g *Game) begin(now time.Time) error {
 		return err
 	}
 	return nil
+}
+
+// lobbySetup: trò cho chủ phòng đổi tuỳ chọn khi còn ở phòng chờ.
+type lobbySetup interface {
+	setup(data json.RawMessage) error
 }
 
 // Tick xử lý hết giờ. Trả về true nếu ván thay đổi (cần lưu và phát lại).

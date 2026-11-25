@@ -43,7 +43,13 @@ type wwOptions struct {
 	DaySeconds   int  `json:"day_seconds"`
 	NightSeconds int  `json:"night_seconds"`
 	HideRoles    bool `json:"hide_roles"` // không lộ vai người chết cho tới hết ván
+	// Cast: bộ vai chủ phòng tự chọn (số Sói, có/không các vai đặc biệt); còn lại là Dân làng.
+	// Rỗng = tự động theo số người (wwComposition).
+	Cast map[string]int `json:"cast,omitempty"`
 }
+
+// Vai chủ phòng chọn được và số tối đa mỗi vai.
+var castMax = map[string]int{roleWolf: 5, roleSeer: 1, roleGuard: 1, roleWitch: 1, roleHunter: 1}
 
 type seerCheck struct {
 	Round  int   `json:"round"`
@@ -90,6 +96,53 @@ func (w *werewolf) normalize() {
 	}
 	w.Opts.DaySeconds = min(max(w.Opts.DaySeconds, 30), 600)
 	w.Opts.NightSeconds = min(max(w.Opts.NightSeconds, 20), 180)
+	if len(w.Opts.Cast) > 0 {
+		cast := map[string]int{}
+		for role, most := range castMax {
+			if k := min(max(w.Opts.Cast[role], 0), most); k > 0 {
+				cast[role] = k
+			}
+		}
+		cast[roleWolf] = max(cast[roleWolf], 1)
+		w.Opts.Cast = cast
+	}
+}
+
+// castMin: số người ít nhất để chơi được bộ vai tự chọn (đủ chỗ cho mọi vai, Sói ít hơn phe còn lại).
+func castMin(cast map[string]int) int {
+	used := 0
+	for _, k := range cast {
+		used += k
+	}
+	return max(used, 2*cast[roleWolf]+1, 4)
+}
+
+// composition: bộ vai sẽ dùng cho n người (tự chọn hoặc tự động).
+func (w *werewolf) composition(n int) map[string]int {
+	if len(w.Opts.Cast) == 0 {
+		return wwComposition(n)
+	}
+	c := map[string]int{}
+	used := 0
+	for role, k := range w.Opts.Cast {
+		c[role] = k
+		used += k
+	}
+	if n > used {
+		c[roleVillager] = n - used
+	}
+	return c
+}
+
+// setup: chủ phòng đổi tuỳ chọn trong phòng chờ (gửi đủ bộ tuỳ chọn, thay hẳn bộ cũ).
+func (w *werewolf) setup(data json.RawMessage) error {
+	opts := wwOptions{}
+	if err := json.Unmarshal(data, &opts); err != nil {
+		return Error("Tuỳ chọn không hợp lệ.")
+	}
+	w.Opts = opts
+	w.normalize()
+	return nil
 }
 
 // composition: số người mỗi vai cho n người chơi.
@@ -127,9 +180,13 @@ func wwComposition(n int) map[string]int {
 
 func (w *werewolf) start(now time.Time) error {
 	n := len(w.Players)
+	if len(w.Opts.Cast) > 0 && n < castMin(w.Opts.Cast) {
+		return Error(fmt.Sprintf("Bộ vai này cần ít nhất %d người (Sói phải ít hơn phe Dân).", castMin(w.Opts.Cast)))
+	}
+	comp := w.composition(n)
 	var deck []string
 	for _, role := range []string{roleWolf, roleSeer, roleGuard, roleWitch, roleHunter, roleVillager} {
-		for range wwComposition(n)[role] {
+		for range comp[role] {
 			deck = append(deck, role)
 		}
 	}
@@ -139,7 +196,7 @@ func (w *werewolf) start(now time.Time) error {
 		w.Roles[p.ID] = deck[i]
 	}
 	w.Dead = map[int64]bool{}
-	w.logf("Ván bắt đầu với %d người: %s.", n, compositionText(wwComposition(n)))
+	w.logf("Ván bắt đầu với %d người: %s.", n, compositionText(comp))
 	w.startNight(now)
 	return nil
 }
@@ -519,6 +576,7 @@ type wwPublic struct {
 	Roles       map[int64]string `json:"roles"` // vai đã lộ
 	Votes       map[int64]int64  `json:"votes,omitempty"`
 	Composition map[string]int   `json:"composition"`
+	CastMin     int              `json:"cast_min,omitempty"` // bộ vai tự chọn: cần ít nhất chừng này người
 	Hunter      int64            `json:"hunter,omitempty"`
 	Opts        wwOptions        `json:"opts"`
 }
@@ -545,8 +603,14 @@ func (w *werewolf) view(viewer int64) (any, any) {
 	n := len(w.Players)
 	if w.Status == Lobby {
 		n = max(n, 4)
+		if len(w.Opts.Cast) > 0 {
+			n = max(n, castMin(w.Opts.Cast))
+		}
 	}
-	pub.Composition = wwComposition(n)
+	pub.Composition = w.composition(n)
+	if len(w.Opts.Cast) > 0 {
+		pub.CastMin = castMin(w.Opts.Cast)
+	}
 	for _, p := range w.Players {
 		if w.Dead[p.ID] {
 			pub.Dead = append(pub.Dead, p.ID)

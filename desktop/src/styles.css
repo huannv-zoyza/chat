@@ -6089,6 +6089,104 @@ button.game-player:disabled {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+/* Ma Sói: chọn bộ vai */
+.ww-cast {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+  margin: 0 0 0.6rem;
+  padding: 0;
+  border: 0;
+}
+.ww-cast legend {
+  padding: 0;
+  margin-bottom: 0.35rem;
+  font-size: var(--step--1);
+  font-weight: 600;
+}
+.ww-cast-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.35rem 0.35rem 0.35rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.ww-cast-role {
+  font-weight: 600;
+}
+.ww-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.ww-stepper b {
+  min-width: 1.6rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.ww-stepper button {
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.ww-stepper button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.ww-cast-specials {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+  gap: 0.4rem;
+}
+.ww-cast-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--step--1);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.ww-cast-chip span {
+  filter: grayscale(1);
+  opacity: 0.55;
+}
+.ww-cast-chip.is-on {
+  border-color: var(--signal);
+  background: var(--signal-soft);
+  color: var(--text);
+}
+.ww-cast-chip.is-on span {
+  filter: none;
+  opacity: 1;
+}
+.ww-cast-note {
+  margin: 0;
+  font-size: var(--step--1);
+  color: var(--muted);
+  line-height: 1.45;
+}
+.ww-cast-note b {
+  color: var(--text);
+}
+.ww-cast:disabled {
+  opacity: 0.7;
+}
+
 .game-opts {
   display: grid;
   grid-template-columns: 1fr 1fr;

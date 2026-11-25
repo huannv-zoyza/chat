@@ -3,6 +3,7 @@ package game
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 	"testing"
 	"time"
@@ -519,5 +520,39 @@ func TestSpyTimeoutsAndSpyWin(t *testing.T) {
 func TestFold(t *testing.T) {
 	if fold("Cà Phê") != "caphe" || !strings.Contains(fold("uống CA PHE sữa"), fold("Cà phê")) {
 		t.Fatal("fold")
+	}
+}
+
+func TestWerewolfCustomCast(t *testing.T) {
+	ps := players(6)
+	g, _ := New("werewolf", ps[0], json.RawMessage(`{"cast":{"wolf":2,"seer":1,"witch":1,"villager":9,"hunter":7}}`), t0)
+	w := g.r.(*werewolf)
+	if want := map[string]int{roleWolf: 2, roleSeer: 1, roleWitch: 1, roleHunter: 1}; !maps.Equal(w.Opts.Cast, want) {
+		t.Fatalf("cast not normalised: %v", w.Opts.Cast)
+	}
+	for _, p := range ps[1:4] {
+		act(t, g, p, "join", nil)
+	}
+	// 4 người, 2 Sói: Sói không ít hơn phe Dân
+	if err := tryAct(g, ps[0], "start", nil); err == nil {
+		t.Fatal("2 wolves with 4 players must not start")
+	}
+	if err := tryAct(g, ps[1], "setup", json.RawMessage(`{"cast":{"wolf":1}}`)); err == nil {
+		t.Fatal("only host changes setup")
+	}
+	act(t, g, ps[0], "setup", json.RawMessage(`{"day_seconds":60,"cast":{"wolf":1,"guard":1}}`))
+	if w.Opts.DaySeconds != 60 || !maps.Equal(w.Opts.Cast, map[string]int{roleWolf: 1, roleGuard: 1}) {
+		t.Fatalf("setup not applied: %+v", w.Opts)
+	}
+	act(t, g, ps[0], "start", nil)
+	count := map[string]int{}
+	for _, r := range w.Roles {
+		count[r]++
+	}
+	if !maps.Equal(count, map[string]int{roleWolf: 1, roleGuard: 1, roleVillager: 2}) {
+		t.Fatalf("roles dealt: %v", count)
+	}
+	if err := tryAct(g, ps[0], "setup", json.RawMessage(`{}`)); err == nil {
+		t.Fatal("setup after start")
 	}
 }

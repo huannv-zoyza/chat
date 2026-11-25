@@ -10,9 +10,22 @@ export type WerewolfState = {
   roles: Record<string, WerewolfRole>;
   votes?: Record<string, number>;
   composition: Partial<Record<WerewolfRole, number>>;
+  /** Bộ vai tự chọn: cần ít nhất chừng này người. */
+  cast_min?: number;
   hunter?: number;
-  opts: { day_seconds: number; night_seconds: number; hide_roles: boolean };
+  opts: { day_seconds: number; night_seconds: number; hide_roles: boolean; cast?: WerewolfCast };
 };
+
+/** Bộ vai chủ phòng tự chọn (số Sói, có/không các vai đặc biệt); còn lại là Dân làng. */
+export type WerewolfCast = Partial<Record<Exclude<WerewolfRole, "villager">, number>>;
+
+export const CAST_SPECIALS = ["seer", "guard", "witch", "hunter"] as const;
+
+/** Số người ít nhất cho một bộ vai: đủ chỗ cho mọi vai và Sói ít hơn phe còn lại (khớp castMin bên Go). */
+export function castMin(cast: WerewolfCast): number {
+  const used = Object.values(cast).reduce((a, k) => a + (k ?? 0), 0);
+  return Math.max(used, 2 * (cast.wolf ?? 1) + 1, 4);
+}
 
 export type WerewolfMe = {
   role?: WerewolfRole;

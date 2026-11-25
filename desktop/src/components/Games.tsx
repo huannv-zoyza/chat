@@ -16,6 +16,9 @@ import {
   type WerewolfMe,
   type WerewolfRole,
   type WerewolfState,
+  CAST_SPECIALS,
+  castMin,
+  type WerewolfCast,
 } from "../lib/games";
 import { ChessPiece } from "./ChessPiece";
 import { XiangqiGame } from "./XiangqiGame";
@@ -380,11 +383,118 @@ const RULES: Record<GameKind, string[]> = {
   ],
 };
 
+/** Chọn bộ vai Ma Sói: tự động theo số người, hoặc tự chọn số Sói và các vai đặc biệt. */
+function CastPicker({
+  cast,
+  onChange,
+  disabled,
+  players,
+}: {
+  cast: WerewolfCast | null;
+  onChange: (c: WerewolfCast | null) => void;
+  disabled?: boolean;
+  players?: number;
+}) {
+  const custom = cast ?? { wolf: 1, seer: 1 };
+  const wolves = custom.wolf ?? 1;
+  const need = castMin(custom);
+  const villagers = players !== undefined ? Math.max(0, players - Object.values(custom).reduce((a, k) => a + (k ?? 0), 0)) : null;
+  return (
+    <fieldset className="ww-cast" disabled={disabled}>
+      <legend>Nhân vật</legend>
+      <div className="game-groups" role="radiogroup" aria-label="Cách chia vai">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={!cast}
+          className={`game-group${!cast ? " is-active" : ""}`}
+          onClick={() => onChange(null)}
+        >
+          Tự động
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={!!cast}
+          className={`game-group${cast ? " is-active" : ""}`}
+          onClick={() => onChange(custom)}
+        >
+          Tự chọn
+        </button>
+      </div>
+      {!cast ? (
+        <p className="ww-cast-note">
+          Máy chia theo số người: 4–5 người có 1 Sói, 6–8 người 2 Sói, 9–12 người 3 Sói. Luôn có Tiên tri; thêm Bảo vệ
+          từ 5 người, Phù thủy từ 7, Thợ săn từ 9.
+        </p>
+      ) : (
+        <>
+          <div className="ww-cast-row">
+            <span className="ww-cast-role">
+              <span aria-hidden>{ROLE_INFO.wolf.icon}</span> Sói
+            </span>
+            <span className="ww-stepper">
+              <button
+                type="button"
+                aria-label="Bớt một Sói"
+                disabled={wolves <= 1}
+                onClick={() => onChange({ ...custom, wolf: wolves - 1 })}
+              >
+                −
+              </button>
+              <b aria-live="polite">{wolves}</b>
+              <button
+                type="button"
+                aria-label="Thêm một Sói"
+                disabled={wolves >= 5}
+                onClick={() => onChange({ ...custom, wolf: wolves + 1 })}
+              >
+                +
+              </button>
+            </span>
+          </div>
+          <div className="ww-cast-specials" role="group" aria-label="Vai đặc biệt">
+            {CAST_SPECIALS.map((r) => {
+              const on = !!custom[r];
+              return (
+                <button
+                  key={r}
+                  type="button"
+                  aria-pressed={on}
+                  className={`ww-cast-chip${on ? " is-on" : ""}`}
+                  title={ROLE_INFO[r].desc}
+                  onClick={() => onChange({ ...custom, [r]: on ? 0 : 1 })}
+                >
+                  <span aria-hidden>{ROLE_INFO[r].icon}</span>
+                  {ROLE_INFO[r].name}
+                </button>
+              );
+            })}
+          </div>
+          <p className="ww-cast-note">
+            Cần ít nhất <b>{need} người</b>
+            {villagers !== null
+              ? villagers > 0
+                ? ` · ${villagers} người còn lại là Dân làng`
+                : players !== undefined && players < need
+                ? ` · còn thiếu ${need - players} người`
+                : ""
+              : " · ai không có vai thì là Dân làng"}
+            .
+          </p>
+        </>
+      )}
+    </fieldset>
+  );
+}
+
 function Lobby({ ctx }: { ctx: Ctx }) {
   const { game, meId, isPlayer, busy, act } = ctx;
   const isHost = game.host_id === meId;
   const full = game.players.length >= game.max_players;
-  const enough = game.players.length >= game.min_players;
+  // Ma Sói với bộ vai tự chọn có thể cần nhiều người hơn mức tối thiểu của trò.
+  const minPlayers = Math.max(game.min_players, (game.kind === "werewolf" && (game.state as WerewolfState)?.cast_min) || 0);
+  const enough = game.players.length >= minPlayers;
   const auto = game.min_players === game.max_players; // trò 2 người: đủ người là vào luôn
 
   let setup: ReactNode = null;
@@ -399,15 +509,25 @@ function Lobby({ ctx }: { ctx: Ctx }) {
   } else if (game.kind === "werewolf") {
     const s = game.state as WerewolfState;
     setup = (
-      <p className="game-setup">
-        Vai ({Math.max(game.players.length, 4)} người):{" "}
-        {(Object.keys(ROLE_INFO) as WerewolfRole[])
-          .filter((r) => s.composition[r])
-          .map((r) => `${ROLE_INFO[r].icon} ${s.composition[r]} ${ROLE_INFO[r].name}`)
-          .join(" · ")}
-        <br />
-        Ngày {s.opts.day_seconds}s · đêm {s.opts.night_seconds}s{s.opts.hide_roles ? " · giấu vai người chết" : ""}
-      </p>
+      <>
+        {isHost && (
+          <CastPicker
+            cast={s.opts.cast && Object.keys(s.opts.cast).length ? s.opts.cast : null}
+            players={game.players.length}
+            disabled={busy}
+            onChange={(cast) => act("setup", { ...s.opts, cast: cast ?? undefined })}
+          />
+        )}
+        <p className="game-setup">
+          Vai ({Math.max(game.players.length, 4, s.cast_min ?? 0)} người):{" "}
+          {(Object.keys(ROLE_INFO) as WerewolfRole[])
+            .filter((r) => s.composition[r])
+            .map((r) => `${ROLE_INFO[r].icon} ${s.composition[r]} ${ROLE_INFO[r].name}`)
+            .join(" · ")}
+          <br />
+          Ngày {s.opts.day_seconds}s · đêm {s.opts.night_seconds}s{s.opts.hide_roles ? " · giấu vai người chết" : ""}
+        </p>
+      </>
     );
   } else if (game.kind === "spy") {
     setup = <p className="game-setup">{(game.state as SpyState).spy_count} gián điệp trong phòng</p>;
@@ -465,7 +585,7 @@ function Lobby({ ctx }: { ctx: Ctx }) {
             <PlayerTile ctx={ctx} id={p.id} sub={p.id === game.host_id ? "chủ phòng" : undefined} />
           </li>
         ))}
-        {Array.from({ length: Math.max(0, game.min_players - game.players.length) }, (_, i) => (
+        {Array.from({ length: Math.max(0, minPlayers - game.players.length) }, (_, i) => (
           <li key={`e${i}`} className="game-seat" aria-hidden>
             Chỗ trống
           </li>
@@ -496,9 +616,9 @@ function Lobby({ ctx }: { ctx: Ctx }) {
             className="btn btn-primary"
             disabled={busy || !enough}
             onClick={() => act("start")}
-            title={enough ? undefined : `Cần ít nhất ${game.min_players} người`}
+            title={enough ? undefined : `Cần ít nhất ${minPlayers} người`}
           >
-            {enough ? "Bắt đầu" : `Cần thêm ${game.min_players - game.players.length} người`}
+            {enough ? "Bắt đầu" : `Cần thêm ${minPlayers - game.players.length} người`}
           </button>
         )}
         {!full && (
@@ -1603,6 +1723,7 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
   const [day, setDay] = useState(120);
   const [night, setNight] = useState(45);
   const [hideRoles, setHideRoles] = useState(false);
+  const [cast, setCast] = useState<WerewolfCast | null>(null);
   const [spies, setSpies] = useState(0);
   const [blockRule, setBlockRule] = useState(true);
   const [chessMinutes, setChessMinutes] = useState(3);
@@ -1631,7 +1752,7 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
     setError(null);
     const options: Record<GameKind, Record<string, unknown>> = {
       station: st,
-      werewolf: { day_seconds: day, night_seconds: night, hide_roles: hideRoles },
+      werewolf: { day_seconds: day, night_seconds: night, hide_roles: hideRoles, cast: cast ?? undefined },
       spy: { spies },
       caro: { free_style: !blockRule },
       chess: { turn_minutes: chessMinutes, first: chessFirst },
@@ -1768,6 +1889,7 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
           )}
           {kind === "werewolf" && (
             <>
+              <CastPicker cast={cast} onChange={setCast} />
               <div className="game-opts">
                 <label className="field">
                   <span>Ban ngày (thảo luận + bỏ phiếu)</span>

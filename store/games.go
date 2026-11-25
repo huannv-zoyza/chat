@@ -23,6 +23,26 @@ type GameRow struct {
 	State     []byte
 }
 
+// insertGameMessage chèn tin nhắn chứa game và bản ghi games vào trong transaction đang mở.
+func insertGameMessage(ctx context.Context, tx *sql.Tx, channelID, userID int64, embed model.Embed, status string, state []byte) (int64, error) {
+	e, err := json.Marshal(embed)
+	if err != nil {
+		return 0, err
+	}
+	var id int64
+	if err := tx.QueryRowContext(ctx,
+		`INSERT INTO messages (channel_id, user_id, content, embed) VALUES (?, ?, '', ?) RETURNING id`,
+		channelID, userID, string(e)).Scan(&id); err != nil {
+		return 0, err
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO games (message_id, kind, status, state) VALUES (?, ?, ?, ?)`,
+		id, embed.ID, status, string(state)); err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
 // CreateGame tạo tin nhắn chứa ván chơi (embed type "game") cùng trạng thái ban đầu.
 func (s *Store) CreateGame(ctx context.Context, channelID, userID int64, embed model.Embed, status string, state []byte) (model.Message, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -30,19 +50,8 @@ func (s *Store) CreateGame(ctx context.Context, channelID, userID int64, embed m
 		return model.Message{}, err
 	}
 	defer tx.Rollback()
-	e, err := json.Marshal(embed)
+	id, err := insertGameMessage(ctx, tx, channelID, userID, embed, status, state)
 	if err != nil {
-		return model.Message{}, err
-	}
-	var id int64
-	if err := tx.QueryRowContext(ctx,
-		`INSERT INTO messages (channel_id, user_id, content, embed) VALUES (?, ?, '', ?) RETURNING id`,
-		channelID, userID, string(e)).Scan(&id); err != nil {
-		return model.Message{}, err
-	}
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO games (message_id, kind, status, state) VALUES (?, ?, ?, ?)`,
-		id, embed.ID, status, string(state)); err != nil {
 		return model.Message{}, err
 	}
 	if err := tx.Commit(); err != nil {

@@ -66,7 +66,7 @@ export function WalletDialog({ channelId, onClose }: { channelId: number | null;
             <span aria-hidden>🪙</span> {formatXu(balance)} <small>xu</small>
           </p>
           {debt > 0 && <p className="wallet-debt">Đang nợ ngân hàng {formatXu(debt)} xu</p>}
-          {!!wallet?.in_tables && <p className="wallet-note">{formatXu(wallet.in_tables)} xu đang trên bàn bầu cua</p>}
+          {!!wallet?.in_tables && <p className="wallet-note">{formatXu(wallet.in_tables)} xu đang cược trên bàn</p>}
         </div>
 
         <div className="wallet-actions">

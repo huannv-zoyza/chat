@@ -3,6 +3,7 @@ import { ApiError, type GameKind, type GameLeaderboard, type GameMemberStats, ty
 import {
   GAME_INFO,
   ROLE_INFO,
+  RPS_BET_LEVELS,
   myTurn,
   type CaroState,
   type ChessState,
@@ -25,6 +26,7 @@ import type { StationState } from "../lib/station";
 import { StationSummary } from "./Station";
 import { ShareDialog } from "./Share";
 import { BauCua } from "./BauCuaGame";
+import { formatXu } from "./Wallet";
 import { Avatar, Dialog, FormError, Icon } from "./ui";
 
 /* ---------- Tiện ích ---------- */
@@ -60,6 +62,7 @@ export type Ctx = {
   channelId: number;
   game: GameView;
   meId: number;
+  myBalance: number | null;
   isPlayer: boolean;
   busy: boolean;
   /** Gửi hành động; lỗi hiện ở cuối thẻ. */
@@ -208,6 +211,7 @@ export function GameCard({ message }: { message: Message }) {
     channelId: message.channel_id,
     game,
     meId,
+    myBalance: state.wallet?.balance ?? null,
     isPlayer,
     busy,
     act,
@@ -370,7 +374,11 @@ const RULES: Record<GameKind, string[]> = {
     "Luật Lộ diện tướng: hai tướng không được đối mặt trực tiếp trên cùng một cột.",
     "Bên bị hết nước đi (bức tử / stalemate) bị xử thua cuộc.",
   ],
-  rps: ["Búa thắng Kéo, Kéo thắng Bao, Bao thắng Búa.", "Hai người ra cùng lúc, 30 giây mỗi ván."],
+  rps: [
+    "Búa thắng Kéo, Kéo thắng Bao, Bao thắng Búa.",
+    "Hai người ra cùng lúc, 30 giây mỗi ván.",
+    "Nếu có đặt cược xu: cả hai phải đủ xu mới tạo hoặc tham gia được. Thắng ăn trọn pot, hoà hoặc huỷ hoàn lại xu.",
+  ],
   baucua: [
     "Vào bàn là mang toàn bộ xu trong ví thành chip. Hết ván chip còn lại tự về ví.",
     "Mỗi lượt có 20 giây đặt chip vào 6 con: Bầu, Cua, Tôm, Cá, Gà, Nai. Cái bấm Lắc sớm được.",
@@ -453,8 +461,25 @@ function Lobby({ ctx }: { ctx: Ctx }) {
       </p>
     );
   } else if (game.kind === "rps") {
-    setup = <p className="game-setup">Chạm {Math.floor(((game.state as RpsState)?.best_of || 3) / 2) + 1} ván thắng</p>;
+    const s = game.state as RpsState | undefined;
+    const bet = s?.bet ?? 0;
+    const need = Math.floor((s?.best_of || 3) / 2) + 1;
+    setup = (
+      <p className="game-setup">
+        Chạm {need} ván thắng ·{" "}
+        {bet > 0 ? (
+          <span className="rps-bet-badge">
+            🪙 Cược <b>{formatXu(bet)} xu</b> (thắng ăn {formatXu(bet * 2)} xu)
+          </span>
+        ) : (
+          <span>Chơi vui (miễn phí)</span>
+        )}
+      </p>
+    );
   }
+
+  const rpsBet = game.kind === "rps" ? ((game.state as RpsState | undefined)?.bet ?? 0) : 0;
+  const rpsPoor = rpsBet > 0 && ctx.myBalance !== null && ctx.myBalance < rpsBet;
 
   return (
     <div className="game-lobby">
@@ -481,9 +506,24 @@ function Lobby({ ctx }: { ctx: Ctx }) {
       </details>
       <div className="game-actions">
         {!isPlayer && !full && (
-          <button type="button" className="btn btn-primary" disabled={busy} onClick={() => act("join")}>
-            {auto ? "Nhận lời thách đấu" : "Vào chơi"}
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={busy || rpsPoor}
+            title={rpsPoor ? `Cần ${formatXu(rpsBet)} xu để tham gia` : undefined}
+            onClick={() => act("join")}
+          >
+            {auto
+              ? rpsBet > 0
+                ? `Nhận lời thách đấu (${formatXu(rpsBet)} xu)`
+                : "Nhận lời thách đấu"
+              : "Vào chơi"}
           </button>
+        )}
+        {!isPlayer && !full && rpsPoor && (
+          <span className="game-hint rps-insufficient">
+            Không đủ {formatXu(rpsBet)} xu để tham gia (bạn có {formatXu(ctx.myBalance!)} xu).
+          </span>
         )}
         {isPlayer && !isHost && (
           <button type="button" className="btn" disabled={busy} onClick={() => act("leave")}>
@@ -1525,8 +1565,17 @@ function Rps({ ctx }: { ctx: Ctx }) {
   const s = game.state as RpsState;
   const me = game.me as RpsMe | undefined;
   const playing = game.status === "playing";
+  const bet = s.bet ?? 0;
+  const pot = s.pot ?? 0;
+  const endedDraw = game.status === "ended" && bet > 0 && (!game.winners || game.winners.length === 0);
   return (
     <div className="rps">
+      {bet > 0 && (
+        <div className="rps-pot">
+          <span>🪙 Cược {formatXu(bet)} xu / người</span>
+          <b>🏆 Pot: {formatXu(pot)} xu</b>
+        </div>
+      )}
       <div className="rps-score">
         {game.players.map((p, i) => (
           <div key={p.id} className="rps-side">
@@ -1539,6 +1588,7 @@ function Rps({ ctx }: { ctx: Ctx }) {
           {s.score[0]} – {s.score[1]}
         </p>
       </div>
+      {endedDraw && <p className="rps-refund-note">Hoà / huỷ — đã hoàn lại {formatXu(bet)} xu mỗi bên.</p>}
       {playing && (
         <div className="game-banner">
           <span>Ván {s.rounds.length + 1}</span>
@@ -1595,7 +1645,8 @@ const PICKER_GROUPS = [
 ] as const;
 
 export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number; dm: boolean; onClose: () => void }) {
-  const { createGame } = useChat();
+  const { createGame, state } = useChat();
+  const walletBalance = state.wallet?.balance ?? null;
   const kinds = (Object.keys(GAME_INFO) as GameKind[]).filter((k) => !dm || DUEL_KINDS.has(k) || k === "baucua");
   const [kind, setKind] = useState<GameKind>(kinds[0]);
   const [group, setGroup] = useState<(typeof PICKER_GROUPS)[number]["id"]>("all");
@@ -1610,6 +1661,7 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
   const [xiangqiMinutes, setXiangqiMinutes] = useState(3);
   const [xiangqiFirst, setXiangqiFirst] = useState<"random" | "host" | "guest">("random");
   const [bestOf, setBestOf] = useState(3);
+  const [rpsBet, setRpsBet] = useState<number>(0);
   const [rollsPerDealer, setRollsPerDealer] = useState(3);
   const [st, setSt] = useState({
     traitors: 0,
@@ -1624,9 +1676,11 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
+  const rpsInsufficient = kind === "rps" && rpsBet > 0 && walletBalance !== null && walletBalance < rpsBet;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (rpsInsufficient) return;
     setBusy(true);
     setError(null);
     const options: Record<GameKind, Record<string, unknown>> = {
@@ -1636,7 +1690,7 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
       caro: { free_style: !blockRule },
       chess: { turn_minutes: chessMinutes, first: chessFirst },
       xiangqi: { turn_minutes: xiangqiMinutes, first: xiangqiFirst },
-      rps: { best_of: bestOf },
+      rps: { best_of: bestOf, bet: rpsBet },
       baucua: { rolls_per_dealer: rollsPerDealer },
     };
     try {
@@ -1870,14 +1924,48 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
             </label>
           )}
           {kind === "rps" && (
-            <label className="field">
-              <span>Thể thức</span>
-              <select value={bestOf} onChange={(e) => setBestOf(Number(e.target.value))}>
-                <option value={1}>1 ván quyết định</option>
-                <option value={3}>Chạm 2 (3 ván)</option>
-                <option value={5}>Chạm 3 (5 ván)</option>
-              </select>
-            </label>
+            <>
+              <label className="field">
+                <span>Thể thức</span>
+                <select value={bestOf} onChange={(e) => setBestOf(Number(e.target.value))}>
+                  <option value={1}>1 ván quyết định</option>
+                  <option value={3}>Chạm 2 (3 ván)</option>
+                  <option value={5}>Chạm 3 (5 ván)</option>
+                </select>
+              </label>
+              <div className="field">
+                <span>
+                  Mức cược xu
+                  {walletBalance !== null && (
+                    <small className="rps-wallet-hint"> (ví của bạn: 🪙 {formatXu(walletBalance)} xu)</small>
+                  )}
+                </span>
+                <div className="rps-bet-grid" role="radiogroup" aria-label="Mức cược xu">
+                  {RPS_BET_LEVELS.map((amt) => {
+                    const cantAfford = amt > 0 && walletBalance !== null && walletBalance < amt;
+                    return (
+                      <button
+                        key={amt}
+                        type="button"
+                        role="radio"
+                        aria-checked={rpsBet === amt}
+                        className={`rps-bet-opt${rpsBet === amt ? " is-chosen" : ""}${cantAfford ? " is-poor" : ""}`}
+                        disabled={cantAfford}
+                        title={cantAfford ? `Không đủ ${formatXu(amt)} xu` : undefined}
+                        onClick={() => setRpsBet(amt)}
+                      >
+                        {amt === 0 ? "Miễn phí" : `${formatXu(amt)} xu`}
+                      </button>
+                    );
+                  })}
+                </div>
+                {rpsInsufficient && (
+                  <small className="rps-insufficient">
+                    Không đủ {formatXu(rpsBet)} xu để mở phòng (hiện có {formatXu(walletBalance!)} xu).
+                  </small>
+                )}
+              </div>
+            </>
           )}
         </div>
 
@@ -1894,8 +1982,8 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
           <button type="button" className="btn" onClick={onClose} disabled={busy}>
             Huỷ
           </button>
-          <button className="btn btn-primary" disabled={busy}>
-            {busy ? "Đang mở…" : "Mở phòng"}
+          <button className="btn btn-primary" disabled={busy || rpsInsufficient}>
+            {busy ? "Đang mở…" : rpsBet > 0 && kind === "rps" ? `Mở phòng (${formatXu(rpsBet)} xu)` : "Mở phòng"}
           </button>
         </div>
       </form>

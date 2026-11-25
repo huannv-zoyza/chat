@@ -104,6 +104,14 @@ type rules interface {
 	normalize()
 }
 
+type optionValidator interface {
+	validateOptions() error
+}
+
+type cancelBlocker interface {
+	blockCancelPlaying() error
+}
+
 // Info: thông tin hiển thị của một trò.
 type Info struct {
 	Kind  string `json:"kind"`
@@ -160,6 +168,11 @@ func New(kind string, host Player, opts json.RawMessage, now time.Time) (*Game, 
 	if o := r.options(); o != nil && len(opts) > 0 && string(opts) != "null" {
 		if err := json.Unmarshal(opts, o); err != nil {
 			return nil, Error("Tuỳ chọn không hợp lệ.")
+		}
+	}
+	if v, ok := r.(optionValidator); ok {
+		if err := v.validateOptions(); err != nil {
+			return nil, err
 		}
 	}
 	r.normalize()
@@ -255,6 +268,11 @@ func (g *Game) Act(p Player, action string, data json.RawMessage, now time.Time)
 		if p.ID != b.HostID {
 			return Error("Chỉ chủ phòng mới huỷ được.")
 		}
+		if cb, ok := g.r.(cancelBlocker); ok && b.Status == Playing {
+			if err := cb.blockCancelPlaying(); err != nil {
+				return err
+			}
+		}
 		b.logf("Chủ phòng đã huỷ ván.")
 		b.end("Ván đã bị huỷ.", nil)
 	default:
@@ -310,14 +328,28 @@ type Stake struct {
 }
 
 type staked interface {
+	isStaked() bool
+	stakeRequirement() (exact bool, amount int64)
 	buyIn(uid, amount int64) int64
 	stakeOf(uid int64) Stake
 	buyIns(uid int64) int64
 	removePlayer(uid int64)
 }
 
-// Staked: trò này cược bằng chip mua từ ví xu.
-func (g *Game) Staked() bool { _, ok := g.r.(staked); return ok }
+// Staked: trò này cược bằng xu từ ví.
+func (g *Game) Staked() bool {
+	st, ok := g.r.(staked)
+	return ok && st.isStaked()
+}
+
+// StakeRequirement cho biết game cần trừ mức cược cố định (exact=true, amount>0)
+// hay mang toàn bộ số dư ví vào bàn (exact=false).
+func (g *Game) StakeRequirement() (exact bool, amount int64) {
+	if st, ok := g.r.(staked); ok && st.isStaked() {
+		return st.stakeRequirement()
+	}
+	return false, 0
+}
 
 // BuyIn cộng amount chip cho userID, trả số lần người đó đã mua chip ở ván này (1, 2, …).
 func (g *Game) BuyIn(userID, amount int64) int64 {

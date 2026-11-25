@@ -5903,6 +5903,65 @@ button.game-player:disabled {
   padding-left: 1.1rem;
   font-size: var(--step--1);
 }
+.rps-pot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding: 0.4rem 0.65rem;
+  margin-bottom: 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  font-size: var(--step--1);
+}
+.rps-bet-badge {
+  color: var(--ink);
+}
+.rps-refund-note {
+  margin: 0 0 0.5rem;
+  font-size: var(--step--1);
+  color: var(--muted);
+  text-align: center;
+}
+.rps-insufficient {
+  color: var(--danger);
+  font-size: var(--step--2);
+  font-weight: 500;
+}
+.rps-wallet-hint {
+  color: var(--muted);
+  font-weight: 400;
+}
+.rps-bet-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+.rps-bet-opt {
+  padding: 0.45rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: var(--step--1);
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+.rps-bet-opt:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+.rps-bet-opt.is-chosen {
+  border-color: var(--signal);
+  background: var(--signal-soft);
+  color: var(--signal);
+}
+.rps-bet-opt:disabled,
+.rps-bet-opt.is-poor {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 
 /* phòng chờ, nhật ký, kết quả */
 .game-rules {

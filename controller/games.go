@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -257,9 +258,9 @@ func asPlayer(u model.User) game.Player {
 type LiveGameSummary struct {
 	MessageID   int64            `json:"message_id"`
 	ChannelID   int64            `json:"channel_id"`
-	Kind        string           `json:"kind"`        // "xiangqi", "chess", "caro", "werewolf", v.v.
-	Title       string           `json:"title"`       // Tiêu đề game: "Cờ tướng", "Cờ vua"...
-	Status      string           `json:"status"`      // "lobby" | "playing"
+	Kind        string           `json:"kind"`   // "xiangqi", "chess", "caro", "werewolf", v.v.
+	Title       string           `json:"title"`  // Tiêu đề game: "Cờ tướng", "Cờ vua"...
+	Status      string           `json:"status"` // "lobby" | "playing"
 	CreatedAt   time.Time        `json:"created_at"`
 	Host        model.PublicUser `json:"host"`
 	Players     []game.Player    `json:"players"`
@@ -407,22 +408,45 @@ func (a *API) startGame(ctx context.Context, ch model.Channel, host model.User, 
 	if err != nil {
 		return model.Message{}, err
 	}
-	state, err := g.Marshal()
-	if err != nil {
-		return model.Message{}, err
-	}
-	m, err := a.store.CreateGame(ctx, ch.ID, host.ID, model.Embed{Type: "game", ID: kind, Title: title}, string(g.Status()), state)
-	if err != nil {
-		return model.Message{}, err
-	}
-	s := a.games.put(&gameSession{messageID: m.ID, channelID: ch.ID, g: g})
-	if g.Staked() {
-		s.mu.Lock()
-		err := a.buyInLocked(ctx, s, host.ID)
-		g = s.g
-		s.mu.Unlock()
+	exact, stakeAmt := g.StakeRequirement()
+	var (
+		m model.Message
+		s *gameSession
+	)
+	if g.Staked() && exact {
+		var wal store.Wallet
+		m, wal, err = a.store.CreateStakedGame(ctx, ch.ID, host.ID, model.Embed{Type: "game", ID: kind, Title: title}, stakeAmt, func() (string, []byte, error) {
+			g.BuyIn(host.ID, stakeAmt)
+			st, err := g.Marshal()
+			return string(g.Status()), st, err
+		})
 		if err != nil {
-			log.Printf("game %d: chủ phòng mua chip: %v", m.ID, err)
+			var ibe store.InsufficientBalanceError
+			if errors.As(err, &ibe) {
+				return model.Message{}, game.Error(fmt.Sprintf("Không đủ %d xu để đặt cược (bạn đang có %d xu).", ibe.Need, ibe.Have))
+			}
+			return model.Message{}, err
+		}
+		s = a.games.put(&gameSession{messageID: m.ID, channelID: ch.ID, g: g})
+		a.pushWallet(wal)
+	} else {
+		state, err := g.Marshal()
+		if err != nil {
+			return model.Message{}, err
+		}
+		m, err = a.store.CreateGame(ctx, ch.ID, host.ID, model.Embed{Type: "game", ID: kind, Title: title}, string(g.Status()), state)
+		if err != nil {
+			return model.Message{}, err
+		}
+		s = a.games.put(&gameSession{messageID: m.ID, channelID: ch.ID, g: g})
+		if g.Staked() {
+			s.mu.Lock()
+			err := a.buyInLocked(ctx, s, host.ID)
+			g = s.g
+			s.mu.Unlock()
+			if err != nil {
+				log.Printf("game %d: chủ phòng mua chip: %v", m.ID, err)
+			}
 		}
 	}
 	_, _, _ = a.store.MarkRead(ctx, ch.ID, host.ID, m.ID)
@@ -476,6 +500,7 @@ func (a *API) gameAction(w http.ResponseWriter, r *http.Request) {
 	}
 	wasPlaying := s.g.Status() == game.Playing
 	staked := s.g.Staked()
+	exact, stakeAmt := s.g.StakeRequirement()
 	leaveStake, leaveSeq := s.g.StakeOf(me.ID), s.g.BuyInCount(me.ID)
 	if err := s.g.Act(asPlayer(me), req.Action, req.Data, time.Now()); err != nil {
 		writeGameError(w, r, err)
@@ -485,14 +510,18 @@ func (a *API) gameAction(w http.ResponseWriter, r *http.Request) {
 		var err error
 		switch req.Action {
 		case "join":
-			err = a.buyInLocked(r.Context(), s, me.ID)
+			if exact {
+				err = a.buyInExactLocked(r.Context(), s, me.ID, stakeAmt)
+			} else {
+				err = a.buyInLocked(r.Context(), s, me.ID)
+			}
 		case "leave":
 			if err = a.payOutLocked(r.Context(), s, "refund", leaveSeq, []game.Stake{leaveStake}); err != nil {
 				a.reloadLocked(r.Context(), s)
 			}
 		}
 		if err != nil {
-			internalError(w, r, err)
+			writeGameError(w, r, err)
 			return
 		}
 	}

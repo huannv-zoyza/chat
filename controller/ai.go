@@ -41,7 +41,11 @@ var aiMentionRe = regexp.MustCompile(`(?i)(^|[^\p{L}\p{N}_.@])@ai\b`)
 
 // Yêu cầu vẽ: "@ai vẽ …", "@ai tạo ảnh …", "@ai /img …", "@ai draw …"; thêm --ngang / --doc để đổi khung.
 // (\b của Go chỉ hiểu chữ ASCII nên sau từ khoá phải là khoảng trắng / dấu câu / hết chuỗi.)
-var aiDrawRe = regexp.MustCompile(`(?is)^\s*(?:/(?:ve|vẽ|img|anh|ảnh|image)|vẽ|ve|tạo\s+ảnh|tao\s+anh|tạo\s+hình|draw|generate\s+(?:an?\s+)?image(?:\s+of)?)(?:[\s:,-]+|$)(.*)$`)
+var aiDrawRe = regexp.MustCompile(`(?is)^\s*(?:/(?:ve|vẽ|img|anh|ảnh|image)|vẽ|ve|gen\s*(?:ảnh|anh|hình|hinh|image)?|tạo\s+(?:ảnh|hình)|tao\s+(?:anh|hinh)|làm\s+ảnh|lam\s+anh|draw|generate\s+(?:an?\s+)?image(?:\s+of)?)(?:[\s:,-]+|$)(.*)$`)
+
+// aiLeadURLRe: người ta hay dán link ảnh trước rồi mới nhờ vẽ ("@ai <link> hãy gen ảnh …").
+// Bỏ các URL đứng đầu đi rồi mới so khớp ý định, chứ không nới neo ^ (nới ra là "ai vẽ bìa?" cũng thành lệnh vẽ).
+var aiLeadURLRe = regexp.MustCompile(`^\s*(?:https?://\S+\s*)+`)
 
 // Có ảnh gốc kèm theo: các lời nhờ sửa / vẽ lại ảnh ("@ai biến ảnh này thành …", "@ai cho nhân vật này đội mũ").
 var aiEditRe = regexp.MustCompile(`(?i)^\s*(?:biến|chuyển|sửa|chỉnh|đổi|làm|thêm|xoá|xóa|bỏ|cho|vẽ\s+lại|tạo\s+lại|phong\s+cách|style|make|turn|edit|redraw)(?:[\s:,-]|$)`)
@@ -158,11 +162,12 @@ func (a *API) answerAI(q model.Message, asker model.User) {
 	text := strings.TrimSpace(aiMentionRe.ReplaceAllString(q.Content, "$1"))
 	refs := a.aiRefs(ctx, q)
 
-	if m := aiDrawRe.FindStringSubmatch(text); m != nil {
+	intent := aiLeadURLRe.ReplaceAllString(text, "")
+	if m := aiDrawRe.FindStringSubmatch(intent); m != nil {
 		a.drawAI(ctx, ch, q, asker, m[1], refs, reply)
 		return
 	}
-	if len(refs) > 0 && aiEditRe.MatchString(text) {
+	if len(refs) > 0 && aiEditRe.MatchString(intent) {
 		a.drawAI(ctx, ch, q, asker, text, refs, reply)
 		return
 	}
@@ -206,7 +211,7 @@ func (a *API) answerAI(q model.Message, asker model.User) {
 		msgs, got = a.aiContext(ctx, ch, q, asker, text, status, false)
 		status("Đang viết câu trả lời…")
 		live.reset()
-		res, err = s.chat.Stream(ctx, msgs, live.delta)
+		res, err = s.chat.Stream(ctx, withStyleReminder(msgs), live.delta)
 	}
 	answer := strings.TrimSpace(live.text())
 	switch {
@@ -226,6 +231,11 @@ func (a *API) answerAI(q model.Message, asker model.User) {
 		answer += "\n\n_— " + source + "_"
 		log.Printf("ai: trả lời %s ở kênh %d bằng %s/%s (%s, agent=%v)", asker.Username, ch.ID, res.Provider, res.Model, got, ok)
 	}
+	// Muse vừa viết vừa vẽ được: ảnh sinh ra ngay trong lượt trả lời thì đính vào tin luôn.
+	// Các model API thuần không bao giờ điền res.Images nên nhánh này không ảnh hưởng gì tới chúng.
+	if n := a.attachAIImages(ctx, m, res.Images, text); n > 0 {
+		log.Printf("ai: đính %d ảnh %s tự vẽ vào tin ở kênh %d", n, res.Provider, ch.ID)
+	}
 	a.finishAI(ctx, m, clip(answer))
 	go a.compactMemory(ch) // kênh dài ra: gộp tin cũ vào trí nhớ (chạy nền, không bắt người hỏi đợi)
 }
@@ -242,13 +252,49 @@ func (l *liveText) delta(d string) {
 	l.buf.WriteString(d)
 	if time.Since(l.last) >= aiFlushEvery {
 		l.last = time.Now()
-		l.flush(l.buf.String())
+		l.flush(stripThinking(l.buf.String()))
 	}
 }
 
 func (l *liveText) reset()       { l.buf.Reset() }
-func (l *liveText) text() string { return l.buf.String() }
-func (l *liveText) empty() bool  { return strings.TrimSpace(l.buf.String()) == "" }
+func (l *liveText) text() string { return stripThinking(l.buf.String()) }
+func (l *liveText) empty() bool  { return strings.TrimSpace(l.text()) == "" }
+
+// aiStyleReminder: nhắc lại cách viết, gắn vào CUỐI mỗi lượt trả lời người dùng. Lời dặn trong
+// prompt hệ thống dễ bị chìm sau hàng chục tin nhắn và kết quả công cụ (nhất là với Muse: cầu nối
+// dồn tất cả thành một khối chữ), model bám phần cuối mạnh nhất.
+const aiStyleReminder = "Nhắc cách trả lời: nói chuyện tự nhiên như người trong nhóm, kết luận trước, ngắn gọn. " +
+	"Không liệt kê số liệu, ngày giờ, số lần để chứng minh (cần thì lồng một chi tiết vào câu). " +
+	"Không kể bạn đã đọc, tra hay tính gì; không viết suy nghĩ hay nháp, chỉ đưa câu trả lời cuối. " +
+	"Gạch đầu dòng chỉ khi người hỏi cần một danh sách."
+
+// withStyleReminder: bản sao msgs có lời nhắc ở cuối (không đụng lịch sử hội thoại). Ghép vào tin
+// cuối (câu hỏi hoặc kết quả công cụ) thay vì thêm tin system mới: vài model báo lỗi khi gặp tin
+// system không nằm ở đầu.
+func withStyleReminder(msgs []ai.Message) []ai.Message {
+	out := make([]ai.Message, len(msgs), len(msgs)+1)
+	copy(out, msgs)
+	if n := len(out); n > 0 && (out[n-1].Role == "user" || out[n-1].Role == "tool") {
+		out[n-1].Content += "\n\n(" + aiStyleReminder + ")"
+		return out
+	}
+	return append(out, ai.Message{Role: "system", Content: aiStyleReminder})
+}
+
+// thinkRe: khối suy luận mà một số model (Qwen, DeepSeek-R1…) viết lẫn vào câu trả lời.
+var thinkRe = regexp.MustCompile(`(?is)<(think|thinking|reasoning)>.*?</(think|thinking|reasoning)>`)
+var thinkOpenRe = regexp.MustCompile(`(?is)<(think|thinking|reasoning)>.*$`)
+
+// stripThinking bỏ khối suy luận khỏi chữ hiện cho mọi người. Khối chưa đóng (đang stream) bị
+// ẩn tới cuối, để không thấy suy nghĩ hiện ra rồi mới biến mất.
+func stripThinking(s string) string {
+	if !strings.Contains(s, "<") {
+		return s
+	}
+	s = thinkRe.ReplaceAllString(s, "")
+	s = thinkOpenRe.ReplaceAllString(s, "")
+	return strings.TrimLeft(s, " \n")
+}
 
 // finishAI lưu nội dung cuối của tin bot và phát lại cho cả kênh.
 func (a *API) finishAI(ctx context.Context, m model.Message, content string) {
@@ -494,3 +540,34 @@ var slugBase = func() map[rune]rune {
 	}
 	return m
 }()
+
+// attachAIImages lưu các ảnh nhà cung cấp tự sinh ra rồi gắn vào tin trả lời của bot.
+// Trả về số ảnh đã gắn. Lỗi của một ảnh không làm hỏng câu trả lời.
+func (a *API) attachAIImages(ctx context.Context, m model.Message, imgs []ai.Ref, prompt string) int {
+	if len(imgs) == 0 {
+		return 0
+	}
+	if len(imgs) > maxAIRefs {
+		imgs = imgs[:maxAIRefs]
+	}
+	var atts []model.Attachment
+	for _, im := range imgs {
+		att, err := a.saveBytes(im.Data, "ai-"+fileSlug(prompt))
+		if err != nil {
+			log.Printf("ai image save: %v", err)
+			continue
+		}
+		atts = append(atts, att)
+	}
+	if len(atts) == 0 {
+		return 0
+	}
+	if err := a.store.AddAttachments(ctx, m.ID, atts); err != nil {
+		for _, at := range atts {
+			a.removeUpload(at.StorageKey)
+		}
+		log.Printf("ai image attach: %v", err)
+		return 0
+	}
+	return len(atts)
+}

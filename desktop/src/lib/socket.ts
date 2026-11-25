@@ -12,10 +12,9 @@ import type {
   Channel,
   PublicUser,
   Reaction,
+  SpectatorInfo,
   ThreadSummary,
   User,
-  Wallet,
-  WalletTransaction,
 } from "./api";
 
 /* ---------- Giao thức (khớp controller/events.go và controller/socket.go) ---------- */
@@ -30,7 +29,6 @@ export type ServerEvent =
       group_calls?: GroupRoom[];
       /** Trợ lý AI (không có: máy chủ tắt AI). */
       ai?: AIInfo;
-      wallet?: Wallet;
     }
   | { type: "groupcall.state"; channel_id: number; started_at?: string; participants?: GroupParticipant[] }
   | { type: "groupcall.started"; channel_id: number; by: PublicUser; video?: boolean }
@@ -40,7 +38,7 @@ export type ServerEvent =
       channel_id: number;
       from: string;
       from_user: PublicUser;
-      data: { sdp?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit };
+      data: SignalData;
     }
   | { type: "groupcall.error"; channel_id: number; message: string }
   | { type: "message.new"; message: Message; client_id?: string }
@@ -48,23 +46,25 @@ export type ServerEvent =
   | { type: "key.updated"; user_id: number; public_key: string }
   | { type: "poll.updated"; channel_id: number; message_id: number; poll: Poll }
   | { type: "game.updated"; channel_id: number; message_id: number; game: GameView }
-  | { type: "wallet.updated"; wallet: Wallet; transaction?: WalletTransaction }
+  | { type: "game.spectators"; channel_id: number; message_id: number; count: number; spectators: SpectatorInfo[] }
   | { type: "game.map"; message_id: number; map: StationMap }
   | { type: "game.frame"; message_id: number; frame: StFrame }
   | { type: "reminder.due"; reminder: Reminder }
   | { type: "call.incoming"; call_id: string; channel_id: number; from: PublicUser; video: boolean }
   | { type: "call.accepted"; call_id: string }
-  | { type: "call.signal"; call_id: string; data: { sdp?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit } }
+  | { type: "call.signal"; call_id: string; data: SignalData }
   | { type: "call.ended"; call_id: string; reason: string }
-  | { type: "typing"; channel_id: number; user_id: number }
+  | { type: "typing"; channel_id: number; user_id: number; parent_id?: number }
   | { type: "presence"; user_id: number; online: boolean }
   | { type: "user.updated"; user: PublicUser }
   | { type: "channel.joined"; channel: Channel }
-  | { type: "channel.left"; channel_id: number }
+  | { type: "channel.left"; channel_id: number; kicked?: boolean }
   | { type: "channel.updated"; channel: Channel }
   | { type: "channel.deleted"; channel_id: number }
   | { type: "member.joined"; channel_id: number; user: PublicUser }
   | { type: "member.left"; channel_id: number; user_id: number }
+  | { type: "wallet.updated"; balance: number; debt: number }
+  | { type: "nickname.updated"; channel_id: number; user_id: number; nickname: string }
   | { type: "reaction.updated"; channel_id: number; message_id: number; parent_id?: number; reactions: Reaction[] }
   | { type: "thread.updated"; channel_id: number; message_id: number; thread: ThreadSummary }
   | { type: "read.updated"; channel_id: number; user_id: number; message_id: number }
@@ -78,6 +78,14 @@ export type SendOptions = {
   cipher?: string; // tin mã hoá đầu cuối
   replyToId?: number; // trả lời trích dẫn
   forwarded?: boolean;
+};
+
+/** Tín hiệu WebRTC chuyển giữa hai máy (máy chủ chuyển nguyên văn). */
+export type SignalData = {
+  sdp?: RTCSessionDescriptionInit;
+  candidate?: RTCIceCandidateInit;
+  /** Người gửi đang chia sẻ màn hình (có khi bật/tắt chia sẻ và kèm mỗi SDP). */
+  screen?: boolean;
 };
 
 /** Yêu cầu gọi điện gửi lên máy chủ (xem controller/calls.go). */
@@ -99,7 +107,8 @@ export type ClientRequest =
       reply_to_id?: number;
       forwarded?: boolean;
     }
-  | { type: "typing"; channel_id: number }
+  | { type: "game.spectate" | "game.unspectate"; message_id: number }
+  | { type: "typing"; channel_id: number; parent_id?: number }
   | { type: "read"; channel_id: number; message_id: number }
   | { type: "ping" };
 
@@ -266,8 +275,16 @@ export class ChatSocket {
     return this.status === "open" && this.rawSend(req as unknown as ClientRequest);
   }
 
-  sendTyping(channelId: number) {
-    if (this.status === "open") this.rawSend({ type: "typing", channel_id: channelId });
+  sendTyping(channelId: number, parentId?: number) {
+    if (this.status === "open") this.rawSend({ type: "typing", channel_id: channelId, parent_id: parentId });
+  }
+
+  spectateGame(messageId: number) {
+    if (this.status === "open") this.rawSend({ type: "game.spectate", message_id: messageId });
+  }
+
+  unspectateGame(messageId: number) {
+    if (this.status === "open") this.rawSend({ type: "game.unspectate", message_id: messageId });
   }
 
   markRead(channelId: number, messageId: number) {

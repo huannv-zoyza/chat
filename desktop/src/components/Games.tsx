@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ApiError, type GameKind, type GameLeaderboard, type GameView, type Message, type PublicUser } from "../lib/api";
+import { ApiError, type GameKind, type GameLeaderboard, type GameMemberStats, type GameView, type Message, type PublicUser } from "../lib/api";
 import {
   GAME_INFO,
   ROLE_INFO,
@@ -10,6 +10,7 @@ import {
   type RpsChoice,
   type RpsMe,
   type RpsState,
+  type BauCuaState,
   type SpyMe,
   type SpyState,
   type WerewolfMe,
@@ -19,9 +20,11 @@ import {
 import { ChessPiece } from "./ChessPiece";
 import { XiangqiGame } from "./XiangqiGame";
 import { useChat } from "../state/ChatProvider";
+import { useWheelScrollX } from "../lib/useWheelScrollX";
 import type { StationState } from "../lib/station";
 import { StationSummary } from "./Station";
 import { ShareDialog } from "./Share";
+import { BauCua } from "./BauCuaGame";
 import { Avatar, Dialog, FormError, Icon } from "./ui";
 
 /* ---------- Tiện ích ---------- */
@@ -42,7 +45,7 @@ function clock(s: number) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-function Countdown({ deadline, label }: { deadline?: string; label?: string }) {
+export function Countdown({ deadline, label }: { deadline?: string; label?: string }) {
   const left = useSecondsLeft(deadline);
   if (left === null) return null;
   return (
@@ -52,8 +55,9 @@ function Countdown({ deadline, label }: { deadline?: string; label?: string }) {
   );
 }
 
-type Ctx = {
+export type Ctx = {
   messageId: number;
+  channelId: number;
   game: GameView;
   meId: number;
   isPlayer: boolean;
@@ -168,6 +172,9 @@ function VoterDots({ ctx, ids }: { ctx: Ctx; ids: number[] }) {
 
 /* ---------- Thẻ ván chơi trong tin nhắn ---------- */
 
+/** Các game 2 người có tính điểm Elo (xem store/games.go). */
+const RATED_KINDS = new Set<string>(["caro", "chess", "xiangqi", "rps"]);
+
 export function GameCard({ message }: { message: Message }) {
   const { state, gameAction, openThread } = useChat();
   const game = message.game!;
@@ -195,8 +202,10 @@ export function GameCard({ message }: { message: Message }) {
   const user = (id: number): PublicUser =>
     state.users[id] ?? { id, username: nameOf(id), display_name: nameOf(id), avatar: null, status_text: "" };
   const [sharing, setSharing] = useState(false);
+  const [lbOpen, setLbOpen] = useState(false);
   const ctx: Ctx = {
     messageId: message.id,
+    channelId: message.channel_id,
     game,
     meId,
     isPlayer,
@@ -253,34 +262,11 @@ export function GameCard({ message }: { message: Message }) {
         <Chess ctx={ctx} />
       ) : game.kind === "xiangqi" ? (
         <Xiangqi ctx={ctx} />
+      ) : game.kind === "baucua" ? (
+        <BauCua ctx={ctx} />
       ) : (
         <Rps ctx={ctx} />
       )}
-
-      {/* Thanh Khán giả & Bình luận của ván cờ */}
-      <div className="game-spectator-bar">
-        <div className="game-spectator-info">
-          <span className="game-spectator-count">
-            💬 {replyCount > 0 ? `${replyCount} bình luận` : "Chưa có bình luận"}
-            {viewerCount > 0 && ` · 👁️ ${viewerCount} Khán giả`}
-          </span>
-          {viewerIds.length > 0 && (
-            <span className="game-viewer-avatars" aria-hidden>
-              {viewerIds.slice(0, 5).map((id) => (
-                <Avatar key={id} user={state.users[id]} size={20} />
-              ))}
-            </span>
-          )}
-        </div>
-        <button
-          type="button"
-          className="btn btn-xs btn-secondary"
-          onClick={() => openThread(message.id)}
-          title="Mở luồng bình luận và xem ý kiến khán giả"
-        >
-          💬 {replyCount > 0 ? "Mở Khán đài" : "Bình luận (Khán đài)"}
-        </button>
-      </div>
 
       {game.status === "ended" && game.result && (
         <p className={`game-result${game.winners?.includes(meId) ? " is-win" : ""}`}>
@@ -290,6 +276,36 @@ export function GameCard({ message }: { message: Message }) {
       )}
       <GameLog game={game} />
       <FormError>{error}</FormError>
+
+      {/* Chân thẻ: khán đài (luồng bình luận) và bảng xếp hạng, dùng chung cho mọi game */}
+      <footer className="game-foot">
+        <button
+          type="button"
+          className="game-foot-btn"
+          onClick={() => openThread(message.id)}
+          title="Mở khán đài: bình luận và xem cùng mọi người"
+        >
+          <Icon name="thread" size={15} />
+          <span>
+            Khán đài
+            {replyCount > 0 && <span className="game-foot-count"> · {replyCount} bình luận</span>}
+          </span>
+        </button>
+        {viewerCount > 0 && (
+          <span className="game-foot-viewers" title={`${viewerCount} khán giả đã bình luận`}>
+            {viewerIds.slice(0, 4).map((id) => (
+              <Avatar key={id} user={state.users[id]} size={20} />
+            ))}
+            {viewerCount > 4 && <span className="game-foot-more">+{viewerCount - 4}</span>}
+          </span>
+        )}
+        {RATED_KINDS.has(game.kind) && (
+          <button type="button" className="game-foot-btn game-foot-lb" onClick={() => setLbOpen(true)}>
+            <span aria-hidden>🏆</span> Xếp hạng
+          </button>
+        )}
+      </footer>
+      {lbOpen && <GameLeaderboardDialog initialKind={game.kind} onClose={() => setLbOpen(false)} />}
       {sharing && <ShareDialog message={message} onClose={() => setSharing(false)} />}
     </section>
   );
@@ -355,6 +371,13 @@ const RULES: Record<GameKind, string[]> = {
     "Bên bị hết nước đi (bức tử / stalemate) bị xử thua cuộc.",
   ],
   rps: ["Búa thắng Kéo, Kéo thắng Bao, Bao thắng Búa.", "Hai người ra cùng lúc, 30 giây mỗi ván."],
+  baucua: [
+    "Vào bàn là mang toàn bộ xu trong ví thành chip. Hết ván chip còn lại tự về ví.",
+    "Mỗi lượt có 20 giây đặt chip vào 6 con: Bầu, Cua, Tôm, Cá, Gà, Nai. Cái bấm Lắc sớm được.",
+    "Con nào ra k mặt thì người cược ăn k lần tiền cược; con không ra thì cái ăn.",
+    "Cái xoay vòng theo thứ tự vào phòng. Cái không đủ trả là cháy túi: vay ngân hàng phần thiếu và mất cái ngay.",
+    "Hết xu thì bấm Vay ngân hàng 500 (thành nợ trong ví).",
+  ],
 };
 
 function Lobby({ ctx }: { ctx: Ctx }) {
@@ -429,13 +452,20 @@ function Lobby({ ctx }: { ctx: Ctx }) {
         </p>
         <div className={`xq-bet-pill${xqBet > 0 ? " is-paid" : ""}`}>
           {xqBet > 0
-            ? `🪙 Mức cược: ${xqBet.toLocaleString("vi-VN")} Xu / người · Thắng nhận ${(xqBet * 2).toLocaleString("vi-VN")} Xu`
-            : "🤝 Giao hữu miễn phí (0 Xu)"}
+            ? `🪙 Mức cược: ${xqBet.toLocaleString("vi-VN")} xu / người · Thắng nhận ${(xqBet * 2).toLocaleString("vi-VN")} xu`
+            : "🤝 Giao hữu miễn phí (0 xu)"}
         </div>
       </div>
     );
-  } else {
-    setup = <p className="game-setup">Chạm {Math.floor((game.state as RpsState).best_of / 2) + 1} ván thắng</p>;
+  } else if (game.kind === "baucua") {
+    const rolls = (game.state as BauCuaState | undefined)?.rolls_per_dealer || 3;
+    setup = (
+      <p className="game-setup">
+        Mỗi người cầm cái {rolls} lượt lắc · Vào bàn là mang toàn bộ xu trong ví, hết ván chip tự về ví
+      </p>
+    );
+  } else if (game.kind === "rps") {
+    setup = <p className="game-setup">Chạm {Math.floor(((game.state as RpsState)?.best_of || 3) / 2) + 1} ván thắng</p>;
   }
 
   return (
@@ -468,10 +498,10 @@ function Lobby({ ctx }: { ctx: Ctx }) {
             className="btn btn-primary"
             disabled={busy || notEnoughForBet}
             onClick={() => act("join")}
-            title={notEnoughForBet ? `Cần ít nhất ${xqBet.toLocaleString("vi-VN")} Xu để tham gia` : undefined}
+            title={notEnoughForBet ? `Cần ít nhất ${xqBet.toLocaleString("vi-VN")} xu để tham gia` : undefined}
           >
             {xqBet > 0
-              ? `Nhận thách đấu (Cược ${xqBet.toLocaleString("vi-VN")} Xu)`
+              ? `Nhận thách đấu (Cược ${xqBet.toLocaleString("vi-VN")} xu)`
               : auto
                 ? "Nhận lời thách đấu"
                 : "Vào chơi"}
@@ -479,7 +509,7 @@ function Lobby({ ctx }: { ctx: Ctx }) {
         )}
         {notEnoughForBet && (
           <span className="xq-bet-warn">
-            Số dư không đủ ({myBalance.toLocaleString("vi-VN")} / {xqBet.toLocaleString("vi-VN")} Xu)
+            Số dư không đủ ({myBalance.toLocaleString("vi-VN")} / {xqBet.toLocaleString("vi-VN")} xu)
           </span>
         )}
         {isPlayer && !isHost && (
@@ -938,316 +968,138 @@ function Spy({ ctx }: { ctx: Ctx }) {
 
 /* ---------- Cờ caro ---------- */
 
+/** Số hàng/cột trống luôn chừa quanh quân ngoài cùng: đánh gần mép thì bàn tự nới ra. */
+const CARO_PAD = 2;
+/** Vùng ban đầu 15×15 (toạ độ 0..14), giống bàn caro thường. */
+const CARO_BASE = 15;
+const CARO_CELL_MAX = 34;
+const CARO_CELL_MIN = 22;
+
 function Caro({ ctx }: { ctx: Ctx }) {
   const { game, meId, busy, act } = ctx;
   const s = game.state as CaroState;
   const [x, o] = game.players;
   const myMove = game.status === "playing" && s.turn === meId;
-  const myMark = x?.id === meId ? "X" : "O";
+  const myMark = x?.id === meId ? "x" : "o";
 
+  // quân trên bàn: "r,c" -> "x" | "o" (ván cũ chỉ có chuỗi board 15×15)
   const pieces = useMemo(() => {
     if (s.pieces) return s.pieces;
     const map: Record<string, "x" | "o"> = {};
     if (s.board) {
       for (let i = 0; i < s.board.length; i++) {
         const ch = s.board[i];
-        if (ch === "x" || ch === "o") {
-          map[`${Math.floor(i / s.size)},${i % s.size}`] = ch;
-        }
+        if (ch === "x" || ch === "o") map[`${Math.floor(i / s.size)},${i % s.size}`] = ch;
       }
     }
     return map;
   }, [s.pieces, s.board, s.size]);
 
-  const winCoords = useMemo(() => {
-    if (s.win_coords && s.win_coords.length > 0) {
-      return new Set(s.win_coords.map((c) => `${c.r},${c.c}`));
-    }
-    if (s.win && s.win.length > 0) {
-      return new Set(s.win.map((idx) => `${Math.floor(idx / s.size)},${idx % s.size}`));
-    }
-    return new Set<string>();
+  const win = useMemo(() => {
+    if (s.win_coords?.length) return new Set(s.win_coords.map((c) => `${c.r},${c.c}`));
+    return new Set((s.win ?? []).map((i) => `${Math.floor(i / s.size)},${i % s.size}`));
   }, [s.win_coords, s.win, s.size]);
 
-  const lastCoord = useMemo(() => {
-    if (s.last_coord) return s.last_coord;
-    if (s.last !== undefined && s.last >= 0) {
-      return { r: Math.floor(s.last / s.size), c: s.last % s.size };
-    }
+  const last = useMemo(() => {
+    if (s.last_coord) return `${s.last_coord.r},${s.last_coord.c}`;
+    if (s.last !== undefined && s.last >= 0) return `${Math.floor(s.last / s.size)},${s.last % s.size}`;
     return null;
   }, [s.last_coord, s.last, s.size]);
 
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [cellSize, setCellSize] = useState(30);
-  const [dragging, setDragging] = useState(false);
-  const [hover, setHover] = useState<{ r: number; c: number } | null>(null);
-  const initializedRef = useRef(false);
-  const [lbOpen, setLbOpen] = useState(false);
+  // khung bàn = vùng 15×15 ban đầu ∪ mọi quân, nới thêm CARO_PAD ô quanh quân ngoài cùng
+  const bounds = useMemo(() => {
+    let r0 = 0,
+      r1 = CARO_BASE - 1,
+      c0 = 0,
+      c1 = CARO_BASE - 1;
+    for (const k of Object.keys(pieces)) {
+      const [r, c] = k.split(",").map(Number);
+      r0 = Math.min(r0, r - CARO_PAD);
+      r1 = Math.max(r1, r + CARO_PAD);
+      c0 = Math.min(c0, c - CARO_PAD);
+      c1 = Math.max(c1, c + CARO_PAD);
+    }
+    return { r0, c0, rows: r1 - r0 + 1, cols: c1 - c0 + 1 };
+  }, [pieces]);
 
-  const centerAt = useCallback((row: number, col: number, cs = cellSize) => {
-    const c = containerRef.current;
-    if (!c) return;
-    const rect = c.getBoundingClientRect();
-    setPan({
-      x: rect.width / 2 - (col + 0.5) * cs,
-      y: rect.height / 2 - (row + 0.5) * cs,
-    });
-  }, [cellSize]);
-
+  // cỡ ô: vừa bề ngang thẻ; bàn quá rộng thì cuộn trong khung bàn (không đẩy cả tin rộng ra)
+  const [width, setWidth] = useState(0);
+  const boxRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (initializedRef.current) return;
-    const c = containerRef.current;
-    if (!c) return;
-    const rect = c.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) {
-      initializedRef.current = true;
-      if (lastCoord) {
-        centerAt(lastCoord.r, lastCoord.c);
-      } else {
-        centerAt(7, 7);
-      }
-    }
-  }, [centerAt, lastCoord]);
+    const el = boxRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setWidth(el.clientWidth));
+    ro.observe(el);
+    setWidth(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+  const cell = width
+    ? Math.max(CARO_CELL_MIN, Math.min(CARO_CELL_MAX, Math.floor(width / bounds.cols)))
+    : CARO_CELL_MAX;
 
+  // điện thoại: chạm 1 lần để chọn ô, chạm lần nữa để đánh (ô nhỏ, dễ chạm nhầm)
+  const [picked, setPicked] = useState<string | null>(null);
+  useEffect(() => setPicked(null), [s.moves, myMove]);
+
+  // nước mới / bàn nới ra: cuộn để thấy nước vừa đánh
+  // (tự tính thay vì scrollIntoView: cái đó cuộn cả khung chat bên ngoài theo)
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx2d = canvas.getContext("2d");
-    if (!ctx2d) return;
+    const box = boxRef.current;
+    const el = last ? box?.querySelector<HTMLElement>(`[data-k="${last}"]`) : null;
+    if (!box || !el) return;
+    const b = box.getBoundingClientRect();
+    const e = el.getBoundingClientRect();
+    if (e.left < b.left) box.scrollLeft -= b.left - e.left + e.width;
+    else if (e.right > b.right) box.scrollLeft += e.right - b.right + e.width;
+    if (e.top < b.top) box.scrollTop -= b.top - e.top + e.height;
+    else if (e.bottom > b.bottom) box.scrollTop += e.bottom - b.bottom + e.height;
+  }, [last, bounds.rows, bounds.cols, cell]);
 
-    const rect = canvas.getBoundingClientRect();
-    const width = rect.width;
-    const height = rect.height;
-    if (width === 0 || height === 0) return;
-    const dpr = window.devicePixelRatio || 1;
-
-    if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
-      canvas.width = Math.round(width * dpr);
-      canvas.height = Math.round(height * dpr);
+  const touchRef = useRef(false);
+  const play = (k: string) => {
+    if (!myMove || busy || pieces[k]) return;
+    if (touchRef.current && picked !== k) {
+      setPicked(k);
+      return;
     }
-
-    ctx2d.save();
-    ctx2d.scale(dpr, dpr);
-
-    const computed = getComputedStyle(canvas);
-    const surfaceColor = computed.getPropertyValue("--surface").trim() || "#ffffff";
-    const canvasColor = computed.getPropertyValue("--canvas").trim() || "#f8fafc";
-    const lineSoft = computed.getPropertyValue("--line-soft").trim() || "rgba(128,128,128,0.2)";
-    const lineStrong = computed.getPropertyValue("--line").trim() || "rgba(128,128,128,0.45)";
-    const u1Color = computed.getPropertyValue("--u1").trim() || "#2f6fb3";
-    const u4Color = computed.getPropertyValue("--u4").trim() || "#e05252";
-    const signalColor = computed.getPropertyValue("--signal").trim() || "#3b82f6";
-    const signalSoft = computed.getPropertyValue("--signal-soft").trim() || "rgba(59,130,246,0.18)";
-    const textSoft = computed.getPropertyValue("--text-soft").trim() || "#94a3b8";
-
-    // 1. Clear full canvas
-    ctx2d.fillStyle = canvasColor;
-    ctx2d.fillRect(0, 0, width, height);
-
-    // 2. Starting 15x15 court
-    const courtLeft = 0 * cellSize + pan.x;
-    const courtTop = 0 * cellSize + pan.y;
-    const courtSize = 15 * cellSize;
-    ctx2d.fillStyle = surfaceColor;
-    ctx2d.fillRect(courtLeft, courtTop, courtSize, courtSize);
-    ctx2d.strokeStyle = lineStrong;
-    ctx2d.lineWidth = 1.5;
-    ctx2d.strokeRect(courtLeft, courtTop, courtSize, courtSize);
-
-    // 3. Grid lines
-    const startCol = Math.floor(-pan.x / cellSize) - 1;
-    const endCol = Math.ceil((width - pan.x) / cellSize) + 1;
-    const startRow = Math.floor(-pan.y / cellSize) - 1;
-    const endRow = Math.ceil((height - pan.y) / cellSize) + 1;
-
-    ctx2d.lineWidth = 1;
-    ctx2d.strokeStyle = lineSoft;
-    ctx2d.beginPath();
-    for (let c = startCol; c <= endCol; c++) {
-      const xPos = Math.round(c * cellSize + pan.x) + 0.5;
-      ctx2d.moveTo(xPos, 0);
-      ctx2d.lineTo(xPos, height);
-    }
-    for (let r = startRow; r <= endRow; r++) {
-      const yPos = Math.round(r * cellSize + pan.y) + 0.5;
-      ctx2d.moveTo(0, yPos);
-      ctx2d.lineTo(width, yPos);
-    }
-    ctx2d.stroke();
-
-    // Hoshi reference points in standard 15x15
-    const hoshi = [
-      [7, 7],
-      [3, 3],
-      [3, 11],
-      [11, 3],
-      [11, 11],
-    ];
-    ctx2d.fillStyle = textSoft;
-    for (const [hr, hc] of hoshi) {
-      const cx = hc * cellSize + pan.x + cellSize / 2;
-      const cy = hr * cellSize + pan.y + cellSize / 2;
-      if (cx >= -5 && cx <= width + 5 && cy >= -5 && cy <= height + 5) {
-        ctx2d.beginPath();
-        ctx2d.arc(cx, cy, Math.max(2, cellSize * 0.08), 0, Math.PI * 2);
-        ctx2d.fill();
-      }
-    }
-
-    // 4. Winning line highlight
-    if (winCoords.size > 0) {
-      for (const key of winCoords) {
-        const [r, c] = key.split(",").map(Number);
-        const cellX = c * cellSize + pan.x;
-        const cellY = r * cellSize + pan.y;
-        if (cellX + cellSize >= 0 && cellX <= width && cellY + cellSize >= 0 && cellY <= height) {
-          ctx2d.fillStyle = signalSoft;
-          ctx2d.fillRect(cellX, cellY, cellSize, cellSize);
-          ctx2d.strokeStyle = signalColor;
-          ctx2d.lineWidth = 2;
-          ctx2d.strokeRect(cellX + 1, cellY + 1, cellSize - 2, cellSize - 2);
-        }
-      }
-    }
-
-    // 5. Last move highlight
-    if (lastCoord) {
-      const cellX = lastCoord.c * cellSize + pan.x;
-      const cellY = lastCoord.r * cellSize + pan.y;
-      if (cellX + cellSize >= 0 && cellX <= width && cellY + cellSize >= 0 && cellY <= height) {
-        ctx2d.fillStyle = signalSoft;
-        ctx2d.fillRect(cellX, cellY, cellSize, cellSize);
-        ctx2d.strokeStyle = signalColor;
-        ctx2d.lineWidth = 1.5;
-        ctx2d.setLineDash([3, 3]);
-        ctx2d.strokeRect(cellX + 1.5, cellY + 1.5, cellSize - 3, cellSize - 3);
-        ctx2d.setLineDash([]);
-      }
-    }
-
-    // 6. Hover preview (ghost mark)
-    if (hover && myMove && !pieces[`${hover.r},${hover.c}`] && !busy) {
-      const cellX = hover.c * cellSize + pan.x;
-      const cellY = hover.r * cellSize + pan.y;
-      if (cellX + cellSize >= 0 && cellX <= width && cellY + cellSize >= 0 && cellY <= height) {
-        ctx2d.fillStyle = signalSoft;
-        ctx2d.fillRect(cellX, cellY, cellSize, cellSize);
-
-        ctx2d.font = `800 ${Math.round(cellSize * 0.65)}px sans-serif`;
-        ctx2d.textAlign = "center";
-        ctx2d.textBaseline = "middle";
-        ctx2d.fillStyle = myMark === "X" ? u1Color : u4Color;
-        ctx2d.globalAlpha = 0.45;
-        ctx2d.fillText(myMark, cellX + cellSize / 2, cellY + cellSize / 2);
-        ctx2d.globalAlpha = 1.0;
-      }
-    }
-
-    // 7. Placed pieces
-    ctx2d.font = `800 ${Math.round(cellSize * 0.65)}px sans-serif`;
-    ctx2d.textAlign = "center";
-    ctx2d.textBaseline = "middle";
-
-    for (const [key, mark] of Object.entries(pieces)) {
-      const [r, c] = key.split(",").map(Number);
-      const cellX = c * cellSize + pan.x;
-      const cellY = r * cellSize + pan.y;
-      if (cellX + cellSize < 0 || cellX > width || cellY + cellSize < 0 || cellY > height) {
-        continue;
-      }
-      const upper = mark.toUpperCase();
-      const isWin = winCoords.has(key);
-      ctx2d.fillStyle = isWin ? signalColor : upper === "X" ? u1Color : u4Color;
-      ctx2d.fillText(upper, cellX + cellSize / 2, cellY + cellSize / 2);
-    }
-
-    ctx2d.restore();
-  }, [cellSize, pan, pieces, winCoords, lastCoord, hover, myMove, busy, myMark]);
-
-  const pointerRef = useRef<{
-    id: number;
-    startX: number;
-    startY: number;
-    panX: number;
-    panY: number;
-    isDrag: boolean;
-  } | null>(null);
-
-  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (e.pointerType === "mouse" && e.button !== 0) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    pointerRef.current = {
-      id: e.pointerId,
-      startX: e.clientX,
-      startY: e.clientY,
-      panX: pan.x,
-      panY: pan.y,
-      isDrag: false,
-    };
+    const [r, c] = k.split(",").map(Number);
+    setPicked(null);
+    act("move", { r, c });
   };
 
-  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const p = pointerRef.current;
-    const rect = e.currentTarget.getBoundingClientRect();
-    if (p && p.id === e.pointerId) {
-      const dx = e.clientX - p.startX;
-      const dy = e.clientY - p.startY;
-      if (!p.isDrag && Math.hypot(dx, dy) > 4) {
-        p.isDrag = true;
-        setDragging(true);
-      }
-      if (p.isDrag) {
-        setPan({ x: p.panX + dx, y: p.panY + dy });
-        return;
-      }
+  const cells: ReactNode[] = [];
+  for (let i = 0; i < bounds.rows; i++) {
+    for (let j = 0; j < bounds.cols; j++) {
+      const r = bounds.r0 + i;
+      const c = bounds.c0 + j;
+      const k = `${r},${c}`;
+      const mark = pieces[k];
+      const cls = [
+        "caro-cell",
+        mark && `is-${mark}`,
+        win.has(k) && "is-win",
+        k === last && "is-last",
+        k === picked && "is-picked",
+        !mark && myMove && "is-open",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      cells.push(
+        <button
+          key={k}
+          type="button"
+          className={cls}
+          data-k={k}
+          disabled={!!mark || !myMove || busy}
+          onPointerDown={(e) => (touchRef.current = e.pointerType !== "mouse")}
+          onClick={() => play(k)}
+          aria-label={mark ? `${mark.toUpperCase()} hàng ${i + 1} cột ${j + 1}` : `Ô trống hàng ${i + 1} cột ${j + 1}`}
+        >
+          {mark ? mark.toUpperCase() : k === picked ? myMark.toUpperCase() : null}
+        </button>,
+      );
     }
-    const col = Math.floor((e.clientX - rect.left - pan.x) / cellSize);
-    const row = Math.floor((e.clientY - rect.top - pan.y) / cellSize);
-    if (!hover || hover.r !== row || hover.c !== col) {
-      setHover({ r: row, c: col });
-    }
-  };
-
-  const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const p = pointerRef.current;
-    if (!p || p.id !== e.pointerId) return;
-    pointerRef.current = null;
-    setDragging(false);
-
-    if (!p.isDrag) {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const col = Math.floor((e.clientX - rect.left - pan.x) / cellSize);
-      const row = Math.floor((e.clientY - rect.top - pan.y) / cellSize);
-      if (myMove && !pieces[`${row},${col}`] && !busy) {
-        act("move", { r: row, c: col });
-      }
-    }
-  };
-
-  const onPointerCancel = () => {
-    pointerRef.current = null;
-    setDragging(false);
-  };
-
-  const onWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
-    const newCellSize = Math.max(18, Math.min(64, Math.round(cellSize * zoomFactor)));
-    if (newCellSize === cellSize) return;
-
-    const rect = e.currentTarget.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-
-    const scale = newCellSize / cellSize;
-    const newPanX = mouseX - (mouseX - pan.x) * scale;
-    const newPanY = mouseY - (mouseY - pan.y) * scale;
-
-    setCellSize(newCellSize);
-    setPan({ x: newPanX, y: newPanY });
-  };
+  }
 
   return (
     <div className="caro">
@@ -1257,84 +1109,38 @@ function Caro({ ctx }: { ctx: Ctx }) {
             <span key={p.id} className={`caro-side${s.turn === p.id ? " is-turn" : ""}`}>
               <b className={`caro-mark caro-${i ? "o" : "x"}`}>{i ? "O" : "X"}</b>
               <Avatar user={ctx.user(p.id)} size={20} />
-              {p.id === meId ? "Bạn" : p.name}
+              <span className="caro-name">{p.id === meId ? "Bạn" : p.name}</span>
             </span>
           ) : null,
         )}
         {game.status === "playing" && <Countdown deadline={game.deadline} label="Thời gian nước đi" />}
       </div>
-      <div className="caro-board-container" ref={containerRef}>
-        <canvas
-          ref={canvasRef}
-          className={`caro-canvas${dragging ? " is-dragging" : ""}`}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerCancel}
-          onPointerLeave={() => setHover(null)}
-          onWheel={onWheel}
-          aria-label="Bàn cờ caro vô hạn. Kéo để di chuyển bàn cờ, bấm để đánh cờ."
-        />
-        <div className="caro-toolbar">
-          <button
-            type="button"
-            className="caro-tool-btn"
-            title="Về trung tâm (bàn 15×15 ban đầu)"
-            onClick={() => centerAt(7, 7)}
-          >
-            🎯 Về tâm
-          </button>
-          {lastCoord && (
-            <button
-              type="button"
-              className="caro-tool-btn"
-              title="Xem nước đi mới nhất"
-              onClick={() => centerAt(lastCoord.r, lastCoord.c)}
-            >
-              📍 Nước cuối
-            </button>
-          )}
-          <button
-            type="button"
-            className="caro-tool-btn"
-            title="Phóng to"
-            onClick={() => {
-              const newSize = Math.min(64, cellSize + 4);
-              setCellSize(newSize);
-            }}
-          >
-            +
-          </button>
-          <button
-            type="button"
-            className="caro-tool-btn"
-            title="Thu nhỏ"
-            onClick={() => {
-              const newSize = Math.max(18, cellSize - 4);
-              setCellSize(newSize);
-            }}
-          >
-            −
-          </button>
+      <div className="caro-box" ref={boxRef}>
+        <div
+          className={`caro-grid${myMove ? " is-my-move" : ""}`}
+          data-ghost={myMark.toUpperCase()}
+          style={{ gridTemplateColumns: `repeat(${bounds.cols}, ${cell}px)`, gridAutoRows: `${cell}px`, fontSize: cell * 0.62 }}
+        >
+          {cells}
         </div>
-        <span className="caro-pan-hint">🖱️ Kéo để di chuyển</span>
       </div>
       <div className="game-actions">
         {game.status === "playing" && (
           <span className="game-hint">
-            {myMove ? "Tới lượt bạn." : `Chờ ${ctx.nameOf(s.turn ?? 0)} đánh…`} Nước thứ {s.moves + 1}.
+            {myMove
+              ? picked
+                ? "Chạm lần nữa vào ô đó để đánh."
+                : "Tới lượt bạn."
+              : `Chờ ${ctx.nameOf(s.turn ?? 0)} đánh…`}{" "}
+            Nước thứ {s.moves + 1}.
           </span>
         )}
-        <button type="button" className="link-btn" onClick={() => setLbOpen(true)}>
-          🏆 Bảng xếp hạng
-        </button>
         {game.status === "playing" && ctx.isPlayer && (
           <button type="button" className="link-btn game-cancel" disabled={busy} onClick={() => act("resign")}>
             Chịu thua
           </button>
         )}
       </div>
-      {lbOpen && <GameLeaderboardDialog initialKind="caro" onClose={() => setLbOpen(false)} />}
     </div>
   );
 }
@@ -1348,7 +1154,6 @@ function Chess({ ctx }: { ctx: Ctx }) {
   const [pendingPromotion, setPendingPromotion] = useState<{ from: string; to: string } | null>(null);
   const [confirmResign, setConfirmResign] = useState(false);
   const [manualFlip, setManualFlip] = useState<boolean | null>(null);
-  const [lbOpen, setLbOpen] = useState(false);
 
   const whitePlayer = game.players.find((p) => p.id === s.white_player_id);
   const blackPlayer = game.players.find((p) => p.id === s.black_player_id);
@@ -1491,7 +1296,7 @@ function Chess({ ctx }: { ctx: Ctx }) {
           <span className={`chess-color-badge ${topColor}`} aria-hidden>
             {topColor === "white" ? "⚪" : "⚫"}
           </span>
-          <span>
+          <span className="chess-player-name">
             {topPlayer?.name || (topColor === "white" ? "Quân Trắng" : "Quân Đen")}
             {topPlayer?.id === meId ? " (Bạn)" : ""}
           </span>
@@ -1641,7 +1446,7 @@ function Chess({ ctx }: { ctx: Ctx }) {
           <span className={`chess-color-badge ${bottomColor}`} aria-hidden>
             {bottomColor === "white" ? "⚪" : "⚫"}
           </span>
-          <span>
+          <span className="chess-player-name">
             {bottomPlayer?.name || (bottomColor === "white" ? "Quân Trắng" : "Quân Đen")}
             {bottomPlayer?.id === meId ? " (Bạn)" : ""}
           </span>
@@ -1674,21 +1479,6 @@ function Chess({ ctx }: { ctx: Ctx }) {
             title="Xoay bàn cờ"
           >
             🔄 Lật bàn
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={ctx.openThread}
-            title="Mở luồng bình luận / Khán đài"
-          >
-            💬 Khán đài {ctx.replyCount ? `(${ctx.replyCount})` : ""}
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => setLbOpen(true)}
-          >
-            🏆 Xếp hạng
           </button>
         </div>
 
@@ -1738,7 +1528,6 @@ function Chess({ ctx }: { ctx: Ctx }) {
         )}
       </div>
 
-      {lbOpen && <GameLeaderboardDialog initialKind="chess" onClose={() => setLbOpen(false)} />}
     </div>
   );
 }
@@ -1746,19 +1535,7 @@ function Chess({ ctx }: { ctx: Ctx }) {
 /* ---------- Cờ tướng (Xiangqi) ---------- */
 
 function Xiangqi({ ctx }: { ctx: Ctx }) {
-  const [lbOpen, setLbOpen] = useState(false);
-  return (
-    <>
-      <XiangqiGame
-        ctx={{
-          ...ctx,
-          onOpenLeaderboard: () => setLbOpen(true),
-          onOpenThread: ctx.openThread,
-        }}
-      />
-      {lbOpen && <GameLeaderboardDialog initialKind="xiangqi" onClose={() => setLbOpen(false)} />}
-    </>
-  );
+  return <XiangqiGame ctx={ctx} />;
 }
 
 /* ---------- Oẳn tù tì ---------- */
@@ -1836,10 +1613,20 @@ function Rps({ ctx }: { ctx: Ctx }) {
 
 /* ---------- Mở phòng chơi ---------- */
 
+/** Trò đối kháng 2 người (phần còn lại là trò chơi đông người). */
+const DUEL_KINDS = new Set<GameKind>(["caro", "rps", "chess", "xiangqi"]);
+const PICKER_GROUPS = [
+  { id: "all", label: "Tất cả" },
+  { id: "party", label: "Chơi đông người" },
+  { id: "duel", label: "Đấu 2 người" },
+] as const;
+
 export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number; dm: boolean; onClose: () => void }) {
   const { state, createGame } = useChat();
-  const kinds = (Object.keys(GAME_INFO) as GameKind[]).filter((k) => !dm || k === "caro" || k === "rps" || k === "chess" || k === "xiangqi");
+  const kinds = (Object.keys(GAME_INFO) as GameKind[]).filter((k) => !dm || DUEL_KINDS.has(k) || k === "baucua");
   const [kind, setKind] = useState<GameKind>(kinds[0]);
+  const [group, setGroup] = useState<(typeof PICKER_GROUPS)[number]["id"]>("all");
+  const shown = kinds.filter((k) => group === "all" || (group === "duel") === DUEL_KINDS.has(k));
   const [day, setDay] = useState(120);
   const [night, setNight] = useState(45);
   const [hideRoles, setHideRoles] = useState(false);
@@ -1851,6 +1638,7 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
   const [xiangqiFirst, setXiangqiFirst] = useState<"random" | "host" | "guest">("random");
   const [xiangqiBet, setXiangqiBet] = useState(0);
   const [bestOf, setBestOf] = useState(3);
+  const [rollsPerDealer, setRollsPerDealer] = useState(3);
   const myBalance = state.wallet?.balance ?? 0;
   const xiangqiInsufficient = kind === "xiangqi" && xiangqiBet > myBalance;
   const xiangqiBetInvalid = kind === "xiangqi" && (xiangqiBet < 0 || xiangqiBet > 1_000_000 || xiangqiInsufficient);
@@ -1880,6 +1668,7 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
       chess: { turn_minutes: chessMinutes, first: chessFirst },
       xiangqi: { turn_minutes: xiangqiMinutes, first: xiangqiFirst, bet_amount: Math.max(0, Math.floor(xiangqiBet)) },
       rps: { best_of: bestOf },
+      baucua: { rolls_per_dealer: rollsPerDealer },
     };
     try {
       await createGame(channelId, kind, options[kind]);
@@ -1891,232 +1680,266 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
   };
 
   return (
-    <Dialog title="Chơi game" onClose={onClose}>
-      <form className="dialog-form" onSubmit={submit}>
-        <div className="game-picker" role="radiogroup" aria-label="Trò chơi">
-          {kinds.map((k) => (
-            <label key={k} className={`game-pick${kind === k ? " is-chosen" : ""}`}>
-              <input type="radio" name="game-kind" value={k} checked={kind === k} onChange={() => setKind(k)} />
-              <span className="game-pick-icon" aria-hidden>
-                {GAME_INFO[k].icon}
-              </span>
-              <span className="game-pick-text">
-                <b>{GAME_INFO[k].title}</b>
-                <small>{GAME_INFO[k].players}</small>
-                <span>{GAME_INFO[k].blurb}</span>
-              </span>
-            </label>
-          ))}
+    <Dialog title="Chơi game" onClose={onClose} className="dialog-games dialog-top">
+      <form className="dialog-form game-dialog" onSubmit={submit}>
+        <div className="game-dialog-pick">
+          {!dm && (
+            <div className="game-groups" role="tablist" aria-label="Lọc trò chơi">
+              {PICKER_GROUPS.map((g) => (
+                <button
+                  key={g.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={group === g.id}
+                  className={`game-group${group === g.id ? " is-active" : ""}`}
+                  onClick={() => setGroup(g.id)}
+                >
+                  {g.label}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="game-picker" role="radiogroup" aria-label="Trò chơi">
+            {shown.map((k) => (
+              <label key={k} className={`game-pick${kind === k ? " is-chosen" : ""}`} title={GAME_INFO[k].blurb}>
+                <input type="radio" name="game-kind" value={k} checked={kind === k} onChange={() => setKind(k)} />
+                <span className="game-pick-icon" aria-hidden>
+                  {GAME_INFO[k].icon}
+                </span>
+                <b className="game-pick-title">{GAME_INFO[k].title}</b>
+                <small className="game-pick-players">{GAME_INFO[k].players.split(" · ")[0]}</small>
+              </label>
+            ))}
+          </div>
         </div>
 
-        {kind === "station" && (
-          <>
-            <div className="game-opts">
-              <label className="field">
-                <span>Số kẻ phản bội</span>
-                <select value={st.traitors} onChange={(e) => setOpt("traitors", Number(e.target.value))}>
-                  <option value={0}>Tự động (1 / 2 / 3)</option>
-                  <option value={1}>1</option>
-                  <option value={2}>2</option>
-                  <option value={3}>3</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>Hồi chiêu giết</span>
-                <select value={st.kill_cooldown} onChange={(e) => setOpt("kill_cooldown", Number(e.target.value))}>
-                  {[15, 20, 25, 30, 45].map((v) => (
-                    <option key={v} value={v}>
-                      {v} giây
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>Nhiệm vụ mỗi người</span>
-                <select value={st.tasks} onChange={(e) => setOpt("tasks", Number(e.target.value))}>
-                  {[3, 4, 5, 6, 8].map((v) => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>Lượt họp khẩn mỗi người</span>
-                <select value={st.emergencies} onChange={(e) => setOpt("emergencies", Number(e.target.value))}>
-                  {[1, 2, 3].map((v) => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>Thảo luận</span>
-                <select value={st.discuss} onChange={(e) => setOpt("discuss", Number(e.target.value))}>
-                  {[15, 30, 45, 60, 90].map((v) => (
-                    <option key={v} value={v}>
-                      {v} giây
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>Bỏ phiếu</span>
-                <select value={st.vote} onChange={(e) => setOpt("vote", Number(e.target.value))}>
-                  {[30, 60, 90, 120].map((v) => (
-                    <option key={v} value={v}>
-                      {v} giây
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <label className="check-field">
-              <input
-                type="checkbox"
-                checked={st.hide_ejects}
-                onChange={(e) => setOpt("hide_ejects", e.target.checked)}
-              />
-              <span>
-                Giấu danh tính người bị đẩy ra
-                <small>Không cho biết người bị loại có phải kẻ phản bội không (khó hơn).</small>
-              </span>
-            </label>
-          </>
-        )}
-        {kind === "werewolf" && (
-          <>
-            <div className="game-opts">
-              <label className="field">
-                <span>Ban ngày (thảo luận + bỏ phiếu)</span>
-                <select value={day} onChange={(e) => setDay(Number(e.target.value))}>
-                  <option value={60}>1 phút</option>
-                  <option value={120}>2 phút</option>
-                  <option value={180}>3 phút</option>
-                  <option value={300}>5 phút</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>Ban đêm</span>
-                <select value={night} onChange={(e) => setNight(Number(e.target.value))}>
-                  <option value={30}>30 giây</option>
-                  <option value={45}>45 giây</option>
-                  <option value={60}>1 phút</option>
-                  <option value={90}>1 phút 30</option>
-                </select>
-              </label>
-            </div>
-            <label className="check-field">
-              <input type="checkbox" checked={hideRoles} onChange={(e) => setHideRoles(e.target.checked)} />
-              <span>
-                Giấu vai người chết
-                <small>Chỉ lộ vai của mọi người khi hết ván (khó hơn).</small>
-              </span>
-            </label>
-          </>
-        )}
-        {kind === "spy" && (
-          <label className="field">
-            <span>Số gián điệp</span>
-            <select value={spies} onChange={(e) => setSpies(Number(e.target.value))}>
-              <option value={0}>Tự động (1, từ 8 người là 2)</option>
-              <option value={1}>1</option>
-              <option value={2}>2</option>
-              <option value={3}>3</option>
-            </select>
-          </label>
-        )}
-        {kind === "caro" && (
-          <label className="check-field">
-            <input type="checkbox" checked={blockRule} onChange={(e) => setBlockRule(e.target.checked)} />
-            <span>
-              Luật chặn hai đầu
-              <small>Hàng 5 bị chặn cả hai đầu thì không tính thắng.</small>
-            </span>
-          </label>
-        )}
-        {kind === "chess" && (
-          <>
-            <label className="field">
-              <span>Thời gian mỗi nước đi</span>
-              <select value={chessMinutes} onChange={(e) => setChessMinutes(Number(e.target.value))}>
-                <option value={1}>1 phút (Chớp - Blitz)</option>
-                <option value={3}>3 phút (Tiêu chuẩn)</option>
-                <option value={5}>5 phút (Nhanh - Rapid)</option>
-                <option value={10}>10 phút (Dài)</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>Cầm quân Trắng (đi trước)</span>
-              <select value={chessFirst} onChange={(e) => setChessFirst(e.target.value as any)}>
-                <option value="random">Ngẫu nhiên (50/50)</option>
-                <option value="host">Chủ phòng cầm Trắng</option>
-                <option value="guest">Khách cầm Trắng</option>
-              </select>
-            </label>
-          </>
-        )}
-        {kind === "xiangqi" && (
-          <>
-            <label className="field">
-              <span>Thời gian mỗi nước đi</span>
-              <select value={xiangqiMinutes} onChange={(e) => setXiangqiMinutes(Number(e.target.value))}>
-                <option value={1}>1 phút (Chớp)</option>
-                <option value={3}>3 phút (Tiêu chuẩn)</option>
-                <option value={5}>5 phút (Nhanh)</option>
-                <option value={10}>10 phút (Dài)</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>Cầm quân Đỏ (đi trước)</span>
-              <select value={xiangqiFirst} onChange={(e) => setXiangqiFirst(e.target.value as any)}>
-                <option value="random">Ngẫu nhiên (50/50)</option>
-                <option value="host">Chủ phòng cầm Đỏ</option>
-                <option value="guest">Khách cầm Đỏ</option>
-              </select>
-            </label>
-            <div className="field">
-              <span>Mức cược bàn (Xu) · Số dư: {myBalance.toLocaleString("vi-VN")} Xu</span>
-              <div className="wallet-chips">
-                {[0, 100, 500, 1000, 5000, 10000].map((v) => (
-                  <button
-                    key={v}
-                    type="button"
-                    className={`wallet-chip${xiangqiBet === v ? " is-active" : ""}`}
-                    onClick={() => setXiangqiBet(v)}
-                  >
-                    {v === 0 ? "Miễn phí" : `${v.toLocaleString("vi-VN")}`}
-                  </button>
-                ))}
+        <div className="game-dialog-side">
+          <p className="game-pick-detail">
+            <b>
+              {GAME_INFO[kind].icon} {GAME_INFO[kind].title}
+            </b>{" "}
+            · {GAME_INFO[kind].players}. {GAME_INFO[kind].blurb}
+          </p>
+
+          {kind === "station" && (
+            <>
+              <div className="game-opts">
+                <label className="field">
+                  <span>Số kẻ phản bội</span>
+                  <select value={st.traitors} onChange={(e) => setOpt("traitors", Number(e.target.value))}>
+                    <option value={0}>Tự động (1 / 2 / 3)</option>
+                    <option value={1}>1</option>
+                    <option value={2}>2</option>
+                    <option value={3}>3</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Hồi chiêu giết</span>
+                  <select value={st.kill_cooldown} onChange={(e) => setOpt("kill_cooldown", Number(e.target.value))}>
+                    {[15, 20, 25, 30, 45].map((v) => (
+                      <option key={v} value={v}>
+                        {v} giây
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Nhiệm vụ mỗi người</span>
+                  <select value={st.tasks} onChange={(e) => setOpt("tasks", Number(e.target.value))}>
+                    {[3, 4, 5, 6, 8].map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Lượt họp khẩn mỗi người</span>
+                  <select value={st.emergencies} onChange={(e) => setOpt("emergencies", Number(e.target.value))}>
+                    {[1, 2, 3].map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Thảo luận</span>
+                  <select value={st.discuss} onChange={(e) => setOpt("discuss", Number(e.target.value))}>
+                    {[15, 30, 45, 60, 90].map((v) => (
+                      <option key={v} value={v}>
+                        {v} giây
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Bỏ phiếu</span>
+                  <select value={st.vote} onChange={(e) => setOpt("vote", Number(e.target.value))}>
+                    {[30, 60, 90, 120].map((v) => (
+                      <option key={v} value={v}>
+                        {v} giây
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
-              <input
-                type="number"
-                min={0}
-                max={1000000}
-                step={50}
-                value={xiangqiBet}
-                onChange={(e) => setXiangqiBet(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
-                placeholder="Nhập mức cược (0 - 1,000,000 Xu)"
-              />
-              {xiangqiInsufficient && (
-                <small style={{ color: "var(--warn)", fontWeight: 600 }}>
-                  Số dư Xu không đủ để mở bàn cược {xiangqiBet.toLocaleString("vi-VN")} Xu.
-                </small>
-              )}
-            </div>
-          </>
-        )}
-        {kind === "rps" && (
-          <label className="field">
-            <span>Thể thức</span>
-            <select value={bestOf} onChange={(e) => setBestOf(Number(e.target.value))}>
-              <option value={1}>1 ván quyết định</option>
-              <option value={3}>Chạm 2 (3 ván)</option>
-              <option value={5}>Chạm 3 (5 ván)</option>
-            </select>
-          </label>
-        )}
+              <label className="check-field">
+                <input
+                  type="checkbox"
+                  checked={st.hide_ejects}
+                  onChange={(e) => setOpt("hide_ejects", e.target.checked)}
+                />
+                <span>
+                  Giấu danh tính người bị đẩy ra
+                  <small>Không cho biết người bị loại có phải kẻ phản bội không (khó hơn).</small>
+                </span>
+              </label>
+            </>
+          )}
+          {kind === "werewolf" && (
+            <>
+              <div className="game-opts">
+                <label className="field">
+                  <span>Ban ngày (thảo luận + bỏ phiếu)</span>
+                  <select value={day} onChange={(e) => setDay(Number(e.target.value))}>
+                    <option value={60}>1 phút</option>
+                    <option value={120}>2 phút</option>
+                    <option value={180}>3 phút</option>
+                    <option value={300}>5 phút</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Ban đêm</span>
+                  <select value={night} onChange={(e) => setNight(Number(e.target.value))}>
+                    <option value={30}>30 giây</option>
+                    <option value={45}>45 giây</option>
+                    <option value={60}>1 phút</option>
+                    <option value={90}>1 phút 30</option>
+                  </select>
+                </label>
+              </div>
+              <label className="check-field">
+                <input type="checkbox" checked={hideRoles} onChange={(e) => setHideRoles(e.target.checked)} />
+                <span>
+                  Giấu vai người chết
+                  <small>Chỉ lộ vai của mọi người khi hết ván (khó hơn).</small>
+                </span>
+              </label>
+            </>
+          )}
+          {kind === "spy" && (
+            <label className="field">
+              <span>Số gián điệp</span>
+              <select value={spies} onChange={(e) => setSpies(Number(e.target.value))}>
+                <option value={0}>Tự động (1, từ 8 người là 2)</option>
+                <option value={1}>1</option>
+                <option value={2}>2</option>
+                <option value={3}>3</option>
+              </select>
+            </label>
+          )}
+          {kind === "caro" && (
+            <label className="check-field">
+              <input type="checkbox" checked={blockRule} onChange={(e) => setBlockRule(e.target.checked)} />
+              <span>
+                Luật chặn hai đầu
+                <small>Hàng 5 bị chặn cả hai đầu thì không tính thắng.</small>
+              </span>
+            </label>
+          )}
+          {kind === "chess" && (
+            <>
+              <label className="field">
+                <span>Thời gian mỗi nước đi</span>
+                <select value={chessMinutes} onChange={(e) => setChessMinutes(Number(e.target.value))}>
+                  <option value={1}>1 phút (Chớp - Blitz)</option>
+                  <option value={3}>3 phút (Tiêu chuẩn)</option>
+                  <option value={5}>5 phút (Nhanh - Rapid)</option>
+                  <option value={10}>10 phút (Dài)</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Cầm quân Trắng (đi trước)</span>
+                <select value={chessFirst} onChange={(e) => setChessFirst(e.target.value as any)}>
+                  <option value="random">Ngẫu nhiên (50/50)</option>
+                  <option value="host">Chủ phòng cầm Trắng</option>
+                  <option value="guest">Khách cầm Trắng</option>
+                </select>
+              </label>
+            </>
+          )}
+          {kind === "xiangqi" && (
+            <>
+              <label className="field">
+                <span>Thời gian mỗi nước đi</span>
+                <select value={xiangqiMinutes} onChange={(e) => setXiangqiMinutes(Number(e.target.value))}>
+                  <option value={1}>1 phút (Chớp)</option>
+                  <option value={3}>3 phút (Tiêu chuẩn)</option>
+                  <option value={5}>5 phút (Nhanh)</option>
+                  <option value={10}>10 phút (Dài)</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Cầm quân Đỏ (đi trước)</span>
+                <select value={xiangqiFirst} onChange={(e) => setXiangqiFirst(e.target.value as any)}>
+                  <option value="random">Ngẫu nhiên (50/50)</option>
+                  <option value="host">Chủ phòng cầm Đỏ</option>
+                  <option value="guest">Khách cầm Đỏ</option>
+                </select>
+              </label>
+              <div className="field">
+                <span>Mức cược bàn (xu) · Số dư: {myBalance.toLocaleString("vi-VN")} xu</span>
+                <div className="wallet-chips">
+                  {[0, 50, 100, 200, 500, 1000].map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      className={`wallet-chip${xiangqiBet === v ? " is-active" : ""}`}
+                      onClick={() => setXiangqiBet(v)}
+                    >
+                      {v === 0 ? "Miễn phí" : v.toLocaleString("vi-VN")}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="number"
+                  min={0}
+                  max={1000000}
+                  step={10}
+                  value={xiangqiBet}
+                  onChange={(e) => setXiangqiBet(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+                  placeholder="Nhập mức cược (0 - 1.000.000 xu)"
+                />
+                {xiangqiInsufficient && (
+                  <small style={{ color: "var(--warn)", fontWeight: 600 }}>
+                    Số dư không đủ để mở bàn cược {xiangqiBet.toLocaleString("vi-VN")} xu.
+                  </small>
+                )}
+              </div>
+            </>
+          )}
+          {kind === "baucua" && (
+            <label className="field">
+              <span>Mỗi người cầm cái</span>
+              <select value={rollsPerDealer} onChange={(e) => setRollsPerDealer(Number(e.target.value))}>
+                <option value={1}>1 lượt lắc</option>
+                <option value={3}>3 lượt lắc</option>
+                <option value={5}>5 lượt lắc</option>
+              </select>
+            </label>
+          )}
+          {kind === "rps" && (
+            <label className="field">
+              <span>Thể thức</span>
+              <select value={bestOf} onChange={(e) => setBestOf(Number(e.target.value))}>
+                <option value={1}>1 ván quyết định</option>
+                <option value={3}>Chạm 2 (3 ván)</option>
+                <option value={5}>Chạm 3 (5 ván)</option>
+              </select>
+            </label>
+          )}
+        </div>
 
         <FormError>{error}</FormError>
         <div className="dialog-actions">
@@ -2143,39 +1966,43 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
 
 /* ---------- Bảng xếp hạng trò chơi ---------- */
 
+const LB_TABS: { id: string; label: string }[] = [
+  { id: "all", label: "Tất cả" },
+  { id: "xiangqi", label: "Cờ tướng" },
+  { id: "chess", label: "Cờ vua" },
+  { id: "caro", label: "Cờ caro" },
+  { id: "rps", label: "Oẳn tù tì" },
+  { id: "werewolf", label: "Ma Sói" },
+  { id: "spy", label: "Gián điệp" },
+  { id: "station", label: "Trạm vũ trụ" },
+];
+
+function lbUser(m: GameMemberStats): PublicUser {
+  return { id: m.user_id, username: m.username, display_name: m.display_name, avatar: m.avatar, status_text: "" };
+}
+
 export function GameLeaderboardDialog({
-  initialKind = "caro",
+  initialKind = "all",
   onClose,
 }: {
   initialKind?: string;
   onClose: () => void;
 }) {
-  const { api } = useChat();
+  const { api, state } = useChat();
   const [kind, setKind] = useState<string>(initialKind);
   const [data, setData] = useState<GameLeaderboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const tabs: { id: string; label: string }[] = [
-    { id: "caro", label: "Cờ caro" },
-    { id: "chess", label: "Cờ vua" },
-    { id: "xiangqi", label: "Cờ tướng" },
-    { id: "richest", label: "🪙 Top Xu" },
-    { id: "all", label: "Tất cả game" },
-    { id: "rps", label: "Oẳn tù tì" },
-    { id: "werewolf", label: "Ma Sói" },
-    { id: "spy", label: "Gián điệp" },
-    { id: "station", label: "Trạm vũ trụ" },
-  ];
-
-  const apiKind = kind === "richest" ? "xiangqi" : kind;
+  const tabsRef = useRef<HTMLDivElement | null>(null);
+  const [tabsEl, setTabsEl] = useState<HTMLDivElement | null>(null);
+  useWheelScrollX(tabsEl);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
     api
-      ?.gameLeaderboard(apiKind)
+      ?.gameLeaderboard(kind)
       .then((res) => {
         if (!cancelled) {
           setData(res);
@@ -2191,16 +2018,34 @@ export function GameLeaderboardDialog({
     return () => {
       cancelled = true;
     };
-  }, [api, apiKind]);
+  }, [api, kind]);
+
+  // tab đang chọn luôn nằm trong vùng nhìn thấy (điện thoại: tab cuộn ngang)
+  useEffect(() => {
+    tabsRef.current?.querySelector<HTMLElement>(".is-active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [kind]);
+
+  const rated = RATED_KINDS.has(kind);
+  const members = (data?.members ?? []).filter((m) => m.total_games > 0);
+  const podium = members.slice(0, 3);
 
   return (
-    <Dialog title="🏆 Bảng xếp hạng trò chơi" onClose={onClose} wide>
-      <div className="lb-container">
-        <div className="lb-tabs" role="tablist">
-          {tabs.map((t) => (
+    <Dialog title="Bảng xếp hạng" onClose={onClose} wide>
+      <div className="lb">
+        <div
+          className="lb-tabs"
+          role="tablist"
+          ref={(el) => {
+            tabsRef.current = el;
+            setTabsEl(el);
+          }}
+        >
+          {LB_TABS.map((t) => (
             <button
               key={t.id}
               type="button"
+              role="tab"
+              aria-selected={kind === t.id}
               className={`lb-tab${kind === t.id ? " is-active" : ""}`}
               onClick={() => setKind(t.id)}
             >
@@ -2210,237 +2055,93 @@ export function GameLeaderboardDialog({
         </div>
 
         {loading ? (
-          <div className="lb-loading">Đang tải bảng xếp hạng…</div>
+          <p className="lb-note">Đang tải…</p>
         ) : error ? (
-          <div className="lb-error">{error}</div>
-        ) : kind === "richest" && data ? (
-          <div className="lb-body">
-            <div className="lb-table-wrap">
-              <div className="lb-card-header">
-                <h3>🪙 Bảng Xếp Hạng Tài Phú (Top Xu)</h3>
-                <span>{(data.top_richest ?? []).length} thành viên</span>
-              </div>
-              <div className="lb-table-scroll">
-                <table className="lb-table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: "3.5rem" }}>Hạng</th>
-                      <th>Thành viên</th>
-                      <th style={{ textAlign: "right" }}>Lãi/Lỗ Cờ tướng</th>
-                      <th style={{ textAlign: "right" }}>Số dư khả dụng</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(data.top_richest ?? []).map((m, idx) => (
-                      <tr key={m.user_id}>
-                        <td className="lb-td-rank">
-                          {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : idx + 1}
-                        </td>
-                        <td className="lb-td-user">
-                          <div className="lb-td-user-inner">
-                            <Avatar
-                              user={
-                                {
-                                  id: m.user_id,
-                                  username: m.username,
-                                  display_name: m.display_name,
-                                  avatar: m.avatar,
-                                } as PublicUser
-                              }
-                              size={24}
-                            />
-                            <span className="lb-td-name">{m.display_name || m.username}</span>
-                            {m.username && <span className="lb-td-handle">@{m.username}</span>}
-                          </div>
-                        </td>
-                        <td
-                          style={{
-                            textAlign: "right",
-                            fontWeight: 600,
-                            color: m.net_profit > 0 ? "var(--ok)" : m.net_profit < 0 ? "var(--warn)" : "var(--muted)",
-                          }}
-                        >
-                          {m.net_profit > 0
-                            ? `+${m.net_profit.toLocaleString("vi-VN")}`
-                            : m.net_profit.toLocaleString("vi-VN")}{" "}
-                          Xu
-                        </td>
-                        <td style={{ textAlign: "right", fontWeight: 700, color: "#b45309" }}>
-                          🪙 {m.balance.toLocaleString("vi-VN")} Xu
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        ) : !data || data.total_ended === 0 ? (
+          <p className="lb-note is-error">{error}</p>
+        ) : !data || data.total_ended === 0 || members.length === 0 ? (
           <div className="lb-empty">
-            <p>Chưa có ván chơi nào hoàn thành cho mục này.</p>
-            <small>Hãy rủ bạn bè vào phòng cùng chơi để vinh danh trên bảng xếp hạng nhé!</small>
+            <p>Chưa có ván nào kết thúc.</p>
+            <small>Chơi xong một ván là tên bạn sẽ có ở đây.</small>
           </div>
         ) : (
-          <div className="lb-body">
-            {/* Top 10 Thắng & Top 10 Thua */}
-            <div className="lb-top-grid">
-              {/* Top 10 Thắng */}
-              <div className="lb-top-card lb-top-wins">
-                <div className="lb-card-header">
-                  <h3>🥇 Top 10 Số Bàn Thắng</h3>
-                  <span>{data.top_wins.length} thành viên</span>
-                </div>
-                <div className="lb-top-list">
-                  {data.top_wins.length === 0 ? (
-                    <p className="lb-subtle">Chưa có ai thắng trận nào.</p>
-                  ) : (
-                    data.top_wins.map((m, idx) => (
-                      <div key={m.user_id} className={`lb-item rank-${idx + 1}`}>
-                        <span className="lb-rank">
-                          {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : `#${idx + 1}`}
-                        </span>
-                        <Avatar
-                          user={
-                            {
-                              id: m.user_id,
-                              username: m.username,
-                              display_name: m.display_name,
-                              avatar: m.avatar,
-                            } as PublicUser
-                          }
-                          size={28}
-                        />
-                        <div className="lb-user-info">
-                          <span className="lb-name">{m.display_name || m.username}</span>
-                          <span className="lb-sub">Tỉ lệ thắng: {m.win_rate}%</span>
-                        </div>
-                        <div className="lb-stat-badge win-badge">
-                          <b>{m.wins}</b> thắng
-                        </div>
-                      </div>
-                    ))
+          <>
+            <ol className="lb-podium" aria-label="Ba người dẫn đầu">
+              {podium.map((m, i) => (
+                <li key={m.user_id} className={`lb-podium-item place-${i + 1}${m.user_id === state.me.id ? " is-me" : ""}`}>
+                  <span className="lb-medal" aria-label={`Hạng ${i + 1}`}>
+                    {i + 1}
+                  </span>
+                  <Avatar user={lbUser(m)} size={i === 0 ? 52 : 44} />
+                  <span className="lb-podium-name">{m.display_name || m.username}</span>
+                  <span className="lb-podium-score">
+                    {rated ? (
+                      <>
+                        <b>{m.rating ?? 1200}</b> Elo
+                      </>
+                    ) : (
+                      <>
+                        <b>{m.wins}</b> thắng
+                      </>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ol>
+
+            <div className="lb-list" role="table" aria-label="Xếp hạng chi tiết">
+              <div className="lb-row lb-row-head" role="row">
+                <span role="columnheader" className="lb-c-rank">#</span>
+                <span role="columnheader" className="lb-c-name">Người chơi</span>
+                {rated && <span role="columnheader" className="lb-c-elo">Elo</span>}
+                <span role="columnheader" className="lb-c-record" title="Thắng – Thua – Hoà">T–B–H</span>
+                <span role="columnheader" className="lb-c-rate">Tỉ lệ thắng</span>
+                {(kind === "xiangqi" || kind === "all") && (
+                  <span role="columnheader" className="lb-c-profit">Lãi/Lỗ</span>
+                )}
+              </div>
+              {members.map((m, i) => (
+                <div key={m.user_id} role="row" className={`lb-row${m.user_id === state.me.id ? " is-me" : ""}`}>
+                  <span role="cell" className="lb-c-rank">{i + 1}</span>
+                  <span role="cell" className="lb-c-name">
+                    <Avatar user={lbUser(m)} size={28} />
+                    <span className="lb-name-text">
+                      <span className="lb-name">{m.display_name || m.username}</span>
+                      {m.username && <span className="lb-handle">@{m.username}</span>}
+                    </span>
+                  </span>
+                  {rated && (
+                    <span role="cell" className="lb-c-elo" title={`${m.rank_tier || ""} · cao nhất ${m.peak_rating ?? m.rating ?? 1200}`}>
+                      <b>{m.rating ?? 1200}</b>
+                      {m.rank_tier && <small>{m.rank_tier}</small>}
+                    </span>
+                  )}
+                  <span role="cell" className="lb-c-record">
+                    <span className="is-win">{m.wins}</span>–<span className="is-loss">{m.losses}</span>–{m.draws}
+                  </span>
+                  <span role="cell" className="lb-c-rate">
+                    <span className="lb-rate-bar" aria-hidden>
+                      <span style={{ width: `${Math.min(100, Math.max(0, m.win_rate))}%` }} />
+                    </span>
+                    {Math.round(m.win_rate)}%
+                  </span>
+                  {(kind === "xiangqi" || kind === "all") && (
+                    <span
+                      role="cell"
+                      className={`lb-c-profit${(m.net_profit ?? 0) > 0 ? " is-win" : (m.net_profit ?? 0) < 0 ? " is-loss" : ""}`}
+                    >
+                      {(m.net_profit ?? 0) > 0
+                        ? `+${(m.net_profit ?? 0).toLocaleString("vi-VN")}`
+                        : (m.net_profit ?? 0).toLocaleString("vi-VN")}{" "}
+                      xu
+                    </span>
                   )}
                 </div>
-              </div>
-
-              {/* Top 10 Thua */}
-              <div className="lb-top-card lb-top-losses">
-                <div className="lb-card-header">
-                  <h3>💀 Top 10 Số Bàn Thua</h3>
-                  <span>{data.top_losses.length} thành viên</span>
-                </div>
-                <div className="lb-top-list">
-                  {data.top_losses.length === 0 ? (
-                    <p className="lb-subtle">Chưa có ai thua trận nào.</p>
-                  ) : (
-                    data.top_losses.map((m, idx) => (
-                      <div key={m.user_id} className={`lb-item rank-${idx + 1}`}>
-                        <span className="lb-rank">#{idx + 1}</span>
-                        <Avatar
-                          user={
-                            {
-                              id: m.user_id,
-                              username: m.username,
-                              display_name: m.display_name,
-                              avatar: m.avatar,
-                            } as PublicUser
-                          }
-                          size={28}
-                        />
-                        <div className="lb-user-info">
-                          <span className="lb-name">{m.display_name || m.username}</span>
-                          <span className="lb-sub">Tổng: {m.total_games} ván</span>
-                        </div>
-                        <div className="lb-stat-badge loss-badge">
-                          <b>{m.losses}</b> thua
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
+              ))}
             </div>
-
-            {/* Bảng xếp hạng chi tiết tất cả thành viên */}
-            <div className="lb-table-wrap">
-              <div className="lb-card-header">
-                <h3>📋 Bảng Xếp Hạng Chi Tiết ({data.members.length} người chơi)</h3>
-                <span>Tổng cộng {data.total_ended} ván đã hoàn thành</span>
-              </div>
-              <div className="lb-table-scroll">
-                <table className="lb-table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: "3.5rem" }}>Hạng</th>
-                      <th>Thành viên</th>
-                      <th style={{ textAlign: "center" }}>Tổng ván</th>
-                      <th style={{ textAlign: "center" }}>Thắng</th>
-                      <th style={{ textAlign: "center" }}>Thua</th>
-                      <th style={{ textAlign: "center" }}>Hoà</th>
-                      <th style={{ textAlign: "right" }}>Tỉ lệ thắng</th>
-                      {(kind === "xiangqi" || kind === "all") && <th style={{ textAlign: "right" }}>Lãi/Lỗ (Xu)</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.members.map((m, idx) => (
-                      <tr key={m.user_id}>
-                        <td className="lb-td-rank">
-                          {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : idx + 1}
-                        </td>
-                        <td className="lb-td-user">
-                          <div className="lb-td-user-inner">
-                            <Avatar
-                              user={
-                                {
-                                  id: m.user_id,
-                                  username: m.username,
-                                  display_name: m.display_name,
-                                  avatar: m.avatar,
-                                } as PublicUser
-                              }
-                              size={24}
-                            />
-                            <span className="lb-td-name">{m.display_name || m.username}</span>
-                            {m.username && <span className="lb-td-handle">@{m.username}</span>}
-                          </div>
-                        </td>
-                        <td style={{ textAlign: "center" }}>
-                          <b>{m.total_games}</b>
-                        </td>
-                        <td style={{ textAlign: "center", color: "var(--u1)", fontWeight: 700 }}>
-                          {m.wins}
-                        </td>
-                        <td style={{ textAlign: "center", color: "var(--u4)", fontWeight: 700 }}>
-                          {m.losses}
-                        </td>
-                        <td style={{ textAlign: "center", color: "var(--text-soft)" }}>{m.draws}</td>
-                        <td style={{ textAlign: "right", fontWeight: 700 }}>{m.win_rate}%</td>
-                        {(kind === "xiangqi" || kind === "all") && (
-                          <td
-                            style={{
-                              textAlign: "right",
-                              fontWeight: 700,
-                              color:
-                                (m.net_profit ?? 0) > 0
-                                  ? "var(--ok)"
-                                  : (m.net_profit ?? 0) < 0
-                                    ? "var(--warn)"
-                                    : "var(--muted)",
-                            }}
-                          >
-                            {(m.net_profit ?? 0) > 0
-                              ? `+${(m.net_profit ?? 0).toLocaleString("vi-VN")}`
-                              : (m.net_profit ?? 0).toLocaleString("vi-VN")}{" "}
-                            Xu
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
+            <p className="lb-note">
+              {data.total_ended} ván đã kết thúc{rated ? " · Elo khởi điểm 1200, thắng người mạnh hơn được cộng nhiều hơn" : ""}
+            </p>
+          </>
         )}
       </div>
     </Dialog>

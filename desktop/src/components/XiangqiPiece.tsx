@@ -25,6 +25,12 @@ const PIECE_INFO: Record<string, PieceMeta> = {
   p: { hanzi: "卒", vn: "Tốt", isRed: false },
 };
 
+/** Font chữ Hán nét đậm, rõ ở cỡ nhỏ (tránh KaiTi: nét bút lông mảnh, nhìn nhoè). */
+const HANZI_FONT =
+  '"Noto Serif CJK TC", "Noto Serif TC", "Source Han Serif TC", "Songti TC", "PMingLiU", "MingLiU", "SimSun", serif';
+/** Font giao diện của app: dấu tiếng Việt rõ ở cỡ nhỏ. */
+const LABEL_FONT = '"Be Vietnam Pro", system-ui, sans-serif';
+
 export function XiangqiPiece({
   piece,
   className,
@@ -38,9 +44,10 @@ export function XiangqiPiece({
   if (!meta) return null;
 
   const { hanzi, vn, isRed } = meta;
-  const strokeColor = isRed ? "#dc2626" : "#0f172a";
-  const textColor = isRed ? "#b91c1c" : "#1e293b";
-  const ringColor = isRed ? "#f87171" : "#94a3b8";
+  const ink = isRed ? "#b3121b" : "#14202e";
+  // quân nhỏ (quân bị ăn bên cạnh tên người chơi): chữ phụ không đọc được, chỉ để chữ Hán
+  const label = size >= 30;
+  const gid = `xq-face-${isRed ? "r" : "b"}`;
 
   return (
     <svg
@@ -49,82 +56,60 @@ export function XiangqiPiece({
       viewBox="0 0 50 50"
       className={className ? `xiangqi-piece ${className}` : "xiangqi-piece"}
       style={{ userSelect: "none", overflow: "visible" }}
+      shapeRendering="geometricPrecision"
+      textRendering="geometricPrecision"
+      role="img"
+      aria-label={`${vn} ${isRed ? "Đỏ" : "Đen"}`}
     >
+      <title>{`${vn} (${isRed ? "Đỏ" : "Đen"})`}</title>
       <defs>
-        {/* Đổ bóng 3D nhẹ */}
-        <filter id={`xq-shadow-${piece}`} x="-15%" y="-15%" width="130%" height="130%">
-          <feDropShadow dx="0" dy="2" stdDeviation="1.5" floodOpacity="0.4" />
-        </filter>
-        {/* Mặt gỗ / ngà sáng bóng */}
-        <radialGradient id={`xq-grad-${piece}`} cx="38%" cy="32%" r="65%">
-          <stop offset="0%" stopColor="#fffdfa" />
-          <stop offset="60%" stopColor="#fef3c7" />
-          <stop offset="100%" stopColor="#f5deb3" />
+        {/* mặt quân màu ngà, sáng ở góc trên trái */}
+        <radialGradient id={gid} cx="40%" cy="35%" r="70%">
+          <stop offset="0%" stopColor="#fffaf0" />
+          <stop offset="100%" stopColor="#f1d9a8" />
         </radialGradient>
       </defs>
 
-      {/* Thân quân tròn ngoài */}
-      <circle
-        cx="25"
-        cy="25"
-        r="22.5"
-        fill={`url(#xq-grad-${piece})`}
-        stroke="#8b5a2b"
-        strokeWidth="1.2"
-        filter={`url(#xq-shadow-${piece})`}
-      />
+      {/* bóng đổ: một vòng tối lệch xuống, không làm mờ mép quân */}
+      <circle cx="25" cy="26.6" r="23.2" fill="rgb(60 30 5 / 0.35)" />
+      {/* thân quân */}
+      <circle cx="25" cy="25" r="23" fill={`url(#${gid})`} stroke="#6b4219" strokeWidth="1.6" />
+      {/* vòng chỉ màu bên trong */}
+      <circle cx="25" cy="25" r="19.2" fill="none" stroke={ink} strokeWidth="1.5" />
 
-      {/* Vòng viền chỉ màu bên trong */}
-      <circle
-        cx="25"
-        cy="25"
-        r="19"
-        fill="none"
-        stroke={strokeColor}
-        strokeWidth="1.4"
-      />
-      <circle
-        cx="25"
-        cy="25"
-        r="17"
-        fill="none"
-        stroke={ringColor}
-        strokeWidth="0.6"
-        strokeDasharray="2 1.5"
-        opacity="0.8"
-      />
-
-      {/* Chữ Hán thư pháp lớn */}
+      {/* chữ Hán */}
       <text
         x="25"
-        y="27.5"
+        y={label ? 21 : 25.5}
         textAnchor="middle"
         dominantBaseline="central"
-        fill={textColor}
-        fontSize="21"
-        fontWeight="bold"
-        fontFamily='"Noto Serif TC", "KaiTi", "STKaiti", "Baskerville", "Georgia", serif'
+        fill={ink}
+        fontSize={label ? 18.5 : 24}
+        fontWeight="900"
+        fontFamily={HANZI_FONT}
         style={{ pointerEvents: "none" }}
       >
         {hanzi}
       </text>
 
-      {/* Nhãn tiếng Việt phụ bên dưới */}
-      <text
-        x="25"
-        y="39"
-        textAnchor="middle"
-        dominantBaseline="central"
-        fill={textColor}
-        fontSize="6.5"
-        fontWeight="700"
-        fontFamily="system-ui, -apple-system, sans-serif"
-        letterSpacing="0.2px"
-        opacity="0.85"
-        style={{ pointerEvents: "none" }}
-      >
-        {vn}
-      </text>
+      {/* chữ phụ tiếng Việt */}
+      {label && (
+        <text
+          x="25"
+          y="35.4"
+          textAnchor="middle"
+          dominantBaseline="central"
+          fill={ink}
+          // tên 5 chữ cái (Tướng, Tượng) hẹp lại chút để không chạm vòng viền
+          fontSize={vn.length >= 5 ? 8.1 : 8.6}
+          fontWeight="700"
+          fontFamily={LABEL_FONT}
+          letterSpacing="-0.15"
+          style={{ pointerEvents: "none" }}
+        >
+          {vn}
+        </text>
+      )}
     </svg>
   );
 }

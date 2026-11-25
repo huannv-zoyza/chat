@@ -17,12 +17,14 @@ import (
 	"time"
 
 	"chat/ai"
+	"chat/model"
 )
 
 // fakeAI: dịch vụ chat dạng OpenAI + dịch vụ ảnh kiểu Pollinations, ghi lại yêu cầu nhận được.
 type fakeAI struct {
 	mu         sync.Mutex
 	systems    []string
+	reminders  int // số tin có lời nhắc cách viết ở cuối
 	asks       []string
 	imagePro   []string
 	edits      []string
@@ -50,6 +52,8 @@ func (f *fakeAI) toolsFor(ask string) [][2]string {
 		return [][2]string{{"create_poll", `{"question":"Trưa ăn gì?","options":["Phở","Bún chả"]}`}}
 	case strings.Contains(ask, "minh hoạ"):
 		return [][2]string{{"draw_image", `{"prompt":"a cat astronaut, watercolor","orientation":"portrait"}`}}
+	case strings.Contains(ask, "phân tích"):
+		return [][2]string{{"analyze_player_game", `{"player":"alice","game":"xiangqi"}`}}
 	case strings.Contains(ask, "chơi"):
 		return [][2]string{{"start_game", `{"game":"werewolf"}`}}
 	case strings.Contains(ask, "ghim"):
@@ -101,6 +105,13 @@ func newFakeAI(t *testing.T) *fakeAI {
 		// agent: ask là tin user cuối; ngữ cảnh gồm cả kết quả công cụ
 		var all []string
 		for _, m := range req.Messages {
+			// lời nhắc cách viết được ghép vào cuối tin cuối (withStyleReminder): tách ra như model đọc ghi chú
+			if i := strings.Index(m.Content, "\n\n(Nhắc cách trả lời"); i >= 0 {
+				f.mu.Lock()
+				f.reminders++
+				f.mu.Unlock()
+				m.Content = m.Content[:i]
+			}
 			if m.Role == "user" {
 				ask = m.Content
 			}
@@ -347,14 +358,21 @@ func TestAIRedrawFromImage(t *testing.T) {
 		t.Fatalf("edit requests: %v", edits)
 	}
 
-	// 3. có ảnh nhưng chỉ hỏi (không nhờ sửa): trả lời bằng chữ, báo là không xem được ảnh
+	// 3. có ảnh nhưng chỉ hỏi (không nhờ sửa): model đọc được ảnh thì nhận thẳng ảnh,
+	// không cần một lượt riêng mô tả hộ nữa.
 	e.upload(ch.ID, alice.Token, "@ai đây là ai?", "u3", upFile{"x.png", src})
 	nextMsg(t, wa, "message.updated", func(m wsMsg) bool { return m.UserID == botID && strings.Contains(m.Content, "fake-1") })
 	f.mu.Lock()
-	lastAsk := f.asks[len(f.asks)-1]
+	lastAsk, lastSys := f.asks[len(f.asks)-1], f.systems[len(f.systems)-1]
 	f.mu.Unlock()
-	if !strings.Contains(lastAsk, "Ảnh x.png: Một hình chữ nhật đỏ nhỏ") {
+	if !strings.Contains(lastAsk, "ảnh gửi kèm câu hỏi, bạn xem trực tiếp") {
 		t.Fatalf("ask with image: %q", lastAsk)
+	}
+	if !strings.Contains(lastSys, "Bạn nhìn thấy trực tiếp ảnh gửi kèm") {
+		t.Fatalf("prompt phải nói model nhìn thấy ảnh: %q", lastSys[max(0, len(lastSys)-200):])
+	}
+	if strings.Contains(lastAsk, "chưa xem được") {
+		t.Fatalf("không được báo chưa xem được khi model nhìn được: %q", lastAsk)
 	}
 }
 
@@ -450,6 +468,13 @@ func TestAIAgentTools(t *testing.T) {
 	f.mu.Unlock()
 	if !strings.Contains(ctxText, "Luồng của tin #") || !strings.Contains(ctxText, "↳ [#") || !strings.Contains(ctxText, "đồng ý phở gà") {
 		t.Fatalf("read_thread result missing:\n%s", ctxText)
+	}
+	// lượt trả lời nào cũng có lời nhắc cách viết ở cuối
+	f.mu.Lock()
+	reminders := f.reminders
+	f.mu.Unlock()
+	if reminders == 0 {
+		t.Fatal("style reminder not sent with answer turns")
 	}
 	// nhắc việc: chỉ cho người hỏi
 	if got := ask("nhắc mình gửi báo cáo"); !strings.Contains(got, "Đã đặt nhắc Alice") {
@@ -605,3 +630,46 @@ func TestAIChannelMemory(t *testing.T) {
 		t.Fatalf("remembered messages should not be repeated verbatim:\n%s", sys)
 	}
 }
+
+func TestAIAgentAnalyzePlayerGame(t *testing.T) {
+	e := newEnv(t)
+	f := newFakeAI(t)
+	chat := ai.NewChat(&ai.Provider{Name: "fake", BaseURL: f.srv.URL, Model: "fake-1"})
+	if err := e.api.SetAI(context.Background(), chat, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	alice := e.register("alice", "Alice")
+	var ch channel
+	e.do("POST", "/api/channels", alice.Token, map[string]any{"name": "test-ai-analysis"}, &ch)
+
+	wa := e.dial(alice.Token)
+	ready := wa.waitFor("ready")
+	botID := int64(ready["ai"].(map[string]any)["bot_id"].(float64))
+
+	// Tạo một ván cờ tướng đã kết thúc
+	state, _ := json.Marshal(map[string]any{
+		"players": []map[string]any{
+			{"id": alice.User.ID, "name": "Alice"},
+		},
+		"winners": []int64{alice.User.ID},
+		"log":     []string{"1. P2-5 M8+7", "2. M2+3 X9-8", "Chiếu bí! Alice thắng."},
+		"result":  "Alice thắng",
+	})
+	e.st.CreateGame(context.Background(), ch.ID, alice.User.ID, model.Embed{Type: "game", ID: "xiangqi"}, "ended", state)
+	e.st.RecordSoloGameResult(context.Background(), "xiangqi", alice.User.ID, 99999, 1.0)
+
+	// Alice hỏi AI phân tích cách chơi cờ tướng
+	wa.send(map[string]any{"type": "message.send", "channel_id": ch.ID, "content": "@ai phân tích cách chơi cờ tướng của mình", "client_id": "a-analyze"})
+	final := nextMsg(t, wa, "message.updated", func(m wsMsg) bool {
+		return m.UserID == botID && strings.Contains(m.Content, "fake-1")
+	})
+
+	if !strings.Contains(final.Content, "Chiến tướng công sát trung lộ") {
+		t.Fatalf("expected analysis report in response, got: %q", final.Content)
+	}
+	if !strings.Contains(final.Content, "P2-5 M8+7") {
+		t.Fatalf("expected opening move in response, got: %q", final.Content)
+	}
+}
+

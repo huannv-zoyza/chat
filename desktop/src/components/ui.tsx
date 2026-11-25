@@ -59,10 +59,12 @@ type DialogProps = {
   onClose: () => void;
   children: ReactNode;
   wide?: boolean;
+  /** Lớp thêm cho hộp thoại (cỡ riêng…). */
+  className?: string;
 };
 
 /** Dùng <dialog> gốc: có sẵn khoá focus, đóng bằng Esc, nền mờ. */
-export function Dialog({ title, onClose, children, wide }: DialogProps) {
+export function Dialog({ title, onClose, children, wide, className }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -73,7 +75,7 @@ export function Dialog({ title, onClose, children, wide }: DialogProps) {
   return (
     <dialog
       ref={ref}
-      className={`dialog${wide ? " dialog-wide" : ""}`}
+      className={`dialog${wide ? " dialog-wide" : ""}${className ? ` ${className}` : ""}`}
       onCancel={(e) => {
         e.preventDefault();
         onClose();
@@ -203,6 +205,8 @@ const paths: Record<string, ReactNode> = {
   reply: <path d="M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />,
   forward: <path d="m15 14 5-5-5-5M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />,
   pin: <path d="M9 4h6l-1 6 3 3H7l3-3-1-6ZM12 13v7" />,
+  expand: <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />,
+  shrink: <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />,
   more: (
     <>
       <circle cx="5.5" cy="12" r="1.3" fill="currentColor" />
@@ -237,6 +241,18 @@ const paths: Record<string, ReactNode> = {
   videoOff: (
     <>
       <path d="M15.5 11V8.5a2 2 0 0 0-2-2H8M3.6 7.2A2 2 0 0 0 3 8.5v7a2 2 0 0 0 2 2h8.5a2 2 0 0 0 1.7-1M15.5 10.5l5-3v9M3 3l18 18" />
+    </>
+  ),
+  screen: (
+    <>
+      <rect x="3" y="4.5" width="18" height="12" rx="2" />
+      <path d="M8.5 20h7M12 16.5V20" />
+    </>
+  ),
+  screenOff: (
+    <>
+      <rect x="3" y="4.5" width="18" height="12" rx="2" />
+      <path d="M8.5 20h7M12 16.5V20M9.5 8l5 5M14.5 8l-5 5" />
     </>
   ),
   mic: (

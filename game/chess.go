@@ -44,13 +44,15 @@ type chess struct {
 	Base
 	Opts          chessOptions `json:"opts"`
 	Board         [64]byte     `json:"board"`
-	TurnColor     byte         `json:"turn_color"`     // 'w' hoặc 'b'
-	Castling      byte         `json:"castling"`       // bitmask K, Q, k, q
-	EnPassant     int          `json:"en_passant"`     // Ô mục tiêu bắt tốt qua đường (-1 nếu không có)
-	Halfmove      int          `json:"halfmove"`       // Số nửa nước cho luật 50 nước
-	Fullmove      int          `json:"fullmove"`       // Số lượt đi (bắt đầu từ 1)
+	TurnColor     byte         `json:"turn_color"` // 'w' hoặc 'b'
+	Castling      byte         `json:"castling"`   // bitmask K, Q, k, q
+	EnPassant     int          `json:"en_passant"` // Ô mục tiêu bắt tốt qua đường (-1 nếu không có)
+	Halfmove      int          `json:"halfmove"`   // Số nửa nước cho luật 50 nước
+	Fullmove      int          `json:"fullmove"`   // Số lượt đi (bắt đầu từ 1)
 	LastMove      *chessMove   `json:"last_move,omitempty"`
 	DrawOfferedBy int64        `json:"draw_offered_by,omitempty"` // ID người chơi đang xin hoà (0 nếu không có)
+	// Toàn bộ nước đi theo thứ tự (Trắng đi trước). Không cắt bớt như Log, để phân tích lại ván (Trợ lý AI).
+	History []chessMove `json:"history,omitempty"`
 }
 
 func (c *chess) limits() (int, int) { return 2, 2 }
@@ -275,6 +277,7 @@ func (c *chess) act(p int64, action string, data json.RawMessage, now time.Time)
 		moveLog += " [Chiếu!]"
 	}
 	c.logf("%s", moveLog)
+	c.History = append(c.History, *chosenMove)
 
 	// Kiểm tra trạng thái kết thúc ván đấu sau nước đi
 	oppLegalMoves := c.generateLegalMoves(c.TurnColor)

@@ -44,6 +44,7 @@ import {
   findMessage,
   initialState,
   reducer,
+  typingKey,
 } from "./chat";
 
 const TYPING_TTL_MS = 6_000;
@@ -115,11 +116,12 @@ type ChatContextValue = {
   openDM: (userId: number) => Promise<void>;
   retryMessage: (clientId: string) => void;
   discardMessage: (clientId: string) => void;
-  notifyTyping: (channelId: number) => void;
+  notifyTyping: (channelId: number, parentId?: number) => void;
+  spectateGame: (messageId: number) => void;
+  unspectateGame: (messageId: number) => void;
   loadOlder: (channelId: number) => Promise<void>;
   loadMembers: (channelId: number) => Promise<void>;
   loadLiveGames: (channelId: number) => Promise<void>;
-  refreshWallet: () => Promise<void>;
   reconnectNow: () => void;
   onLogout: () => void;
 };
@@ -160,7 +162,7 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
   const socketRef = useRef<ChatSocket | null>(null);
   const [calls, setCalls] = useState<CallController | null>(null);
   const [groupCalls, setGroupCalls] = useState<GroupCallController | null>(null);
-  const lastTypingSent = useRef<Record<number, number>>({});
+  const lastTypingSent = useRef<Record<string | number, number>>({});
 
   const isViewing = useCallback((channelId: number) => {
     return stateRef.current.activeId === channelId && document.hasFocus() && !document.hidden;
@@ -427,10 +429,11 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       }),
 
       sock.on("ready", (ev) => {
-        dispatch({ type: "ready", me: ev.user, online: ev.online_user_ids, ai: ev.ai ?? null, wallet: ev.wallet ?? null });
-        if (!ev.wallet) {
-          api.wallet().then((wallet) => dispatch({ type: "wallet.set", wallet })).catch(() => {});
-        }
+        dispatch({ type: "ready", me: ev.user, online: ev.online_user_ids, ai: ev.ai ?? null });
+        api
+          .getWallet()
+          .then((w) => dispatch({ type: "wallet.set", balance: w.balance, debt: w.debt }))
+          .catch(() => {});
         stationStore.resubscribe();
         groups.setRooms(ev.group_calls ?? []);
         // bản web đang chạy cũ hơn bản máy chủ phục vụ: nhắc tải lại (app desktop có bản riêng)
@@ -462,6 +465,12 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
         }
         notifyIfMentioned(ev.message, viewing);
         playSoundForMessage(ev.message);
+        const e = ev.message.embed;
+        if (e?.type === "throw") {
+          // người bị ném: hiệu ứng toàn màn hình; người khác (kể cả người ném): bay vào dòng trong chat
+          if (e.target_id === stateRef.current.me.id) dispatch({ type: "hit", item: e.id, fromId: ev.message.user_id });
+          else dispatch({ type: "throw.fresh", messageId: ev.message.id });
+        }
       }),
 
       sock.on("message.updated", (ev) => {
@@ -472,14 +481,17 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       }),
       sock.on("key.updated", (ev) => e2ee.onKeyUpdated(ev.user_id, ev.public_key)),
       sock.on("poll.updated", (ev) => dispatch({ type: "poll.set", messageId: ev.message_id, poll: ev.poll })),
+      sock.on("game.spectators", (ev) => {
+        dispatch({
+          type: "game.spectators",
+          channelId: ev.channel_id,
+          messageId: ev.message_id,
+          count: ev.count,
+          spectators: ev.spectators,
+        });
+      }),
       sock.on("game.map", (ev) => stationStore.onMap(ev.message_id, ev.map)),
       sock.on("game.frame", (ev) => stationStore.onFrame(ev.message_id, ev.frame)),
-      sock.on("wallet.updated", (ev) => {
-        dispatch({ type: "wallet.set", wallet: ev.wallet });
-        if (ev.transaction && ev.transaction.amount > 0) {
-          playCoinSound();
-        }
-      }),
       sock.on("game.updated", (ev) => {
         const s = stateRef.current;
         const prev = findMessage(s, ev.message_id)?.game;
@@ -559,7 +571,13 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       sock.onSendFailed((clientId, reason) => dispatch({ type: "pending.failed", clientId, error: reason })),
 
       sock.on("typing", (ev) =>
-        dispatch({ type: "typing", channelId: ev.channel_id, userId: ev.user_id, until: Date.now() + TYPING_TTL_MS }),
+        dispatch({
+          type: "typing",
+          channelId: ev.channel_id,
+          parentId: ev.parent_id,
+          userId: ev.user_id,
+          until: Date.now() + TYPING_TTL_MS,
+        }),
       ),
       sock.on("presence", (ev) => dispatch({ type: "presence", userId: ev.user_id, online: ev.online })),
       sock.on("user.updated", (ev) => {
@@ -568,10 +586,20 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
 
       sock.on("channel.joined", (ev) => dispatch({ type: "channel.upsert", channel: ev.channel })),
       sock.on("channel.updated", (ev) => dispatch({ type: "channel.upsert", channel: ev.channel, keepUnread: true })),
-      sock.on("channel.left", (ev) => dispatch({ type: "channel.removed", channelId: ev.channel_id })),
+      sock.on("channel.left", (ev) => dispatch({ type: "channel.removed", channelId: ev.channel_id, kicked: ev.kicked })),
       sock.on("channel.deleted", (ev) => dispatch({ type: "channel.removed", channelId: ev.channel_id })),
       sock.on("member.joined", (ev) => dispatch({ type: "member.joined", channelId: ev.channel_id, user: ev.user })),
       sock.on("member.left", (ev) => dispatch({ type: "member.left", channelId: ev.channel_id, userId: ev.user_id })),
+      sock.on("wallet.updated", (ev) => {
+        const prevBal = stateRef.current.wallet?.balance;
+        dispatch({ type: "wallet.set", balance: ev.balance, debt: ev.debt });
+        if (prevBal !== undefined && ev.balance > prevBal) {
+          playCoinSound();
+        }
+      }),
+      sock.on("nickname.updated", (ev) =>
+        dispatch({ type: "nickname.set", channelId: ev.channel_id, userId: ev.user_id, nickname: ev.nickname }),
+      ),
       sock.on("reaction.updated", (ev) =>
         dispatch({ type: "reactions.set", messageId: ev.message_id, reactions: ev.reactions }),
       ),
@@ -660,7 +688,7 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
         };
         dispatch({ type: "pending.add", pending: p });
         void deliver(p);
-        lastTypingSent.current[channelId] = 0;
+        lastTypingSent.current[typingKey(channelId, parentId)] = 0;
       },
 
       sendEmbed: (channelId, embed, parentId, extra) => {
@@ -783,11 +811,20 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
         dispatch({ type: "pending.remove", clientId });
       },
 
-      notifyTyping: (channelId) => {
+      notifyTyping: (channelId, parentId) => {
+        const key = typingKey(channelId, parentId);
         const now = Date.now();
-        if (now - (lastTypingSent.current[channelId] ?? 0) < TYPING_THROTTLE_MS) return;
-        lastTypingSent.current[channelId] = now;
-        socketRef.current?.sendTyping(channelId);
+        if (now - (lastTypingSent.current[key] ?? 0) < TYPING_THROTTLE_MS) return;
+        lastTypingSent.current[key] = now;
+        socketRef.current?.sendTyping(channelId, parentId);
+      },
+
+      spectateGame: (messageId) => {
+        socketRef.current?.spectateGame(messageId);
+      },
+
+      unspectateGame: (messageId) => {
+        socketRef.current?.unspectateGame(messageId);
       },
 
       loadOlder,
@@ -891,11 +928,6 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       },
 
       loadLiveGames,
-
-      refreshWallet: async () => {
-        const wallet = await api.wallet();
-        dispatch({ type: "wallet.set", wallet });
-      },
 
       reconnectNow: () => socketRef.current?.reconnectNow(),
     }),

@@ -5,3 +5,11 @@ chat.db-shm
 /web/ui/dist/
 /uploads/
 /tls/
+
+# chứa bí mật (MUSE_COOKIE, API key) — không bao giờ commit
+.env
+.env.local
+
+# tệp thử của cmd/musetry
+muse-test*
+backups/

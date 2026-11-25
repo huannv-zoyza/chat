@@ -52,29 +52,15 @@ func scanUser(row scanner) (model.User, error) {
 }
 
 func (s *Store) CreateUser(ctx context.Context, username, email, passwordHash, displayName string) (model.User, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return model.User{}, err
-	}
-	defer tx.Rollback()
-	row := tx.QueryRowContext(ctx, `
+	row := s.db.QueryRowContext(ctx, `
 		INSERT INTO users (username, email, password_hash, display_name)
 		VALUES (?, ?, ?, ?)
 		RETURNING `+userColumns, username, email, passwordHash, displayName)
 	u, err := scanUser(row)
-	if err != nil {
-		if isUniqueViolation(err) {
-			return u, ErrConflict
-		}
-		return u, err
+	if isUniqueViolation(err) {
+		return u, ErrConflict
 	}
-	if _, err := ensureWalletTx(ctx, tx, u.ID); err != nil {
-		return model.User{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return model.User{}, err
-	}
-	return u, nil
+	return u, err
 }
 
 func (s *Store) GetUserByID(ctx context.Context, id int64) (model.User, error) {

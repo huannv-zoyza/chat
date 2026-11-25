@@ -28,6 +28,7 @@ func TestMain(m *testing.M) {
 
 type env struct {
 	api *controller.API
+	st  *store.Store
 	t   *testing.T
 	srv *httptest.Server
 }
@@ -43,10 +44,11 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	hub := socket.NewHub()
-	api := controller.NewAPI(store.New(db), hub, []string{"localhost", "localhost:*", "tauri.localhost"}, t.TempDir())
+	st := store.New(db)
+	api := controller.NewAPI(st, hub, []string{"localhost", "localhost:*", "tauri.localhost"}, t.TempDir())
 	srv := httptest.NewServer(api.Handler(nil))
 	t.Cleanup(func() { hub.Shutdown(); srv.Close() })
-	return &env{t: t, srv: srv, api: api}
+	return &env{t: t, srv: srv, api: api, st: st}
 }
 
 // do gửi request và decode JSON vào out (nếu khác nil), trả về status code.
@@ -406,6 +408,68 @@ func TestChannelsAndRealtime(t *testing.T) {
 		t.Fatalf("delete: %d", code)
 	}
 	wa.waitFor("channel.deleted")
+}
+
+func TestKickMember(t *testing.T) {
+	e := newEnv(t)
+	alice := e.register("alice", "Alice")
+	bob := e.register("bob", "Bob")
+	carol := e.register("carol", "Carol")
+
+	var ch channel
+	if code := e.do("POST", "/api/channels", alice.Token, map[string]string{"name": "nhom"}, &ch); code != 201 {
+		t.Fatalf("create channel: %d", code)
+	}
+	id := func(p string) string { return strings.Replace(p, "{id}", itoa(ch.ID), 1) }
+	kick := func(token string, userID int64) int {
+		return e.do("DELETE", id("/api/channels/{id}/members/")+itoa(userID), token, nil, nil)
+	}
+	for _, u := range []authResp{bob, carol} {
+		if code := e.do("POST", id("/api/channels/{id}/join"), u.Token, nil, nil); code != 200 {
+			t.Fatalf("join: %d", code)
+		}
+	}
+
+	wa := e.dial(alice.Token)
+	wa.waitFor("ready")
+	wb := e.dial(bob.Token)
+	wb.waitFor("ready")
+
+	// chỉ chủ kênh được mời người khác ra, và không ai mời được chủ kênh
+	if code := kick(carol.Token, bob.User.ID); code != 403 {
+		t.Fatalf("non-owner kick: %d", code)
+	}
+	if code := kick(alice.Token, alice.User.ID); code != 400 {
+		t.Fatalf("kick owner: %d", code)
+	}
+
+	if code := kick(alice.Token, bob.User.ID); code != 204 {
+		t.Fatalf("kick: %d", code)
+	}
+	if ev := wa.waitFor("member.left"); ev["user_id"] != float64(bob.User.ID) {
+		t.Fatalf("member.left: %v", ev)
+	}
+	if ev := wb.waitFor("channel.left"); ev["kicked"] != true || ev["channel_id"] != float64(ch.ID) {
+		t.Fatalf("channel.left: %v", ev)
+	}
+
+	// bob không còn đọc/gửi được, và mời ra lần nữa thì báo không còn trong kênh
+	if code := e.do("GET", id("/api/channels/{id}/messages"), bob.Token, nil, nil); code != 403 {
+		t.Fatalf("history after kick: %d", code)
+	}
+	wb.send(map[string]any{"type": "message.send", "channel_id": ch.ID, "content": "còn đây", "client_id": "k-1"})
+	if ev := wb.waitFor("error"); ev["client_id"] != "k-1" {
+		t.Fatalf("send after kick: %v", ev)
+	}
+	if code := kick(alice.Token, bob.User.ID); code != 404 {
+		t.Fatalf("kick again: %d", code)
+	}
+
+	var got channel
+	e.do("GET", id("/api/channels/{id}"), alice.Token, nil, &got)
+	if got.MemberCount != 2 {
+		t.Fatalf("member count after kick: %d", got.MemberCount)
+	}
 }
 
 func TestCORS(t *testing.T) {

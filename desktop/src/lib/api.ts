@@ -50,7 +50,7 @@ export type Attachment = {
 
 /** Sticker (bộ có sẵn trong app) hoặc GIF (GIPHY) gửi thay cho nội dung chữ. */
 export type Embed = {
-  type: "sticker" | "gif" | "call" | "game" | "share";
+  type: "sticker" | "gif" | "call" | "game" | "share" | "throw" | "nickname";
   id: string;
   url?: string;
   preview?: string;
@@ -67,6 +67,8 @@ export type Embed = {
   video?: boolean;
   duration?: number;
   participants?: number;
+  /** Trêu nhau (type "throw" / "nickname"): người bị nhắm tới; tên chụp lại ở author. */
+  target_id?: number;
 };
 
 /** GET /api/messages/{id}/link: người xem có tới được tin không (member) và tin đầy đủ nếu có. */
@@ -76,62 +78,57 @@ export type MessageLinkInfo = {
   message?: Message;
 };
 
-export type GameKind = "station" | "werewolf" | "spy" | "caro" | "rps" | "chess" | "xiangqi";
-export type GamePlayer = { id: number; name: string };
+export type GameKind = "station" | "werewolf" | "spy" | "caro" | "rps" | "chess" | "xiangqi" | "baucua";
 
-export type Wallet = {
-  user_id: number;
-  balance: number;
-  locked_balance: number;
-  can_checkin: boolean;
-  can_bailout: boolean;
-  last_checkin_at?: string;
-  updated_at: string;
-};
-
+export type Wallet = { balance: number; debt: number; can_claim: boolean; can_loan: boolean; in_tables: number };
 export type WalletTransaction = {
   id: number;
   user_id: number;
-  type: string;
+  kind: string;
   amount: number;
-  balance_after: number;
-  ref_type?: string;
-  ref_id?: number;
+  debt_delta: number;
+  game_id?: number;
+  seq: number;
   peer_user?: PublicUser;
   note: string;
   created_at: string;
 };
-
-export type WalletLeader = {
-  user_id: number;
-  username: string;
-  display_name: string;
-  avatar: string | null;
-  balance: number;
-  net_profit: number;
-};
+export type BoardEntry = { user: PublicUser; balance: number; debt: number };
+export type WalletBoard = { rich: BoardEntry[]; debtors: BoardEntry[] };
+export type GamePlayer = { id: number; name: string };
 
 export type GameMemberStats = {
   user_id: number;
   username: string;
   display_name: string;
   avatar: string | null;
+  rating?: number;
+  peak_rating?: number;
+  rank_tier?: string;
+  tier_badge?: string;
   wins: number;
   losses: number;
   draws: number;
   total_games: number;
   win_rate: number;
+  current_streak?: number;
+  best_streak?: number;
   net_profit?: number;
-  wallet_balance?: number;
 };
 
 export type GameLeaderboard = {
   kind: string;
   top_wins: GameMemberStats[];
   top_losses: GameMemberStats[];
-  top_richest?: WalletLeader[];
   members: GameMemberStats[];
   total_ended: number;
+};
+
+export type SpectatorInfo = {
+  user_id: number;
+  username: string;
+  display_name: string;
+  avatar?: string | null;
 };
 
 export type LiveGameItem = {
@@ -147,6 +144,7 @@ export type LiveGameItem = {
   is_my_turn: boolean;
   reply_count: number;
   viewer_count: number;
+  spectators?: SpectatorInfo[];
   game: GameView;
 };
 
@@ -285,7 +283,21 @@ export type ReadState = { user_id: number; message_id: number; user?: PublicUser
 
 /** Giới hạn khớp với server (controller/files.go). */
 export const MAX_FILE_SIZE = 20 * 1024 * 1024;
+/** Video / âm thanh được gửi lớn hơn (vừa giới hạn 100 MB mỗi request của Cloudflare Tunnel). */
+export const MAX_MEDIA_SIZE = 95 * 1024 * 1024;
 export const MAX_FILES = 10;
+
+const MEDIA_EXT = /\.(mp4|m4v|mov|webm|mkv|avi|3gp|mp3|m4a|aac|wav|ogg|oga|opus|flac)$/i;
+
+/** File là video / âm thanh (theo loại trình duyệt báo, hoặc theo đuôi khi trình duyệt không biết). */
+export function isMediaFile(f: File): boolean {
+  return /^(video|audio)\//.test(f.type) || MEDIA_EXT.test(f.name);
+}
+
+/** Dung lượng tối đa được gửi cho file này. */
+export function maxSizeFor(f: File): number {
+  return isMediaFile(f) ? MAX_MEDIA_SIZE : MAX_FILE_SIZE;
+}
 
 /** Lấy mã mời từ link (".../invite/<mã>") hoặc từ chính mã người dùng dán vào. */
 export function parseInviteCode(input: string): string | null {
@@ -380,6 +392,10 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     me: () => request<User>("GET", "/api/me"),
     updateMe: (b: { display_name?: string; avatar?: string; status_text?: string }) =>
       request<User>("PATCH", "/api/me", b),
+    /** Cấu hình giao diện riêng (xem lib/prefs.ts). */
+    getPrefs: () => request<{ thread_width?: number }>("GET", "/api/me/prefs"),
+    updatePrefs: (patch: Record<string, number | null>) =>
+      request<{ thread_width?: number }>("PATCH", "/api/me/prefs", patch),
     /** Tải ảnh đại diện lên (server lưu và đặt luôn làm ảnh đại diện). */
     uploadAvatar: (file: File) => {
       const fd = new FormData();
@@ -426,22 +442,6 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
       request<GameLeaderboard>("GET", `/api/games/leaderboard${kind ? `?kind=${encodeURIComponent(kind)}` : ""}`),
     gameAction: (messageId: number, action: string, data?: unknown) =>
       request<GameView>("POST", `/api/messages/${messageId}/game`, data === undefined ? { action } : { action, data }),
-    wallet: () => request<Wallet>("GET", "/api/wallet"),
-    walletTransactions: (opts?: { limit?: number; before_id?: number; type?: string }) => {
-      const qs = new URLSearchParams();
-      if (opts?.limit) qs.set("limit", String(opts.limit));
-      if (opts?.before_id) qs.set("before_id", String(opts.before_id));
-      if (opts?.type && opts.type !== "all") qs.set("type", opts.type);
-      const q = qs.toString();
-      return request<{ items: WalletTransaction[]; has_more: boolean }>(
-        "GET",
-        `/api/wallet/transactions${q ? `?${q}` : ""}`,
-      );
-    },
-    walletCheckin: () => request<{ wallet: Wallet; transaction: WalletTransaction }>("POST", "/api/wallet/checkin", {}),
-    walletBailout: () => request<{ wallet: Wallet; transaction: WalletTransaction }>("POST", "/api/wallet/bailout", {}),
-    walletTransfer: (b: { to_user_id: number; amount: number; note?: string }) =>
-      request<{ wallet: Wallet; transaction: WalletTransaction }>("POST", "/api/wallet/transfer", b),
     vote: (messageId: number, optionIds: number[]) =>
       request<Poll>("POST", `/api/messages/${messageId}/votes`, { option_ids: optionIds }),
     addPollOption: (messageId: number, text: string) =>
@@ -494,6 +494,31 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     },
     messageLink: (id: number) => request<MessageLinkInfo>("GET", `/api/messages/${id}/link`),
     deleteChannel: (id: number) => request<void>("DELETE", `/api/channels/${id}`),
+    throwItem: (channelId: number, userId: number, item: string) =>
+      request<Message>("POST", `/api/channels/${channelId}/throw`, { user_id: userId, item }),
+    nicknames: (channelId: number) => request<Record<string, string>>("GET", `/api/channels/${channelId}/nicknames`),
+    setNickname: (channelId: number, userId: number, nickname: string) =>
+      request<void>("PUT", `/api/channels/${channelId}/nicknames/${userId}`, { nickname }),
+    getWallet: () => request<Wallet>("GET", "/api/wallet"),
+    claimDaily: () => request<Wallet>("POST", "/api/wallet/claim"),
+    takeLoan: () => request<Wallet>("POST", "/api/wallet/loan"),
+    repayDebt: () => request<Wallet>("POST", "/api/wallet/repay"),
+    walletBoard: (channelId: number) => request<WalletBoard>("GET", `/api/channels/${channelId}/wallet-board`),
+    walletTransactions: (opts?: { limit?: number; before_id?: number; kind?: string }) => {
+      const qs = new URLSearchParams();
+      if (opts?.limit) qs.set("limit", String(opts.limit));
+      if (opts?.before_id) qs.set("before_id", String(opts.before_id));
+      if (opts?.kind && opts.kind !== "all") qs.set("kind", opts.kind);
+      const q = qs.toString();
+      return request<{ items: WalletTransaction[]; has_more: boolean }>(
+        "GET",
+        `/api/wallet/transactions${q ? `?${q}` : ""}`,
+      );
+    },
+    walletTransfer: (b: { to_user_id: number; amount: number; note?: string }) =>
+      request<{ wallet: Wallet; transaction: WalletTransaction }>("POST", "/api/wallet/transfer", b),
+    kickMember: (channelId: number, userId: number) =>
+      request<void>("DELETE", `/api/channels/${channelId}/members/${userId}`),
     joinChannel: (id: number) => request<Channel>("POST", `/api/channels/${id}/join`),
     leaveChannel: (id: number) => request<void>("POST", `/api/channels/${id}/leave`),
     members: (id: number) => request<PublicUser[]>("GET", `/api/channels/${id}/members`),
@@ -541,7 +566,13 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
           if (xhr.status >= 200 && xhr.status < 300) return resolve(data as Message);
           if (xhr.status === 401 && token) onUnauthorized?.();
           const serverMsg = (data as { error?: unknown } | null)?.error;
-          reject(new ApiError(xhr.status, typeof serverMsg === "string" ? serverMsg : `Server trả lỗi ${xhr.status}.`));
+          if (typeof serverMsg === "string") return reject(new ApiError(xhr.status, serverMsg));
+          // 413 không phải JSON: bị proxy (Cloudflare Tunnel, tối đa 100 MB mỗi lần gửi) chặn trước khi tới server
+          const fallback =
+            xhr.status === 413
+              ? "Tổng dung lượng file trong một tin quá lớn (tối đa khoảng 100 MB), hãy gửi bớt từng file."
+              : `Server trả lỗi ${xhr.status}.`;
+          reject(new ApiError(xhr.status, fallback));
         };
         xhr.onerror = () => reject(new ApiError(0, "Mất kết nối khi đang tải file lên."));
         xhr.send(form);

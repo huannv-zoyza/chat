@@ -4,10 +4,13 @@
 #   make desktop   bộ cài app desktop (.deb, AppImage) -> desktop/src-tauri/target/release/bundle/
 #   make run       build server rồi chạy
 #   make test      chạy test Go
+#   make check-spec kiểm tra tiến độ SPEC và backlog
+#   make verify-css kiểm tra tĩnh CSS và chống lỗi layout
+#   make verify    bộ xác thực toàn diện (SPEC, CSS, Go, Web)
 
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 
-.PHONY: all web server desktop run test icons clean giphy-key ai-key install-service install-tunnel route-dns deploy logs status start stop stop-tunnel disable enable
+.PHONY: all web server desktop run test check-spec verify-css verify icons clean giphy-key ai-key install-service install-tunnel route-dns deploy logs status start stop stop-tunnel disable enable
 
 all: server desktop
 
@@ -38,8 +41,8 @@ install-service: server
 		echo "Chưa bật linger: chạy 'sudo loginctl enable-linger $$USER' để dịch vụ tự chạy khi máy khởi động mà không cần đăng nhập."
 
 # Bật tìm GIF: make giphy-key KEY=<API key GIPHY> (lấy miễn phí tại https://developers.giphy.com).
-# Key lưu ở ~/.config/go-chat/env (chỉ mình bạn đọc được), không nằm trong repo.
-ENV_FILE := $(HOME)/.config/go-chat/env
+# Key lưu ở .env cạnh server (chỉ mình bạn đọc được, đã có trong .gitignore), server tự đọc lúc khởi động.
+ENV_FILE := $(CURDIR)/.env
 giphy-key:
 	@test -n "$(KEY)" || { echo "Dùng: make giphy-key KEY=<api key>"; exit 1; }
 	@mkdir -p $(dir $(ENV_FILE))
@@ -137,6 +140,15 @@ enable:
 
 test:
 	go test ./...
+
+check-spec:
+	@./scripts/check-specs-backlog.sh
+
+verify-css:
+	@./scripts/verify-css.sh --strict
+
+verify:
+	@./scripts/verify-all.sh
 
 # Tạo lại bộ icon app từ desktop/public/favicon.svg
 icons:

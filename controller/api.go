@@ -24,8 +24,10 @@ const sessionTTL = 30 * 24 * time.Hour
 type API struct {
 	store          *store.Store
 	hub            *socket.Hub
+	throws         throwLimiter // giới hạn tốc độ ném đồ
 	originPatterns []string
 	uploadsDir     string // thư mục lưu file người dùng gửi
+	minFreeDisk    uint64 // còn ít hơn chừng này byte trống thì không nhận file mới
 	logins         *loginLimiter
 	unfurlClient   *http.Client // xem trước link: chỉ kết nối được tới internet công khai
 	unfurls        unfurlCache
@@ -51,6 +53,7 @@ func (a *API) SetUIBuild(id string) { a.uiBuild = id }
 func NewAPI(st *store.Store, hub *socket.Hub, originPatterns []string, uploadsDir string) *API {
 	return &API{
 		store: st, hub: hub, originPatterns: originPatterns, uploadsDir: uploadsDir,
+		minFreeDisk:  defaultMinFreeDisk,
 		logins:       newLoginLimiter(10, 15*time.Minute),
 		unfurlClient: newUnfurlClient(),
 	}
@@ -67,6 +70,8 @@ func (a *API) Handler(ui http.Handler) http.Handler {
 
 	mux.HandleFunc("GET /api/me", a.requireAuth(a.getMe))
 	mux.HandleFunc("PATCH /api/me", a.requireAuth(a.updateMe))
+	mux.HandleFunc("GET /api/me/prefs", a.requireAuth(a.getPrefs))
+	mux.HandleFunc("PATCH /api/me/prefs", a.requireAuth(a.updatePrefs))
 	mux.HandleFunc("PUT /api/me/password", a.requireAuth(a.changePassword))
 	mux.HandleFunc("POST /api/me/avatar", a.requireAuth(a.uploadAvatar))
 	mux.HandleFunc("GET /api/avatars/{key}", a.serveAvatar)
@@ -79,6 +84,23 @@ func (a *API) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("DELETE /api/channels/{id}", a.requireAuth(a.deleteChannel))
 	mux.HandleFunc("POST /api/channels/{id}/join", a.requireAuth(a.joinChannel))
 	mux.HandleFunc("POST /api/channels/{id}/leave", a.requireAuth(a.leaveChannel))
+	mux.HandleFunc("DELETE /api/channels/{id}/members/{userId}", a.requireAuth(a.kickMember))
+	mux.HandleFunc("GET /api/channels/{id}/wallet-board", a.requireAuth(a.walletBoard))
+	mux.HandleFunc("POST /api/channels/{id}/throw", a.requireAuth(a.throwItem))
+	mux.HandleFunc("GET /api/channels/{id}/nicknames", a.requireAuth(a.listNicknames))
+	mux.HandleFunc("PUT /api/channels/{id}/nicknames/{userId}", a.requireAuth(a.setNickname))
+	mux.HandleFunc("GET /api/wallet", a.requireAuth(a.getWallet))
+	mux.HandleFunc("POST /api/wallet/claim", a.requireAuth(a.walletAction(func(r *http.Request, id int64) (store.Wallet, error) {
+		return a.store.ClaimDaily(r.Context(), id, vnToday(time.Now()))
+	})))
+	mux.HandleFunc("POST /api/wallet/loan", a.requireAuth(a.walletAction(func(r *http.Request, id int64) (store.Wallet, error) {
+		return a.store.TakeLoan(r.Context(), id)
+	})))
+	mux.HandleFunc("POST /api/wallet/repay", a.requireAuth(a.walletAction(func(r *http.Request, id int64) (store.Wallet, error) {
+		return a.store.RepayDebt(r.Context(), id)
+	})))
+	mux.HandleFunc("GET /api/wallet/transactions", a.requireAuth(a.listWalletTransactions))
+	mux.HandleFunc("POST /api/wallet/transfer", a.requireAuth(a.transferCoins))
 	mux.HandleFunc("POST /api/channels/{id}/invite", a.requireAuth(a.regenerateInvite))
 	mux.HandleFunc("GET /api/invites/{code}", a.requireAuth(a.previewInvite))
 	mux.HandleFunc("POST /api/invites/{code}/join", a.requireAuth(a.joinByInvite))
@@ -101,11 +123,6 @@ func (a *API) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("POST /api/channels/{id}/games", a.requireAuth(a.createGame))
 	mux.HandleFunc("GET /api/games/leaderboard", a.requireAuth(a.gameLeaderboard))
 	mux.HandleFunc("POST /api/messages/{id}/game", a.requireAuth(a.gameAction))
-	mux.HandleFunc("GET /api/wallet", a.requireAuth(a.getWallet))
-	mux.HandleFunc("GET /api/wallet/transactions", a.requireAuth(a.listWalletTransactions))
-	mux.HandleFunc("POST /api/wallet/checkin", a.requireAuth(a.claimCheckin))
-	mux.HandleFunc("POST /api/wallet/bailout", a.requireAuth(a.claimBailout))
-	mux.HandleFunc("POST /api/wallet/transfer", a.requireAuth(a.transferCoins))
 	mux.HandleFunc("POST /api/messages/{id}/poll/close", a.requireAuth(a.closePoll))
 	mux.HandleFunc("POST /api/messages/{id}/poll/options", a.requireAuth(a.addPollOption))
 	mux.HandleFunc("POST /api/messages/{id}/remind", a.requireAuth(a.createReminder))

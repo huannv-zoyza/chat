@@ -3,6 +3,9 @@ import { ShareCard } from "./Share";
 import type { Embed } from "../lib/api";
 import { findSticker, stickerLabel, type Sticker } from "../lib/stickers";
 import { CallLog } from "./CallOverlay";
+import { useChat } from "../state/ChatProvider";
+import { displayName } from "../lib/format";
+import { throwItem } from "../lib/fun";
 
 /** Một sticker. size: "msg" (trong tin nhắn) hoặc "pick" (ô trong bảng chọn). */
 export function StickerView({ sticker, size = "msg" }: { sticker: Sticker; size?: "msg" | "pick" }) {
@@ -39,7 +42,18 @@ const GIF_MAX_W = 320;
 const GIF_MAX_H = 240;
 
 /** Sticker hoặc GIF trong tin nhắn. */
-export function EmbedView({ embed, channelId, userId }: { embed: Embed; channelId?: number; userId?: number }) {
+export function EmbedView({
+  embed,
+  channelId,
+  userId,
+  messageId,
+}: {
+  embed: Embed;
+  channelId?: number;
+  userId?: number;
+  messageId?: number;
+}) {
+  if (embed.type === "throw" || embed.type === "nickname") return <FunLine embed={embed} messageId={messageId} />;
   if (embed.type === "share" && /^\d+$/.test(embed.id)) return <ShareCard id={Number(embed.id)} embed={embed} />;
   if (embed.type === "call") {
     return (
@@ -78,8 +92,55 @@ export function EmbedView({ embed, channelId, userId }: { embed: Embed; channelI
   return null;
 }
 
+/** Dòng trêu nhau: "🩴 ném dép vào Nam", "đặt biệt danh cho Nam là “Thánh Lag”". */
+function FunLine({ embed, messageId }: { embed: Embed; messageId?: number }) {
+  const { state, dispatch } = useChat();
+  const target = embed.target_id ? state.users[embed.target_id] : undefined;
+  const isMe = embed.target_id === state.me.id;
+  const name = isMe ? "bạn" : target ? displayName(target) : embed.author || "ai đó";
+  if (embed.type === "throw") {
+    const item = throwItem(embed.id);
+    // lượt ném vừa xảy ra khi đang mở kênh: món đồ bay vào dòng này rồi bẹp dí
+    const fresh = messageId !== undefined && !!state.freshThrows[messageId];
+    return (
+      <p className={`msg-fun${fresh ? ` is-fresh throw-${embed.id}` : ""}`}>
+        <span
+          className="msg-fun-icon"
+          aria-hidden
+          onAnimationEnd={(ev) => {
+            if (fresh && ev.animationName === "fun-splat") dispatch({ type: "throw.done", messageId: messageId! });
+          }}
+        >
+          {item?.icon ?? "🎯"}
+        </span>
+        ném {item?.name ?? "đồ"} vào <strong>{name}</strong>
+      </p>
+    );
+  }
+  const nick = embed.text;
+  return (
+    <p className="msg-fun">
+      <span className="msg-fun-icon" aria-hidden>
+        🏷️
+      </span>
+      {nick ? (
+        <>
+          đặt biệt danh cho <strong>{name}</strong> là “{nick}”
+        </>
+      ) : (
+        <>
+          xoá biệt danh của <strong>{name}</strong>
+        </>
+      )}
+    </p>
+  );
+}
+
 /** Mô tả ngắn cho thông báo / xem trước: "đã gửi một sticker", ... */
 export function embedSummary(embed: Embed): string {
+  if (embed.type === "throw") return `${throwItem(embed.id)?.icon ?? "🎯"} ném ${throwItem(embed.id)?.name ?? "đồ"} vào ${embed.author ?? "ai đó"}`;
+  if (embed.type === "nickname")
+    return embed.text ? `🏷️ đặt biệt danh cho ${embed.author} là “${embed.text}”` : `🏷️ xoá biệt danh của ${embed.author}`;
   if (embed.type === "game") return `🎮 ${embed.title ?? "Trò chơi"}`;
   if (embed.type === "share") return `↗ Đã chia sẻ: ${embed.text || embed.title || "một tin nhắn"}`;
   if (embed.type === "call") return embed.id === "completed" ? "📞 Cuộc gọi" : "📞 Cuộc gọi nhỡ";

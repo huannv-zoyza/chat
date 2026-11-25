@@ -121,8 +121,30 @@ func (a *API) deleteMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if msg.Embed != nil && msg.Embed.Type == "game" {
-		if updates, err := a.store.RefundGameBets(r.Context(), msg.ID, "Tin nhắn ván cờ đã bị xoá"); err == nil {
-			a.pushWalletUpdates(updates)
+		// ván dùng chip đang dở: trả hết chip về ví trước khi xoá tin
+		s, err := a.gameSession(r.Context(), msg.ID)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			// không nạp được ván thì không xoá, kẻo mất chip đang trên bàn
+			internalError(w, r, err)
+			return
+		}
+		if err == nil {
+			s.mu.Lock()
+			if s.g.Staked() && !s.paid {
+				s.g.Abort("Tin ván đã bị xoá.")
+				if err := a.payOutLocked(r.Context(), s, "cashout", 0, s.g.Settle()); err != nil {
+					s.mu.Unlock()
+					internalError(w, r, err)
+					return
+				}
+				s.paid = true
+			}
+			s.mu.Unlock()
+		}
+		if ws, rErr := a.store.RefundGameBets(r.Context(), msg.ID, "Tin nhắn ván cờ đã bị xoá"); rErr == nil {
+			for _, w := range ws {
+				a.pushWallet(w)
+			}
 		}
 	}
 	deleted, keys, err := a.store.DeleteMessage(r.Context(), msg.ID)

@@ -29,9 +29,15 @@ import (
 
 const (
 	maxFileSize     = 20 << 20 // 20 MB mỗi file
+	maxMediaSize    = 95 << 20 // video/âm thanh: 95 MB, vừa giới hạn 100 MB mỗi request của Cloudflare Tunnel
 	maxFilesPerMsg  = 10
 	maxFileNameRune = 200
 )
+
+// isMediaType: video/âm thanh, được gửi file lớn hơn và phát ngay trong tin.
+func isMediaType(ctype string) bool {
+	return strings.HasPrefix(ctype, "video/") || strings.HasPrefix(ctype, "audio/")
+}
 
 var storageKeyRe = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
@@ -50,7 +56,7 @@ var inlineImageTypes = map[string]bool{
 //
 //	content    nội dung (có thể rỗng nếu có file)
 //	client_id  để client khớp tin đang gửi với sự kiện message.new
-//	files      0–10 file, mỗi file ≤ 20 MB
+//	files      0–10 file, mỗi file ≤ 20 MB (video/âm thanh ≤ 95 MB)
 func (a *API) createMessageWithFiles(w http.ResponseWriter, r *http.Request) {
 	ch, ok := a.loadChannel(w, r)
 	if !ok || !a.requireMember(w, r, ch.ID) {
@@ -58,6 +64,11 @@ func (a *API) createMessageWithFiles(w http.ResponseWriter, r *http.Request) {
 	}
 	me := currentUser(r)
 
+	// File được ghi tạm ra đĩa ngay khi đọc form, nên kiểm tra chỗ trống trước.
+	if msg := a.checkDiskSpace(r.ContentLength); msg != "" {
+		writeError(w, http.StatusInsufficientStorage, msg)
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxFilesPerMsg*maxFileSize+(1<<20))
 	if err := r.ParseMultipartForm(16 << 20); err != nil {
 		var tooBig *http.MaxBytesError
@@ -108,12 +119,29 @@ func (a *API) createMessageWithFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, fh := range files {
-		limit := int64(maxFileSize)
-		if cipher != "" {
-			limit += 1024 // file đã mã hoá dài hơn bản gốc 16 byte (tag)
+		var limit int64
+		switch {
+		case cipher != "":
+			// File đã mã hoá: server không biết loại thật nên cho tới mức của video
+			// (client tự giữ file thường ≤ 20 MB). Bản mã dài hơn bản gốc 16 byte (tag).
+			limit = maxMediaSize + 1024
+		case fh.Size <= maxFileSize:
+			limit = maxFileSize
+		default:
+			ctype, err := detectType(fh)
+			if err != nil {
+				internalError(w, r, err)
+				return
+			}
+			limit = maxFileSize
+			if isMediaType(ctype) {
+				limit = maxMediaSize
+			}
 		}
 		if fh.Size > limit {
-			writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("File “%s” lớn hơn 20 MB.", cleanFileName(fh.Filename)))
+			writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf(
+				"File “%s” quá lớn: tối đa %d MB (video/âm thanh %d MB).",
+				cleanFileName(fh.Filename), maxFileSize>>20, maxMediaSize>>20))
 			return
 		}
 	}
@@ -226,6 +254,30 @@ func (a *API) createAndBroadcast(ctx context.Context, me model.User, channelID i
 	return msg, nil
 }
 
+// sniffType: loại file dựa vào nội dung thật, không tin header Content-Type client gửi.
+// Không nhận ra thì đoán theo đuôi file.
+func sniffType(src io.Reader, name string) string {
+	head := make([]byte, 512)
+	n, _ := io.ReadFull(src, head)
+	ctype := http.DetectContentType(head[:n])
+	if ctype == "application/octet-stream" || strings.HasPrefix(ctype, "text/plain") {
+		if byExt := mime.TypeByExtension(strings.ToLower(filepath.Ext(name))); byExt != "" {
+			ctype = byExt
+		}
+	}
+	return ctype
+}
+
+// detectType: sniffType cho file trong form, dùng trước khi lưu.
+func detectType(fh *multipart.FileHeader) (string, error) {
+	src, err := fh.Open()
+	if err != nil {
+		return "", err
+	}
+	defer src.Close()
+	return sniffType(src, cleanFileName(fh.Filename)), nil
+}
+
 // saveUpload ghi file vào thư mục uploads với tên ngẫu nhiên, đọc loại file thật và kích thước ảnh.
 func (a *API) saveUpload(fh *multipart.FileHeader) (model.Attachment, error) {
 	src, err := fh.Open()
@@ -239,16 +291,7 @@ func (a *API) saveUpload(fh *multipart.FileHeader) (model.Attachment, error) {
 		return model.Attachment{}, err
 	}
 	name := cleanFileName(fh.Filename)
-
-	// Loại file: dựa vào nội dung thật, không tin header Content-Type client gửi.
-	head := make([]byte, 512)
-	n, _ := io.ReadFull(src, head)
-	ctype := http.DetectContentType(head[:n])
-	if ctype == "application/octet-stream" || strings.HasPrefix(ctype, "text/plain") {
-		if byExt := mime.TypeByExtension(strings.ToLower(filepath.Ext(name))); byExt != "" {
-			ctype = byExt
-		}
-	}
+	ctype := sniffType(src, name)
 
 	att := model.Attachment{StorageKey: key, FileName: name, ContentType: ctype, Size: fh.Size}
 
@@ -346,8 +389,7 @@ func (a *API) serveFile(w http.ResponseWriter, r *http.Request) {
 	defer f.Close()
 
 	disposition := "attachment"
-	media := strings.HasPrefix(att.ContentType, "video/") || strings.HasPrefix(att.ContentType, "audio/")
-	if (inlineImageTypes[att.ContentType] || media) && r.URL.Query().Get("download") == "" {
+	if (inlineImageTypes[att.ContentType] || isMediaType(att.ContentType)) && r.URL.Query().Get("download") == "" {
 		disposition = "inline"
 	}
 	h := w.Header()

@@ -30,6 +30,14 @@ export function displayName(u: Pick<PublicUser, "display_name" | "username"> | u
   return u.display_name || u.username;
 }
 
+/** Tên hiển thị trong kênh: biệt danh nếu có, không thì tên thường. */
+export function shownName(
+  u: Pick<PublicUser, "id" | "display_name" | "username"> | undefined,
+  nicknames: Record<number, string> | undefined,
+) {
+  return (u && nicknames?.[u.id]) || displayName(u);
+}
+
 export function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "?";

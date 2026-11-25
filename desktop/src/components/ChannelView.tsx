@@ -2,7 +2,7 @@ import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type D
 import type { Attachment, Channel, Message } from "../lib/api";
 import { channelMessages, type PendingMessage } from "../state/chat";
 import { useChat } from "../state/ChatProvider";
-import { dayKey, displayName, formatDay, formatFull, formatTime } from "../lib/format";
+import { dayKey, displayName, formatDay, formatFull, formatTime, shownName } from "../lib/format";
 import { Composer, type ComposerHandle } from "./Composer";
 import { Attachments, ImageViewer, LocalFiles, MessageText } from "./MessageParts";
 import { Avatar, Icon } from "./ui";
@@ -29,7 +29,7 @@ import { GroupCallBanner, GroupCallButtons } from "./GroupCall";
 import { LiveGamesBar } from "./LiveGamesBar";
 import { PinsDialog, QuoteBlock, previewText } from "./MessageExtras";
 import { ShareDialog } from "./Share";
-import { findMessage } from "../state/chat";
+import { findMessage, typingKey } from "../state/chat";
 import { RemindDialog } from "./Reminders";
 import { EncryptedAttachments } from "./EncryptedAttachments";
 import { E2EEBanner, SafetyDialog, useDMEncryption } from "./E2EEDialogs";
@@ -59,8 +59,14 @@ export function ChannelView({ channel, membersOpen, onToggleMembers, onOpenSetti
   const enc = useDMEncryption(channel);
   const [safetyOpen, setSafetyOpen] = useState(false);
   const [pinsOpen, setPinsOpen] = useState(false);
-  const { loadPins } = useChat();
+  const { loadPins, api, dispatch } = useChat();
   const pinCount = state.pins[channel.id]?.length ?? 0;
+  useEffect(() => {
+    api
+      .nicknames(channel.id)
+      .then((n) => dispatch({ type: "nicknames.loaded", channelId: channel.id, nicknames: n }))
+      .catch(() => {});
+  }, [api, channel.id, dispatch]);
   useEffect(() => {
     loadPins(channel.id).catch(() => {});
   }, [channel.id, loadPins]);
@@ -403,7 +409,7 @@ function MessageList({ channel }: { channel: Channel }) {
                       mine={r.msg.user_id === state.me.id}
                       mentioned={!!r.msg.mentions?.includes(state.me.id)}
                       grouped={r.grouped}
-                      name={displayName(user)}
+                      name={shownName(user, state.nicknames[channel.id])}
                       avatarUser={user}
                       time={r.msg.created_at}
                       content={r.msg.content}
@@ -421,7 +427,7 @@ function MessageList({ channel }: { channel: Channel }) {
                   key={r.key}
                   mine
                   grouped={r.grouped}
-                  name={displayName(me)}
+                  name={shownName(me, state.nicknames[channel.id])}
                   avatarUser={me}
                   time={r.p.createdAt}
                   content={r.p.content}
@@ -662,7 +668,7 @@ export function MessageRow(props: RowProps) {
         ) : message?.game ? (
           <GameCard message={message} />
         ) : embed ? (
-          <EmbedView embed={embed} channelId={message?.channel_id} userId={message?.user_id} />
+          <EmbedView embed={embed} channelId={message?.channel_id} userId={message?.user_id} messageId={message?.id} />
         ) : (
           text &&
           (isAIUser(avatarUser) ? (
@@ -783,10 +789,11 @@ function DMIntro({ channel }: { channel: Channel }) {
 
 /* ---------- Đang gõ ---------- */
 
-function TypingIndicator({ channelId }: { channelId: number }) {
+/** Ai đang gõ ở dòng chính của kênh, hoặc trong một luồng nếu truyền parentId. */
+export function TypingIndicator({ channelId, parentId }: { channelId: number; parentId?: number }) {
   const { state } = useChat();
-  const ids = Object.keys(state.typing[channelId] ?? {}).map(Number);
-  const names = ids.map((id) => displayName(state.users[id]));
+  const ids = Object.keys(state.typing[typingKey(channelId, parentId)] ?? {}).map(Number);
+  const names = ids.map((id) => shownName(state.users[id], state.nicknames[channelId]));
 
   let text = "";
   if (names.length === 1) text = `${names[0]} đang gõ…`;

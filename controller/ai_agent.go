@@ -41,6 +41,8 @@ Phần trên có trí nhớ tóm tắt của kênh (nếu có) và các tin gầ
 - Ảnh trong kênh: look_at_images. Nhờ vẽ / tạo / sửa ảnh: draw_image (ảnh tự gửi vào kênh, bạn chỉ cần nói ngắn gọn).
 - Nhờ tìm / gửi ảnh có sẵn trên mạng: search_images (nhờ gửi ảnh: send=true, ảnh tự gửi vào kênh; chỉ xin link: send=false rồi đưa link).
 - Nhờ nhắc việc: set_reminder (chỉ nhắc người đang hỏi). Nhờ tạo bình chọn: create_poll. Rủ chơi / mở game: start_game. Ghim tin: pin_message.
+- Game: tìm ván bằng list_games (lọc theo người, đối thủ, loại game), đọc từng nước bằng get_game_moves. Hỏi về một ván cụ thể (ván vừa rồi, ván A với B, nước nào sai, sao thua): đọc đúng ván đó rồi chỉ ra nước then chốt kèm số thứ tự nước.
+- Phân tích phong cách / chiến thuật / điểm mạnh, điểm yếu / cách khắc chế một người: analyze_player_game để lấy Elo và thống kê, rồi đọc nước đi của vài ván gần nhất của người đó (get_game_moves) để thấy khai cuộc hay dùng, quân hay đưa lên sớm, lúc nào hay mất quân, thắng/thua kiểu gì. Chỉ kết luận từ những gì thật sự đọc được; trả lời như một người xem cờ sành sỏi nhận xét: nêu phong cách và lời khuyên, nhắc một nước then chốt khi thật cần, không liệt kê nước đi hay số liệu. Ít ván thì nói là còn ít dữ liệu. KHÔNG ĐOÁN MÒ VÀ KHÔNG BỊA ĐẶT.
 Câu chào hỏi, nói chuyện phiếm, hay câu đã đủ thông tin ở trên: trả lời luôn, không gọi công cụ.
 Gọi được nhiều công cụ trong nhiều lượt. Đủ thông tin thì trả lời ngay. Trong câu trả lời không nhắc tên công cụ hay mã #id.
 Kết quả web_search / open_url được tính là "Kết quả tìm web".
@@ -105,8 +107,27 @@ func (a *API) agentTools() []ai.Tool {
 	}
 	tools = append(tools,
 		ai.Tool{Name: "start_game", Description: "Open a game room in this channel with the person asking as host; others join by clicking it. " +
-			"station = Trạm Vũ Trụ (impostor game like Among Us), werewolf = Ma Sói, spy = Ai là gián điệp (spy word game), caro = Cờ caro (gomoku, 2 players), rps = Oẳn tù tì (rock paper scissors), chess = Cờ vua (chess, 2 players).",
-			Params: obj(map[string]any{"game": map[string]any{"type": "string", "enum": []string{"station", "werewolf", "spy", "caro", "rps", "chess"}}}, "game")},
+			"station = Trạm Vũ Trụ (impostor game like Among Us), werewolf = Ma Sói, spy = Ai là gián điệp (spy word game), caro = Cờ caro (gomoku, 2 players), rps = Oẳn tù tì (rock paper scissors), chess = Cờ vua (chess, 2 players), xiangqi = Cờ tướng (Chinese chess, 2 players).",
+			Params: obj(map[string]any{"game": map[string]any{"type": "string", "enum": []string{"station", "werewolf", "spy", "caro", "rps", "chess", "xiangqi"}}}, "game")},
+		ai.Tool{Name: "list_games", Description: "List recent games played in this channel and in public channels (newest first): game id, players, result, number of moves, date. " +
+			"Use it to find games of a person or between two people, then read them with get_game_moves.",
+			Params: obj(map[string]any{
+				"player":   str("Only games this member played (name or @username; \"tôi\" = the person asking). Optional."),
+				"opponent": str("Only games against this member. Optional."),
+				"game":     map[string]any{"type": "string", "enum": []string{"xiangqi", "chess", "caro", "rps", "werewolf", "spy", "station", "all"}, "description": "Game type. Default all."},
+				"status":   map[string]any{"type": "string", "enum": []string{"ended", "playing", "any"}, "description": "Default any."},
+				"limit":    num("Max games to return (1-20, default 10)."),
+			})},
+		ai.Tool{Name: "get_game_moves", Description: "Read one game move by move: every move in order with piece names (Xe, Mã, Pháo…), captures and checks, " +
+			"the final (or current) position as a text board, the result and other events (draw offers, timeouts, resignations). " +
+			"Use it to analyse openings, tactics, mistakes and each player's style from what was actually played — read several games of a person before judging their style. " +
+			"Coordinates: xiangqi files a-i / ranks 0-9 from Red's side; chess a-h / 1-8; caro (row,col).",
+			Params: obj(map[string]any{"game_id": num("The game id (the number after # from list_games, or of the game message).")}, "game_id")},
+		ai.Tool{Name: "analyze_player_game", Description: "Phân tích lối chơi, khai cuộc sở trường, chiến thuật, điểm mạnh, điểm yếu và xếp hạng Elo của một người chơi từ cơ sở dữ liệu cho một trò chơi cụ thể (xiangqi = Cờ tướng, chess = Cờ vua, caro = Cờ caro, rps = Oẳn tù tì, werewolf = Ma Sói, station = Trạm Vũ Trụ) hoặc toàn bộ game (all). Dùng khi có người hỏi về phong cách đánh, chiến thuật hoặc cách đối phó với một người nào đó.",
+			Params: obj(map[string]any{
+				"player": str("Tên hiển thị hoặc @username của người chơi cần phân tích."),
+				"game":   map[string]any{"type": "string", "enum": []string{"xiangqi", "chess", "caro", "rps", "werewolf", "station", "all"}, "description": "Loại trò chơi cần phân tích (xiangqi, chess, caro, rps, werewolf, station, hoặc all)."},
+			}, "player")},
 		ai.Tool{Name: "pin_message", Description: "Pin (or unpin) a message of this channel on behalf of the person asking.",
 			Params: obj(map[string]any{
 				"message_id": num("The message id (the number after #)."),
@@ -157,7 +178,7 @@ func (a *API) runAgent(ctx context.Context, ch model.Channel, q model.Message, a
 			status("Đang viết câu trả lời…")
 		}
 		var calls []ai.ToolCall
-		res, calls, err = a.ai.chat.StreamTools(ctx, msgs, use, live.delta)
+		res, calls, err = a.ai.chat.StreamTools(ctx, withStyleReminder(msgs), use, live.delta)
 		if err != nil {
 			if live.empty() {
 				log.Printf("ai agent: lượt %d lỗi, dùng cách cũ: %v", round, err)
@@ -274,6 +295,12 @@ func (r *agentRun) exec(ctx context.Context, c ai.ToolCall) string {
 		return r.draw(ctx, args.str("prompt"), args.str("orientation"), args.boolean("use_attached_images"))
 	case "start_game":
 		return r.startGame(ctx, args.str("game"))
+	case "analyze_player_game":
+		return r.analyzePlayerGame(ctx, args.str("player"), args.str("game"))
+	case "list_games":
+		return r.listGames(ctx, args.str("player"), args.str("opponent"), args.str("game"), args.str("status"), args.num("limit"))
+	case "get_game_moves":
+		return r.gameMoves(ctx, args.num("game_id"))
 	case "pin_message":
 		pin := true
 		if _, ok := args["pinned"]; ok {
@@ -640,6 +667,129 @@ func (r *agentRun) createPoll(ctx context.Context, question string, options []st
 	r.polls++
 	r.a.hub.ToChannel(r.ch.ID, mustJSON(messageNewEvent{Type: "message.new", Message: m}), nil)
 	return "Đã tạo bình chọn «" + p.Question + "» trong kênh."
+}
+
+func (r *agentRun) findMember(ctx context.Context, query string) (*model.PublicUser, error) {
+	q := strings.TrimSpace(query)
+	qLower := strings.ToLower(q)
+	if q == "" || qLower == "tôi" || qLower == "mình" || qLower == "em" || qLower == "me" {
+		return &model.PublicUser{
+			ID:          r.asker.ID,
+			Username:    r.asker.Username,
+			DisplayName: r.asker.DisplayName,
+			StatusText:  r.asker.StatusText,
+		}, nil
+	}
+
+	cleanLogin := strings.TrimPrefix(q, "@")
+	if u, err := r.a.store.GetUserByLogin(ctx, cleanLogin); err == nil {
+		return &model.PublicUser{
+			ID:          u.ID,
+			Username:    u.Username,
+			DisplayName: u.DisplayName,
+			StatusText:  u.StatusText,
+		}, nil
+	}
+
+	members, err := r.a.store.ListMembers(ctx, r.ch.ID)
+	if err == nil {
+		for _, m := range members {
+			if userMatches(&m, q) {
+				return &m, nil
+			}
+		}
+	}
+
+	askerPub := model.PublicUser{
+		ID:          r.asker.ID,
+		Username:    r.asker.Username,
+		DisplayName: r.asker.DisplayName,
+		StatusText:  r.asker.StatusText,
+	}
+	if userMatches(&askerPub, q) {
+		return &askerPub, nil
+	}
+
+	return nil, fmt.Errorf("không tìm thấy người chơi «%s» trong hệ thống", query)
+}
+
+func (r *agentRun) analyzePlayerGame(ctx context.Context, player, gameKind string) string {
+	r.status("Đang phân tích phong cách và chiến thuật chơi…")
+	u, err := r.findMember(ctx, player)
+	if err != nil {
+		return err.Error() + ". Vui lòng kiểm tra lại tên hoặc @username."
+	}
+
+	gameKind = strings.ToLower(strings.TrimSpace(gameKind))
+	if gameKind == "" {
+		gameKind = "xiangqi"
+	}
+
+	var kinds []string
+	if gameKind == "all" {
+		kinds = []string{"xiangqi", "chess", "caro", "rps"}
+	} else {
+		kinds = []string{gameKind}
+	}
+
+	var sections []string
+	for _, k := range kinds {
+		rep, err := r.a.store.AnalyzePlayerGameplay(ctx, u.ID, k)
+		if err != nil {
+			continue
+		}
+
+		gTitle := game.Title(k)
+		if gTitle == "" {
+			gTitle = strings.ToUpper(k)
+		}
+
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("### Phân tích chiến thuật môn %s:\n", gTitle))
+		sb.WriteString(fmt.Sprintf("- **Kỳ thủ**: %s (@%s)\n", rep.PlayerName, rep.Username))
+		sb.WriteString(fmt.Sprintf("- **Hạng & Elo**: %s %s (Elo: %d | Đỉnh cao: %d)\n", rep.TierBadge, rep.RankTier, rep.Rating, rep.PeakRating))
+		sb.WriteString(fmt.Sprintf("- **Thành tích**: Tổng %d ván | Thắng %d (%.1f%%) | Hoà %d | Thua %d\n", rep.TotalGames, rep.Wins, rep.WinRate, rep.Draws, rep.Losses))
+		sb.WriteString(fmt.Sprintf("- **Chuỗi phong độ**: Thắng liên tiếp hiện tại: %d | Kỷ lục chuỗi: %d\n", rep.CurrentStreak, rep.BestStreak))
+		if rep.FirstTurnGames > 0 || rep.SecondTurnGames > 0 {
+			sb.WriteString(fmt.Sprintf("- **Ưu thế lượt đi**: Đi trước (tiên thủ): %d ván (thắng %d) | Đi sau (hậu thủ): %d ván (thắng %d)\n",
+				rep.FirstTurnGames, rep.FirstTurnWins, rep.SecondTurnGames, rep.SecondTurnWins))
+		}
+		if len(rep.FavoriteOpenings) > 0 {
+			sb.WriteString(fmt.Sprintf("- **Khai cuộc sở trường**: %s\n", strings.Join(rep.FavoriteOpenings, ", ")))
+		}
+		sb.WriteString(fmt.Sprintf("- **Phong cách chiến thuật**: %s\n", rep.PlaystyleSummary))
+		if len(rep.Strengths) > 0 {
+			sb.WriteString("- **Điểm mạnh**:\n")
+			for _, s := range rep.Strengths {
+				sb.WriteString(fmt.Sprintf("  + %s\n", s))
+			}
+		}
+		if len(rep.Weaknesses) > 0 {
+			sb.WriteString("- **Điểm yếu / Lỗ hổng**:\n")
+			for _, w := range rep.Weaknesses {
+				sb.WriteString(fmt.Sprintf("  + %s\n", w))
+			}
+		}
+		if len(rep.CounterTips) > 0 {
+			sb.WriteString("- **Mẹo khắc chế & Đối phó**:\n")
+			for _, tip := range rep.CounterTips {
+				sb.WriteString(fmt.Sprintf("  + %s\n", tip))
+			}
+		}
+		if len(rep.RecentMatches) > 0 {
+			sb.WriteString("- **Ván đấu gần đây**:\n")
+			for _, m := range rep.RecentMatches {
+				sb.WriteString(fmt.Sprintf("  + %s\n", m))
+			}
+		}
+		sections = append(sections, sb.String())
+	}
+
+	if len(sections) == 0 {
+		return fmt.Sprintf("Chưa tìm thấy dữ liệu ván đấu nào của người chơi %s (@%s).", u.DisplayName, u.Username)
+	}
+
+	return clipTool(strings.Join(sections, "\n---\n\n"))
 }
 
 /* ---------- Tìm người ---------- */

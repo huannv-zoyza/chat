@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import type { LiveGameItem, GameKind } from "../lib/api";
 import { useChat } from "../state/ChatProvider";
+import { useWheelScrollX } from "../lib/useWheelScrollX";
 
 function getGameIcon(kind: GameKind): string {
   switch (kind) {
@@ -43,6 +44,8 @@ function formatGamePlayers(g: LiveGameItem): string {
 export function LiveGamesBar({ channelId }: { channelId: number }) {
   const { state, loadLiveGames, jumpToMessage } = useChat();
   const [jumpingId, setJumpingId] = useState<number | null>(null);
+  const [row, setRow] = useState<HTMLDivElement | null>(null);
+  useWheelScrollX(row);
 
   // Load live games on channel change
   useEffect(() => {
@@ -91,7 +94,7 @@ export function LiveGamesBar({ channelId }: { channelId: number }) {
         <span className="live-games-label-icon" aria-hidden>🎮</span>
         <span className="live-games-label-text">Đang diễn ra</span>
       </div>
-      <div className="live-games-scroll">
+      <div className="live-games-scroll" ref={setRow}>
         {games.map((g) => {
           const isJumping = jumpingId === g.message_id;
           return (
@@ -102,31 +105,32 @@ export function LiveGamesBar({ channelId }: { channelId: number }) {
                 isJumping ? "is-jumping" : ""
               }`}
               onClick={() => handleJump(g)}
-              title={`Nhấn để cuộn tới ${g.title}`}
+              title={`Tới ván ${g.title}`}
             >
               <span className="live-game-icon">{getGameIcon(g.kind)}</span>
               <div className="live-game-info">
                 <div className="live-game-header">
                   <span className={`live-status-dot dot-${g.status}`} />
                   <strong className="live-game-title">{g.title}</strong>
-                  <span className="live-status-text">
-                    {g.status === "lobby" ? "Chờ người" : "Live"}
-                  </span>
+                  {g.status === "lobby" && <span className="live-status-text">Chờ người</span>}
                 </div>
                 <div className="live-game-meta">
                   <span className="live-game-players">{formatGamePlayers(g)}</span>
-                  {g.is_my_turn && <span className="live-turn-badge">⚡ Lượt bạn!</span>}
+                  {g.is_my_turn && <span className="live-turn-badge">Lượt bạn</span>}
+                  {g.viewer_count > 0 && (
+                    <span className="live-viewers-count" title={`${g.viewer_count} người đang xem trực tiếp`}>
+                      👁️ {g.viewer_count}
+                    </span>
+                  )}
                 </div>
               </div>
-              <span className="live-jump-indicator" aria-hidden>
-                {isJumping ? (
+              {isJumping && (
+                <span className="live-jump-indicator" aria-hidden>
                   <svg className="spin live-spinner" viewBox="0 0 24 24" width="14" height="14">
                     <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" fill="none" strokeDasharray="31.4 31.4" />
                   </svg>
-                ) : (
-                  "↓"
-                )}
-              </span>
+                </span>
+              )}
             </button>
           );
         })}

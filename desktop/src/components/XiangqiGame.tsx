@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { GameView, PublicUser } from "../lib/api";
 import type { XiangqiState } from "../lib/games";
 import { XiangqiPiece } from "./XiangqiPiece";
 import { playPieceCapture, playPiecePlace, playVictorySound } from "../lib/sound";
-import { Avatar, Dialog } from "./ui";
+import { Dialog } from "./ui";
 
 export type XiangqiCtx = {
+  messageId?: number;
   game: GameView;
   meId: number;
   isPlayer: boolean;
@@ -14,8 +15,6 @@ export type XiangqiCtx = {
   user: (id: number) => PublicUser;
   nameOf: (id: number) => string;
   invite: () => void;
-  onOpenLeaderboard?: () => void;
-  onOpenThread?: () => void;
   replyCount?: number;
   viewerCount?: number;
 };
@@ -23,11 +22,14 @@ export type XiangqiCtx = {
 // Tọa độ bàn cờ:
 // 9 cột dọc (files: 0..8 tương ứng 'a'..'i')
 // 10 hàng ngang (ranks: 0..9, 0 ở dưới Đỏ, 9 ở trên Đen)
-const CELL_SIZE = 44;
-const PADDING_X = 28;
-const PADDING_Y = 28;
-const BOARD_WIDTH = PADDING_X * 2 + 8 * CELL_SIZE; // 28*2 + 352 = 408
-const BOARD_HEIGHT = PADDING_Y * 2 + 9 * CELL_SIZE; // 28*2 + 396 = 452
+const CELL_SIZE = 48;
+/** Đường kính quân cờ trên bàn (vừa khít ô, chừa 2px). */
+const PIECE = 46;
+const PIECE_R = PIECE / 2;
+const PADDING_X = 30;
+const PADDING_Y = 30;
+const BOARD_WIDTH = PADDING_X * 2 + 8 * CELL_SIZE; // 30*2 + 384 = 444
+const BOARD_HEIGHT = PADDING_Y * 2 + 9 * CELL_SIZE; // 30*2 + 432 = 492
 
 function useSecondsLeft(deadline: string | undefined): number | null {
   const [now, setNow] = useState(() => Date.now());
@@ -43,6 +45,9 @@ function useSecondsLeft(deadline: string | undefined): number | null {
 function clock(s: number) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
+
+/** Các ván đã phát âm thanh chiến thắng trong phiên này (tránh phát hai lần). */
+const celebrated = new Set<number>();
 
 /** Hiệu ứng pháo hoa giấy chúc mừng khi kết thúc ván đấu */
 function XiangqiConfetti({ width, height }: { width: number; height: number }) {
@@ -109,13 +114,12 @@ function XiangqiConfetti({ width, height }: { width: number; height: number }) {
 }
 
 export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
-  const { game, meId, busy, act, onOpenLeaderboard } = ctx;
+  const { game, meId, busy, act } = ctx;
   const s = game.state as XiangqiState;
 
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const [confirmResign, setConfirmResign] = useState(false);
   const [manualFlip, setManualFlip] = useState<boolean | null>(null);
-  const [showVictoryOverlay, setShowVictoryOverlay] = useState(true);
 
   const redPlayer = game.players.find((p) => p.id === s.red_player_id);
   const blackPlayer = game.players.find((p) => p.id === s.black_player_id);
@@ -126,7 +130,6 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
 
   const winnerId = game.winners && game.winners.length > 0 ? game.winners[0] : null;
   const winnerPlayer = winnerId ? game.players.find((p) => p.id === winnerId) : null;
-  const isWinnerRed = winnerId === s.red_player_id;
   const betAmount = s.bet_amount ?? s.opts?.bet_amount ?? 0;
   const potAmount = s.pot ?? betAmount * game.players.length;
 
@@ -148,19 +151,22 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
     lastMoveRef.current = key;
   }, [s.last_move]);
 
-  // Âm thanh chúc mừng khi kết thúc ván cờ (chiếu bí hoặc có người thắng)
-  const hasPlayedVictorySoundRef = useRef(false);
+  // Chúc mừng (âm thanh + pháo giấy) chỉ khi ván vừa kết thúc ngay trước mắt, không phải mỗi lần
+  // một ván đã xong hiện lại trên màn hình (mở kênh, cuộn tới, mở khán đài).
+  const prevStatusRef = useRef(game.status);
+  const [celebrate, setCelebrate] = useState(false);
   useEffect(() => {
-    if (game.status === "ended" && game.winners && game.winners.length > 0) {
-      if (!hasPlayedVictorySoundRef.current) {
-        hasPlayedVictorySoundRef.current = true;
-        playVictorySound();
-        setShowVictoryOverlay(true);
-      }
-    } else if (game.status === "playing") {
-      hasPlayedVictorySoundRef.current = false;
+    const was = prevStatusRef.current;
+    prevStatusRef.current = game.status;
+    if (was !== "playing" || game.status !== "ended" || !game.winners?.length) return;
+    setCelebrate(true);
+    // thẻ ván và khán đài có thể cùng mở: chỉ một nơi phát âm thanh
+    const key = ctx.messageId ?? 0;
+    if (!celebrated.has(key)) {
+      celebrated.add(key);
+      playVictorySound();
     }
-  }, [game.status, game.winners]);
+  }, [game.status, game.winners, ctx.messageId]);
 
   // Danh sách các nước đi hợp lệ từ ô đang chọn
   const validTargets = useMemo(() => {
@@ -253,104 +259,40 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
 
   return (
     <div className="xiangqi-container" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem" }}>
-      {/* Huy hiệu mức cược & Quỹ thưởng */}
+      {/* Thanh mức cược & Quỹ thưởng */}
       {betAmount > 0 && (
-        <div
-          className="xiangqi-bet-banner"
-          style={{
-            width: BOARD_WIDTH,
-            maxWidth: "100%",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            padding: "0.3rem 0.7rem",
-            borderRadius: "6px",
-            backgroundColor: "#fef3c7",
-            color: "#92400e",
-            border: "1px solid #fcd34d",
-            fontSize: "0.82rem",
-            fontWeight: 600,
-          }}
-        >
-          <span>🪙 Cược: {betAmount.toLocaleString("vi-VN")} Xu / người</span>
-          <span>🏆 Quỹ thưởng: {potAmount.toLocaleString("vi-VN")} Xu</span>
-        </div>
-      )}
-
-      {/* Banner kết thúc trận đấu nếu đã thu nhỏ bảng vinh danh */}
-      {game.status === "ended" && winnerPlayer && !showVictoryOverlay && (
-        <div
-          className="xiangqi-banner is-ended"
-          style={{
-            backgroundColor: "#fef3c7",
-            color: "#92400e",
-            border: "1px solid #fcd34d",
-            padding: "0.35rem 0.8rem",
-            borderRadius: "6px",
-            fontSize: "0.85rem",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            width: BOARD_WIDTH,
-            maxWidth: "100%",
-          }}
-        >
+        <div className="xq-bet-bar" style={{ width: BOARD_WIDTH }}>
+          <span>🪙 Cược: {betAmount.toLocaleString("vi-VN")} xu / người</span>
           <span>
-            🏆 <strong>{winnerPlayer.name}</strong> chiến thắng {s.is_checkmate ? "(Chiếu bí!)" : ""}
+            {game.status === "ended"
+              ? winnerPlayer
+                ? winnerPlayer.id === meId
+                  ? `🏆 +${potAmount.toLocaleString("vi-VN")} xu (Lời +${betAmount.toLocaleString("vi-VN")})`
+                  : isPlayer
+                    ? `💸 -${betAmount.toLocaleString("vi-VN")} xu`
+                    : `🏆 Thưởng: ${potAmount.toLocaleString("vi-VN")} xu`
+                : `↩️ Hoà · Hoàn ${betAmount.toLocaleString("vi-VN")} xu`
+              : `🏆 Quỹ thưởng: ${potAmount.toLocaleString("vi-VN")} xu`}
           </span>
-          <button
-            type="button"
-            className="btn btn-xs btn-primary"
-            onClick={() => setShowVictoryOverlay(true)}
-          >
-            🎉 Bảng vinh danh
-          </button>
         </div>
       )}
 
       {/* Banner cảnh báo Chiếu tướng */}
       {game.status === "playing" && s.in_check && (
-        <div
-          className="xiangqi-banner is-check"
-          style={{
-            backgroundColor: "#fee2e2",
-            color: "#991b1b",
-            border: "1px solid #f87171",
-            padding: "0.35rem 0.8rem",
-            borderRadius: "6px",
-            fontWeight: "bold",
-            display: "flex",
-            alignItems: "center",
-            gap: "0.4rem",
-            fontSize: "0.9rem",
-          }}
-        >
-          <span>⚠️ {s.turn_color === "r" ? "Phe Đỏ" : "Phe Đen"} đang bị CHIẾU TƯỚNG!</span>
+        <div className="xq-banner is-check" role="status">
+          <span>{s.turn_color === "r" ? "Phe Đỏ" : "Phe Đen"} đang bị chiếu tướng!</span>
         </div>
       )}
 
       {/* Banner đề nghị hoà */}
       {game.status === "playing" && s.draw_offered && (
-        <div
-          className="xiangqi-banner is-draw-offer"
-          style={{
-            backgroundColor: "#fef3c7",
-            color: "#92400e",
-            border: "1px solid #fcd34d",
-            padding: "0.4rem 0.8rem",
-            borderRadius: "6px",
-            display: "flex",
-            alignItems: "center",
-            gap: "0.6rem",
-            fontSize: "0.85rem",
-          }}
-        >
+        <div className="xq-banner is-draw" role="status">
           {s.draw_offered_by === meId ? (
-            <span>Bạn đã đề nghị hoà cờ. Đang chờ đối thủ phản hồi...</span>
+            <span>Bạn đã cầu hoà, đang chờ đối thủ trả lời…</span>
           ) : (
             <>
-              <span>Đối thủ đề nghị hoà cờ:</span>
-              <div style={{ display: "flex", gap: "0.3rem" }}>
+              <span>Đối thủ xin cầu hoà.</span>
+              <div className="xq-banner-actions">
                 <button
                   type="button"
                   className="btn btn-sm btn-primary"
@@ -374,55 +316,17 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
       )}
 
       {/* Thanh thông tin người chơi phía trên (Đối thủ) */}
-      <div
-        className="xiangqi-player-bar"
-        style={{
-          width: BOARD_WIDTH,
-          maxWidth: "100%",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "0.25rem 0.5rem",
-          borderRadius: "6px",
-          backgroundColor: "var(--bg-secondary, #f3f4f6)",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <span
-            style={{
-              display: "inline-block",
-              width: "12px",
-              height: "12px",
-              borderRadius: "50%",
-              backgroundColor: topColor === "red" ? "#dc2626" : "#1e293b",
-            }}
-          />
-          <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>
-            {topPlayer?.name || (topColor === "red" ? "Phe Đỏ" : "Phe Đen")}
-            {topPlayer?.id === meId ? " (Bạn)" : ""}
-          </span>
-          {topAdvantage > 0 && (
-            <span style={{ fontSize: "0.75rem", color: "#16a34a", fontWeight: "bold" }}>
-              +{topAdvantage}
-            </span>
-          )}
-
-          {/* Quân bị ăn */}
-          <div style={{ display: "flex", gap: "2px", marginLeft: "0.3rem" }}>
-            {Object.entries(s.captured || {}).map(([p, count]) => {
-              const isThisSide = topColor === "red" ? p >= "a" && p <= "z" : p >= "A" && p <= "Z";
-              if (!isThisSide) return null;
-              return Array.from({ length: count }).map((_, i) => (
-                <XiangqiPiece key={`${p}-${i}`} piece={p} size={20} />
-              ));
-            })}
-          </div>
-        </div>
-
-        {game.status === "playing" && s.turn_color === (topColor === "red" ? "r" : "b") && (
-          <Countdown deadline={game.deadline} label="Thời gian nước đi" />
-        )}
-      </div>
+      <XqPlayerBar
+        name={(topPlayer?.name || (topColor === "red" ? "Phe Đỏ" : "Phe Đen")) + (topPlayer?.id === meId ? " (Bạn)" : "")}
+        color={topColor}
+        advantage={topAdvantage}
+        captured={s.captured}
+        clock={
+          game.status === "playing" && s.turn_color === (topColor === "red" ? "r" : "b") ? (
+            <Countdown deadline={game.deadline} label="Thời gian nước đi" />
+          ) : null
+        }
+      />
 
       {/* Bàn cờ Cờ Tướng SVG */}
       <div
@@ -437,131 +341,8 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
         }}
       >
         {/* Hiệu ứng pháo hoa giấy chúc mừng khi kết thúc ván đấu */}
-        {game.status === "ended" && winnerPlayer && (
+        {celebrate && game.status === "ended" && winnerPlayer && (
           <XiangqiConfetti width={BOARD_WIDTH} height={BOARD_HEIGHT} />
-        )}
-
-        {/* Hiệu ứng Overlay vinh danh người chiến thắng */}
-        {game.status === "ended" && winnerPlayer && showVictoryOverlay && (
-          <div className="xiangqi-victory-overlay">
-            <div style={{ fontSize: "2.4rem", filter: "drop-shadow(0 4px 8px rgba(234, 179, 8, 0.4))" }}>
-              {s.is_checkmate ? "⚡" : "🏆"}
-            </div>
-
-            <div className="xiangqi-winner-title">
-              {s.is_checkmate ? "Chiếu Bí Tuyệt Đối!" : "Trận Đấu Kết Thúc!"}
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: "0.35rem",
-                background: "rgba(255, 255, 255, 0.08)",
-                padding: "0.6rem 1rem",
-                borderRadius: "10px",
-                width: "100%",
-              }}
-            >
-              <div style={{ position: "relative", display: "inline-block" }}>
-                <Avatar user={ctx.user(winnerPlayer.id)} size={52} />
-                <span
-                  style={{
-                    position: "absolute",
-                    bottom: -2,
-                    right: -2,
-                    backgroundColor: isWinnerRed ? "#dc2626" : "#1e293b",
-                    color: "#fff",
-                    borderRadius: "50%",
-                    width: "20px",
-                    height: "20px",
-                    fontSize: "10px",
-                    fontWeight: "bold",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    border: "2px solid #fff",
-                  }}
-                  title={isWinnerRed ? "Phe Đỏ" : "Phe Đen"}
-                >
-                  {isWinnerRed ? "Đỏ" : "Đen"}
-                </span>
-              </div>
-
-              <div style={{ fontWeight: "bold", fontSize: "1.05rem" }}>
-                {winnerPlayer.name} {winnerPlayer.id === meId ? "(Bạn)" : ""}
-              </div>
-
-              <div style={{ fontSize: "0.82rem", color: "#fbbf24", fontWeight: 600 }}>
-                {isWinnerRed ? "🔴 Người chơi phe Đỏ" : "⚫ Người chơi phe Đen"} chiến thắng
-              </div>
-              {betAmount > 0 && (
-                <div
-                  style={{
-                    fontSize: "0.85rem",
-                    fontWeight: 700,
-                    color: winnerPlayer.id === meId ? "#4ade80" : isPlayer ? "#fca5a5" : "#fde047",
-                  }}
-                >
-                  {winnerPlayer.id === meId
-                    ? `💰 +${potAmount.toLocaleString("vi-VN")} Xu (Lời +${betAmount.toLocaleString("vi-VN")} Xu)`
-                    : isPlayer
-                      ? `💸 -${betAmount.toLocaleString("vi-VN")} Xu`
-                      : `🏆 Tổng thưởng: ${potAmount.toLocaleString("vi-VN")} Xu`}
-                </div>
-              )}
-            </div>
-
-            <div
-              style={{
-                fontSize: "0.85rem",
-                color: "#e2e8f0",
-                lineHeight: "1.4",
-                backgroundColor: "rgba(0, 0, 0, 0.35)",
-                padding: "0.45rem 0.8rem",
-                borderRadius: "6px",
-                width: "100%",
-              }}
-            >
-              {game.result}
-            </div>
-
-            <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.2rem", width: "100%" }}>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                style={{ flex: 1 }}
-                onClick={() => setShowVictoryOverlay(false)}
-                title="Thu nhỏ để xem lại các nước cờ trên bàn"
-              >
-                👁️ Xem bàn cờ
-              </button>
-
-              {ctx.onOpenThread && (
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  style={{ flex: 1 }}
-                  onClick={ctx.onOpenThread}
-                  title="Mở luồng bình luận của khán giả"
-                >
-                  💬 Khán đài {ctx.replyCount ? `(${ctx.replyCount})` : ""}
-                </button>
-              )}
-
-              {onOpenLeaderboard && (
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  style={{ flex: 1 }}
-                  onClick={onOpenLeaderboard}
-                >
-                  🏆 Bảng xếp hạng
-                </button>
-              )}
-            </div>
-          </div>
         )}
 
         <svg
@@ -808,7 +589,7 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
                       <circle
                         cx={cx}
                         cy={cy}
-                        r="23"
+                        r={PIECE_R + 2}
                         fill="#ef4444"
                         opacity="0.45"
                         className="xiangqi-check-pulse"
@@ -818,13 +599,13 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
                           <circle
                             cx={cx}
                             cy={cy}
-                            r="26"
+                            r={PIECE_R + 3}
                             fill="none"
                             stroke="#ef4444"
                             strokeWidth="3.5"
                             className="xiangqi-checkmate-ring"
                           />
-                          <g transform={`translate(${cx}, ${cy - 22})`}>
+                          <g transform={`translate(${cx}, ${cy - PIECE_R - 1})`}>
                             <rect
                               x="-26"
                               y="-9"
@@ -857,7 +638,7 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
                     <circle
                       cx={cx}
                       cy={cy}
-                      r="25"
+                      r={PIECE_R + 2}
                       fill="none"
                       stroke="#eab308"
                       strokeWidth="3"
@@ -871,7 +652,7 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
                     <circle
                       cx={cx}
                       cy={cy}
-                      r="24"
+                      r={PIECE_R + 1}
                       fill="none"
                       stroke="#eab308"
                       strokeWidth="3.5"
@@ -881,14 +662,14 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
                   {/* Quân cờ nếu có */}
                   {pieceChar !== "." && (
                     <g
-                      transform={`translate(${cx - 21}, ${cy - 21})`}
+                      transform={`translate(${cx - PIECE_R}, ${cy - PIECE_R})`}
                       {...((isMyTurn && isMyPiece(pieceChar) ? { draggable: true } : {}) as Record<string, unknown>)}
                       onDragStart={(e) => {
                         e.dataTransfer.setData("text/plain", sq);
                         setSelectedSquare(sq);
                       }}
                     >
-                      <XiangqiPiece piece={pieceChar} size={42} />
+                      <XiangqiPiece piece={pieceChar} size={PIECE} />
                     </g>
                   )}
 
@@ -899,7 +680,7 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
                         <circle
                           cx={cx}
                           cy={cy}
-                          r="22"
+                          r={PIECE_R}
                           fill="none"
                           stroke="#ef4444"
                           strokeWidth="3"
@@ -918,65 +699,27 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
       </div>
 
       {/* Thanh thông tin người chơi phía dưới (Bạn) */}
-      <div
-        className="xiangqi-player-bar"
-        style={{
-          width: BOARD_WIDTH,
-          maxWidth: "100%",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "0.25rem 0.5rem",
-          borderRadius: "6px",
-          backgroundColor: "var(--bg-secondary, #f3f4f6)",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <span
-            style={{
-              display: "inline-block",
-              width: "12px",
-              height: "12px",
-              borderRadius: "50%",
-              backgroundColor: bottomColor === "red" ? "#dc2626" : "#1e293b",
-            }}
-          />
-          <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>
-            {bottomPlayer?.name || (bottomColor === "red" ? "Phe Đỏ" : "Phe Đen")}
-            {bottomPlayer?.id === meId ? " (Bạn)" : ""}
-          </span>
-          {bottomAdvantage > 0 && (
-            <span style={{ fontSize: "0.75rem", color: "#16a34a", fontWeight: "bold" }}>
-              +{bottomAdvantage}
-            </span>
-          )}
-
-          {/* Quân bị ăn */}
-          <div style={{ display: "flex", gap: "2px", marginLeft: "0.3rem" }}>
-            {Object.entries(s.captured || {}).map(([p, count]) => {
-              const isThisSide = bottomColor === "red" ? p >= "a" && p <= "z" : p >= "A" && p <= "Z";
-              if (!isThisSide) return null;
-              return Array.from({ length: count }).map((_, i) => (
-                <XiangqiPiece key={`${p}-${i}`} piece={p} size={20} />
-              ));
-            })}
-          </div>
-        </div>
-
-        {game.status === "playing" && s.turn_color === (bottomColor === "red" ? "r" : "b") && (
-          <Countdown deadline={game.deadline} label="Thời gian nước đi" />
-        )}
-      </div>
+      <XqPlayerBar
+        name={(bottomPlayer?.name || (bottomColor === "red" ? "Phe Đỏ" : "Phe Đen")) + (bottomPlayer?.id === meId ? " (Bạn)" : "")}
+        color={bottomColor}
+        advantage={bottomAdvantage}
+        captured={s.captured}
+        clock={
+          game.status === "playing" && s.turn_color === (bottomColor === "red" ? "r" : "b") ? (
+            <Countdown deadline={game.deadline} label="Thời gian nước đi" />
+          ) : null
+        }
+      />
 
       {/* Các nút chức năng điều khiển */}
-      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "center", marginTop: "0.2rem" }}>
+      <div className="xq-actions">
         <button
           type="button"
           className="btn btn-sm btn-secondary"
           onClick={() => setManualFlip((prev) => (prev !== null ? !prev : !isBlack))}
           title="Đổi hướng nhìn bàn cờ"
         >
-          🔄 Lật bàn cờ
+          🔄 Lật bàn
         </button>
 
         {isPlayer && game.status === "playing" && (
@@ -988,48 +731,27 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
               onClick={() => act("draw_offer")}
               title="Gửi lời mời hoà tới đối phương"
             >
-              🤝 Xin hoà
+              🤝 Cầu hoà
             </button>
             <button
               type="button"
-              className="btn btn-sm btn-danger"
+              className="btn btn-sm btn-secondary xq-resign"
               disabled={busy}
               onClick={() => setConfirmResign(true)}
-              title="Chấp nhận thua ván cờ"
+              title="Chịu thua ván này"
             >
-              🏳️ Xin thua
+              🏳️ Chịu thua
             </button>
           </>
         )}
 
-        {ctx.onOpenThread && (
-          <button
-            type="button"
-            className="btn btn-sm btn-secondary"
-            onClick={ctx.onOpenThread}
-            title="Mở luồng bình luận / Khán đài"
-          >
-            💬 Khán đài {ctx.replyCount ? `(${ctx.replyCount})` : ""}
-          </button>
-        )}
-
-        {onOpenLeaderboard && (
-          <button
-            type="button"
-            className="btn btn-sm btn-secondary"
-            onClick={onOpenLeaderboard}
-            title="Xem bảng xếp hạng"
-          >
-            🏆 Bảng xếp hạng
-          </button>
-        )}
       </div>
 
       {/* Hộp thoại xác nhận đầu hàng */}
       {confirmResign && (
-        <Dialog title="Xác nhận đầu hàng" onClose={() => setConfirmResign(false)}>
+        <Dialog title="Chịu thua?" onClose={() => setConfirmResign(false)}>
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-            <p>Bạn có chắc chắn muốn nhận thua ván Cờ tướng này không?</p>
+            <p>Ván cờ tướng này sẽ kết thúc và đối thủ thắng.</p>
             <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
               <button
                 type="button"
@@ -1047,11 +769,49 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
                   setConfirmResign(false);
                 }}
               >
-                Chấp nhận thua
+                Chịu thua
               </button>
             </div>
           </div>
         </Dialog>
+      )}
+    </div>
+  );
+}
+
+/** Thanh người chơi trên/dưới bàn cờ: tên 1 dòng (dài thì "…"), quân đã ăn được tự xuống dòng,
+ * không bao giờ đẩy thẻ rộng hơn bàn cờ. */
+function XqPlayerBar({
+  name,
+  color,
+  advantage,
+  captured,
+  clock,
+}: {
+  name: string;
+  color: "red" | "black";
+  advantage: number;
+  captured?: Record<string, number>;
+  clock: ReactNode;
+}) {
+  // quân phe kia mà người này đã ăn được
+  const pieces = Object.entries(captured || {}).flatMap(([p, count]) =>
+    (color === "red" ? p >= "a" && p <= "z" : p >= "A" && p <= "Z") ? Array.from({ length: count }, () => p) : [],
+  );
+  return (
+    <div className="xq-player" style={{ width: BOARD_WIDTH }}>
+      <span className={`xq-side is-${color}`} aria-label={color === "red" ? "Phe Đỏ" : "Phe Đen"} />
+      <span className="xq-player-name" title={name}>
+        {name}
+      </span>
+      {advantage > 0 && <span className="xq-adv">+{advantage}</span>}
+      {clock}
+      {pieces.length > 0 && (
+        <span className="xq-captured" aria-label={`Đã ăn ${pieces.length} quân`}>
+          {pieces.map((p, i) => (
+            <XiangqiPiece key={i} piece={p} size={18} />
+          ))}
+        </span>
       )}
     </div>
   );

@@ -51,6 +51,8 @@ type xiangqi struct {
 	Fullmove      int            `json:"fullmove"`   // Số lượt đi (bắt đầu từ 1, tăng sau mỗi lượt Đen)
 	LastMove      *xiangqiMove   `json:"last_move,omitempty"`
 	DrawOfferedBy int64          `json:"draw_offered_by,omitempty"` // ID người chơi đang xin hoà (0 nếu không có)
+	// Toàn bộ nước đi theo thứ tự (Đỏ đi trước). Không cắt bớt như Log, để phân tích lại ván (Trợ lý AI).
+	History []xiangqiMove `json:"history,omitempty"`
 }
 
 func (x *xiangqi) limits() (int, int) { return 2, 2 }
@@ -296,6 +298,7 @@ func (x *xiangqi) act(p int64, action string, data json.RawMessage, now time.Tim
 		moveLog += " [Chiếu!]"
 	}
 	x.logf("%s", moveLog)
+	x.History = append(x.History, *chosenMove)
 
 	// Kiểm tra trạng thái kết thúc ván đấu
 	oppLegalMoves := x.generateLegalMoves(x.TurnColor)

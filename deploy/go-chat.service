@@ -9,8 +9,7 @@ StartLimitIntervalSec=0
 
 [Service]
 WorkingDirectory=__DIR__
-# Biến môi trường riêng (không commit), ví dụ GIPHY_API_KEY=... để bật tìm GIF. Không có file thì bỏ qua.
-EnvironmentFile=-%h/.config/go-chat/env
+# Cấu hình riêng (API key...) đọc từ __DIR__/.env lúc khởi động (xem .env.example).
 ExecStart=__DIR__/go-chat -addr :4000 -db __DIR__/chat.db -uploads __DIR__/uploads
 Restart=always
 RestartSec=3

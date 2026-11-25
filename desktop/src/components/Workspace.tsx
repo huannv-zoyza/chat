@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { useChat } from "../state/ChatProvider";
+import { initPrefs, usePrefs } from "../lib/prefs";
 import { Sidebar } from "./Sidebar";
 import { ChannelView } from "./ChannelView";
 import { MembersPanel } from "./MembersPanel";
@@ -13,10 +14,11 @@ import {
 } from "./ChannelDialogs";
 import { clearPendingInvite, peekPendingInvite } from "../lib/platform";
 import { UserSettingsDialog } from "./UserSettingsDialog";
+import { WalletDialog } from "./Wallet";
+import { ThrowOverlay } from "./Fun";
 import { NewDMDialog } from "./NewDMDialog";
 import { SearchDialog } from "./MessageExtras";
 import { RemindersDialog } from "./Reminders";
-import { WalletDialog } from "./WalletDialog";
 import { CallOverlay } from "./CallOverlay";
 import { GroupCallOverlay, UpdateBanner } from "./GroupCall";
 import { StationOverlay } from "./Station";
@@ -25,12 +27,23 @@ import { takePendingMessage } from "../lib/platform";
 import { isDM } from "../lib/channel";
 import { load, save } from "../lib/storage";
 import { COMPACT_QUERY, useMediaQuery } from "../lib/useMedia";
+import { Icon } from "./ui";
 
 type DialogName =
   "create" | "browse" | "channel" | "user" | "invite" | "joinLink" | "dm" | "search" | "reminders" | "wallet" | null;
 
 export function Workspace() {
-  const { state, openThread, openMessageLink } = useChat();
+  const { state, dispatch, api, openThread, openMessageLink } = useChat();
+  // Thông báo ngắn (vd. bị mời ra khỏi kênh): tự tắt sau vài giây.
+  useEffect(() => {
+    if (!state.notice) return;
+    const t = window.setTimeout(() => dispatch({ type: "notice", text: null }), 8_000);
+    return () => window.clearTimeout(t);
+  }, [state.notice, dispatch]);
+  const prefs = usePrefs();
+  useEffect(() => {
+    if (api) initPrefs(api, state.me.id);
+  }, [api, state.me.id]);
   // Bản web mở bằng link …/m/<id>: kết nối xong thì mở tin đó (một lần).
   const pendingLink = useRef<number | null | undefined>(undefined);
   if (pendingLink.current === undefined) pendingLink.current = takePendingMessage();
@@ -145,18 +158,35 @@ export function Workspace() {
     .join(" ");
 
   return (
-    <div className={cls}>
+    <div
+      className={cls}
+      style={prefs.thread_width ? ({ "--thread-w": `${prefs.thread_width}px` } as CSSProperties) : undefined}
+    >
       <UpdateBanner />
+      <ThrowOverlay />
+      {state.notice && (
+        <div className="gc-toast" role="status">
+          <span className="gc-toast-text">{state.notice}</span>
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={() => dispatch({ type: "notice", text: null })}
+            aria-label="Đóng"
+          >
+            <Icon name="x" size={15} />
+          </button>
+        </div>
+      )}
       <Sidebar
         onOpenChannel={openRoom}
         onCreateChannel={() => setDialog("create")}
         onBrowseChannels={() => setDialog("browse")}
         onJoinByLink={() => setDialog("joinLink")}
         onOpenSettings={() => setDialog("user")}
+        onOpenWallet={() => setDialog("wallet")}
         onNewDM={() => setDialog("dm")}
         onSearch={() => setDialog("search")}
         onReminders={() => setDialog("reminders")}
-        onOpenWallet={() => setDialog("wallet")}
       />
 
       {channel ? (
@@ -207,13 +237,13 @@ export function Workspace() {
       )}
       {dialog === "channel" && channel && <ChannelSettingsDialog channel={channel} onClose={() => setDialog(null)} />}
       {dialog === "user" && <UserSettingsDialog onClose={() => setDialog(null)} />}
+      {dialog === "wallet" && <WalletDialog channelId={state.activeId} onClose={() => setDialog(null)} />}
       {dialog === "invite" && channel && <InviteDialog channel={channel} onClose={() => setDialog(null)} />}
       <CallOverlay />
       <GroupCallOverlay />
       <StationOverlay />
       <MessageLinkDialog />
       {dialog === "reminders" && <RemindersDialog onClose={() => setDialog(null)} onJumped={openRoom} />}
-      {dialog === "wallet" && <WalletDialog onClose={() => setDialog(null)} />}
       {dialog === "search" && <SearchDialog onClose={() => setDialog(null)} onJumped={openRoom} />}
       {dialog === "dm" && <NewDMDialog onClose={() => setDialog(null)} onOpened={openRoom} />}
       {dialog === "joinLink" && (

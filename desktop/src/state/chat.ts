@@ -1,3 +1,4 @@
+import { channelLabel } from "../lib/channel";
 import type {
   Channel,
   Embed,
@@ -9,9 +10,9 @@ import type {
   PublicUser,
   ReadState,
   Reaction,
+  SpectatorInfo,
   ThreadSummary,
   User,
-  Wallet,
 } from "../lib/api";
 import type { AIInfo } from "../lib/socket";
 import type { MessageLinkInfo } from "../lib/api";
@@ -65,8 +66,9 @@ export type ChatState = {
   pending: PendingMessage[];
   users: Record<number, PublicUser>;
   online: Record<number, true>;
-  /** channelId -> userId -> thời điểm hết hiệu lực (ms) */
-  typing: Record<number, Record<number, number>>;
+  /** typingKey(channelId, parentId) -> userId -> thời điểm hết hiệu lực (ms).
+   *  Gõ ở dòng chính và gõ trong từng luồng được tách riêng. */
+  typing: Record<string, Record<number, number>>;
   /** channelId -> danh sách userId (chỉ có khi đã mở panel thành viên) */
   members: Record<number, number[]>;
   /** parentId -> luồng đã tải */
@@ -93,8 +95,18 @@ export type ChatState = {
   reads: Record<number, Record<number, number>>;
   /** channelId -> danh sách các ván game đang hoạt động */
   liveGames: Record<number, LiveGameItem[]>;
-  /** Ví Xu của mình (null khi chưa tải). */
-  wallet: Wallet | null;
+  /** messageId -> danh sách khán giả đang xem ván đấu */
+  spectators: Record<number, SpectatorInfo[]>;
+  /** Thông báo ngắn hiện ở góc màn hình (vd. bị mời ra khỏi kênh). */
+  notice: string | null;
+  /** Ví xu ảo của mình (null khi chưa tải). */
+  wallet: { balance: number; debt: number } | null;
+  /** channelId -> userId -> biệt danh trong kênh. */
+  nicknames: Record<number, Record<number, string>>;
+  /** Lượt ném vừa tới khi đang mở app: dòng "ném … vào …" có hiệu ứng bay vào (id tin). */
+  freshThrows: Record<number, true>;
+  /** Vừa bị ném đồ: hiện hiệu ứng toàn màn hình (key đổi mỗi lần ném). */
+  hit: { item: string; fromId: number; key: number } | null;
 };
 
 export function initialState(me: User): ChatState {
@@ -122,7 +134,12 @@ export function initialState(me: User): ChatState {
     linkPrompt: null,
     reads: {},
     liveGames: {},
+    spectators: {},
+    notice: null,
     wallet: null,
+    nicknames: {},
+    freshThrows: {},
+    hit: null,
   };
 }
 
@@ -130,12 +147,19 @@ export function initialState(me: User): ChatState {
 
 export type Action =
   | { type: "status"; status: SocketStatus }
-  | { type: "ready"; me: User; online: number[]; ai: AIInfo | null; wallet?: Wallet | null }
-  | { type: "wallet.set"; wallet: Wallet }
+  | { type: "ready"; me: User; online: number[]; ai: AIInfo | null }
   | { type: "me.updated"; me: User }
   | { type: "channels.loaded"; channels: Channel[] }
   | { type: "channel.upsert"; channel: Channel; keepUnread?: boolean }
-  | { type: "channel.removed"; channelId: number }
+  | { type: "channel.removed"; channelId: number; kicked?: boolean }
+  | { type: "notice"; text: string | null }
+  | { type: "wallet.set"; balance: number; debt: number }
+  | { type: "nicknames.loaded"; channelId: number; nicknames: Record<string, string> }
+  | { type: "nickname.set"; channelId: number; userId: number; nickname: string }
+  | { type: "hit"; item: string; fromId: number }
+  | { type: "hit.clear" }
+  | { type: "throw.fresh"; messageId: number }
+  | { type: "throw.done"; messageId: number }
   | { type: "channel.select"; channelId: number | null; auto?: boolean }
   | { type: "channel.read"; channelId: number }
   | { type: "messages.loaded"; channelId: number; messages: Message[]; hasMore: boolean; older: boolean }
@@ -156,7 +180,7 @@ export type Action =
   | { type: "pending.retry"; clientId: string }
   | { type: "pending.progress"; clientId: string; progress: number }
   | { type: "pending.remove"; clientId: string }
-  | { type: "typing"; channelId: number; userId: number; until: number }
+  | { type: "typing"; channelId: number; parentId?: number; userId: number; until: number }
   | { type: "typing.expire"; now: number }
   | { type: "presence"; userId: number; online: boolean }
   | { type: "user.updated"; user: PublicUser }
@@ -173,6 +197,7 @@ export type Action =
   | { type: "liveGames.loaded"; channelId: number; games: LiveGameItem[] }
   | { type: "liveGames.upsert"; channelId: number; game: LiveGameItem }
   | { type: "liveGames.remove"; channelId: number; messageId: number }
+  | { type: "game.spectators"; channelId: number; messageId: number; count: number; spectators: SpectatorInfo[] }
   | { type: "link.prompt"; prompt: LinkPrompt | null }
   | { type: "reaction.toggleLocal"; messageId: number; emoji: string }
   | { type: "reads.set"; channelId: number; reads: ReadState[] }
@@ -274,18 +299,8 @@ export function reducer(s: ChatState, a: Action): ChatState {
     case "ready": {
       const online: Record<number, true> = {};
       for (const id of a.online) online[id] = true;
-      return {
-        ...s,
-        me: a.me,
-        online,
-        users: withUsers(s.users, [a.me]),
-        ai: a.ai,
-        wallet: a.wallet ?? s.wallet,
-      };
+      return { ...s, me: a.me, online, users: withUsers(s.users, [a.me]), ai: a.ai };
     }
-
-    case "wallet.set":
-      return { ...s, wallet: a.wallet };
 
     case "me.updated":
       return { ...s, me: a.me, users: withUsers(s.users, [a.me]) };
@@ -319,12 +334,13 @@ export function reducer(s: ChatState, a: Action): ChatState {
     }
 
     case "channel.removed": {
-      const { [a.channelId]: _gone, ...channels } = s.channels;
+      const { [a.channelId]: gone, ...channels } = s.channels;
       const { [a.channelId]: _msgs, ...messages } = s.messages;
       return {
         ...s,
         channels,
         messages,
+        notice: a.kicked && gone ? `Chủ kênh đã mời bạn ra khỏi ${channelLabel(gone, s.users, s.me.id)}.` : s.notice,
         activeId: s.activeId === a.channelId ? null : s.activeId,
         pending: s.pending.filter((p) => p.channelId !== a.channelId),
       };
@@ -404,11 +420,12 @@ export function reducer(s: ChatState, a: Action): ChatState {
         }
       }
       // người vừa gửi tin thì không còn "đang gõ"
-      const t = s.typing[m.channel_id];
+      const tk = typingKey(m.channel_id, m.parent_id);
+      const t = s.typing[tk];
       let typing = s.typing;
       if (t?.[m.user_id]) {
         const { [m.user_id]: _x, ...rest } = t;
-        typing = { ...s.typing, [m.channel_id]: rest };
+        typing = { ...s.typing, [tk]: rest };
       }
       // người gửi một tin ở dòng chính hiển nhiên đã xem tới tin đó
       const reads = m.parent_id ? s.reads : advanceRead(s, m.channel_id, m.user_id, m.id);
@@ -539,23 +556,25 @@ export function reducer(s: ChatState, a: Action): ChatState {
     case "pending.remove":
       return { ...s, pending: s.pending.filter((p) => p.clientId !== a.clientId) };
 
-    case "typing":
+    case "typing": {
       if (a.userId === s.me.id) return s;
+      const tk = typingKey(a.channelId, a.parentId);
       return {
         ...s,
-        typing: { ...s.typing, [a.channelId]: { ...s.typing[a.channelId], [a.userId]: a.until } },
+        typing: { ...s.typing, [tk]: { ...s.typing[tk], [a.userId]: a.until } },
       };
+    }
 
     case "typing.expire": {
       let changed = false;
       const typing: ChatState["typing"] = {};
-      for (const [cid, users] of Object.entries(s.typing)) {
+      for (const [key, users] of Object.entries(s.typing)) {
         const keep: Record<number, number> = {};
         for (const [uid, until] of Object.entries(users)) {
           if (until > a.now) keep[Number(uid)] = until;
           else changed = true;
         }
-        typing[Number(cid)] = keep;
+        if (Object.keys(keep).length) typing[key] = keep;
       }
       return changed ? { ...s, typing } : s;
     }
@@ -605,6 +624,39 @@ export function reducer(s: ChatState, a: Action): ChatState {
     case "read.updated": {
       const reads = advanceRead(s, a.channelId, a.userId, a.messageId);
       return reads === s.reads ? s : { ...s, reads };
+    }
+
+    case "notice":
+      return { ...s, notice: a.text };
+
+    case "wallet.set":
+      return { ...s, wallet: { balance: a.balance, debt: a.debt } };
+
+    case "nicknames.loaded": {
+      const map: Record<number, string> = {};
+      for (const [id, nick] of Object.entries(a.nicknames)) map[Number(id)] = nick;
+      return { ...s, nicknames: { ...s.nicknames, [a.channelId]: map } };
+    }
+
+    case "nickname.set": {
+      const { [a.userId]: _old, ...rest } = s.nicknames[a.channelId] ?? {};
+      const map = a.nickname ? { ...rest, [a.userId]: a.nickname } : rest;
+      return { ...s, nicknames: { ...s.nicknames, [a.channelId]: map } };
+    }
+
+    case "hit":
+      return { ...s, hit: { item: a.item, fromId: a.fromId, key: Date.now() } };
+
+    case "hit.clear":
+      return { ...s, hit: null };
+
+    case "throw.fresh":
+      return { ...s, freshThrows: { ...s.freshThrows, [a.messageId]: true } };
+
+    case "throw.done": {
+      if (!s.freshThrows[a.messageId]) return s;
+      const { [a.messageId]: _done, ...rest } = s.freshThrows;
+      return { ...s, freshThrows: rest };
     }
 
     case "member.left": {
@@ -666,5 +718,41 @@ export function reducer(s: ChatState, a: Action): ChatState {
         },
       };
     }
+
+    case "game.spectators": {
+      const nextSpectators = {
+        ...s.spectators,
+        [a.messageId]: a.spectators,
+      };
+
+      let nextLiveGames = s.liveGames;
+      const list = s.liveGames[a.channelId];
+      if (list) {
+        const idx = list.findIndex((g) => g.message_id === a.messageId);
+        if (idx >= 0) {
+          const nextList = [...list];
+          nextList[idx] = {
+            ...nextList[idx],
+            viewer_count: a.count,
+            spectators: a.spectators,
+          };
+          nextLiveGames = {
+            ...s.liveGames,
+            [a.channelId]: nextList,
+          };
+        }
+      }
+
+      return {
+        ...s,
+        spectators: nextSpectators,
+        liveGames: nextLiveGames,
+      };
+    }
   }
+}
+
+/** Khoá trạng thái "đang gõ": dòng chính của kênh, hoặc một luồng (id tin gốc). */
+export function typingKey(channelId: number, parentId?: number | null): string {
+  return parentId ? `${channelId}_${parentId}` : `${channelId}`;
 }

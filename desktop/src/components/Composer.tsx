@@ -9,7 +9,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { type Channel, MAX_FILE_SIZE, MAX_FILES, type PublicUser } from "../lib/api";
+import { type Channel, MAX_FILE_SIZE, MAX_FILES, MAX_MEDIA_SIZE, maxSizeFor, type PublicUser } from "../lib/api";
 import { displayName } from "../lib/format";
 import { useChat } from "../state/ChatProvider";
 import { channelMessages, findMessage } from "../state/chat";
@@ -138,8 +138,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
   const addFiles = useCallback((incoming: File[]) => {
     if (incoming.length === 0) return;
-    const tooBig = incoming.filter((f) => f.size > MAX_FILE_SIZE);
-    const ok = incoming.filter((f) => f.size <= MAX_FILE_SIZE);
+    const tooBig = incoming.filter((f) => f.size > maxSizeFor(f));
+    const ok = incoming.filter((f) => f.size <= maxSizeFor(f));
     setFiles((cur) => {
       const next = [...cur, ...ok];
       if (next.length > MAX_FILES) {
@@ -148,7 +148,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       }
       setFileError(
         tooBig.length
-          ? `${tooBig.map((f) => `“${f.name}”`).join(", ")} lớn hơn ${formatSize(MAX_FILE_SIZE)}, không gửi được.`
+          ? `${tooBig.map((f) => `“${f.name}”`).join(", ")} quá lớn, không gửi được (tối đa ${formatSize(MAX_FILE_SIZE)}, video/âm thanh ${formatSize(MAX_MEDIA_SIZE)}).`
           : null,
       );
       return next;
@@ -215,7 +215,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
   const update = (v: string) => {
     setText(v);
-    if (v.trim()) notifyTyping(channel.id);
+    if (v.trim()) notifyTyping(channel.id, parentId);
   };
 
   const trimmed = text.trim();

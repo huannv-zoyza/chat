@@ -205,6 +205,10 @@ func (a *API) deleteChannel(w http.ResponseWriter, r *http.Request) {
 	if !ok || !a.requireOwner(w, r, ch) {
 		return
 	}
+	if err := a.settleChannelGames(r.Context(), ch.ID); err != nil {
+		internalError(w, r, err)
+		return
+	}
 	keys, err := a.store.AttachmentKeysForChannel(r.Context(), ch.ID)
 	if err != nil {
 		internalError(w, r, err)
@@ -349,6 +353,39 @@ func (a *API) leaveChannel(w http.ResponseWriter, r *http.Request) {
 		a.hub.ToChannel(ch.ID, mustJSON(memberLeftEvent{Type: "member.left", ChannelID: ch.ID, UserID: me.ID}), nil)
 		a.hub.ToUser(me.ID, mustJSON(channelIDEvent{Type: "channel.left", ChannelID: ch.ID}))
 	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+/* ---------- DELETE /api/channels/{id}/members/{userId} ---------- */
+
+// kickMember: chủ kênh mời một thành viên ra khỏi kênh.
+func (a *API) kickMember(w http.ResponseWriter, r *http.Request) {
+	ch, ok := a.loadChannel(w, r)
+	if !ok || !a.requireOwner(w, r, ch) {
+		return
+	}
+	userID, err := strconv.ParseInt(r.PathValue("userId"), 10, 64)
+	if err != nil || userID <= 0 {
+		writeError(w, http.StatusBadRequest, "Người dùng không hợp lệ.")
+		return
+	}
+	if userID == ch.OwnerID {
+		writeError(w, http.StatusBadRequest, "Không thể mời chủ kênh ra khỏi kênh.")
+		return
+	}
+	removed, err := a.store.RemoveMember(r.Context(), ch.ID, userID)
+	if err != nil {
+		internalError(w, r, err)
+		return
+	}
+	if !removed {
+		writeError(w, http.StatusNotFound, "Người này không còn trong kênh.")
+		return
+	}
+	a.hub.Unsubscribe(userID, ch.ID)
+	a.dropFromGroupCall(ch.ID, userID)
+	a.hub.ToChannel(ch.ID, mustJSON(memberLeftEvent{Type: "member.left", ChannelID: ch.ID, UserID: userID}), nil)
+	a.hub.ToUser(userID, mustJSON(channelLeftEvent{Type: "channel.left", ChannelID: ch.ID, Kicked: true}))
 	w.WriteHeader(http.StatusNoContent)
 }
 

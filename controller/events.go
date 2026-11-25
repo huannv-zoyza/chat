@@ -15,18 +15,19 @@ import (
 //	key.updated      {user_id, public_key}                   ai đó tạo/đổi khoá mã hoá đầu cuối
 //	poll.updated     {channel_id, message_id, poll}          số phiếu / trạng thái bình chọn thay đổi
 //	game.updated     {channel_id, message_id, game}          ván chơi thay đổi (xem controller/games.go)
-//	wallet.updated   {wallet, transaction?}                  số dư ví Xu của mình thay đổi
 //	reminder.due     {reminder}                              tới giờ nhắc việc (chỉ gửi cho người đặt)
 //	call.*           xem controller/calls.go                 gọi thoại / video
 //	typing           {channel_id, user_id}                   ai đó đang gõ
 //	presence         {user_id, online}                       ai đó vừa online/offline
 //	user.updated     {user}                                  ai đó đổi hồ sơ
 //	channel.joined   {channel}                               mình vừa tham gia/tạo kênh (từ máy khác)
-//	channel.left     {channel_id}                            mình vừa rời kênh (từ máy khác)
+//	channel.left     {channel_id, kicked?}                   mình vừa rời kênh (từ máy khác), hoặc bị chủ kênh mời ra
 //	channel.updated  {channel}                               kênh đổi tên/mô tả
 //	channel.deleted  {channel_id}                            kênh bị xoá
 //	member.joined    {channel_id, user}                      có người vào kênh
 //	member.left      {channel_id, user_id}                   có người rời kênh
+//	wallet.updated   {balance, debt}                         ví xu của mình thay đổi
+//	nickname.updated {channel_id, user_id, nickname}         biệt danh trong kênh thay đổi (rỗng = xoá)
 //	reaction.updated {channel_id, message_id, parent_id?, reactions}  cảm xúc của một tin thay đổi
 //	thread.updated   {channel_id, message_id, thread}        luồng trả lời của tin gốc thay đổi
 //	read.updated     {channel_id, user_id, message_id}       ai đó đã xem tới tin message_id
@@ -43,14 +44,6 @@ type readyEvent struct {
 	GroupCalls []groupCallState `json:"group_calls"`
 	// Trợ lý AI (nil: máy chủ tắt AI).
 	AI *aiInfo `json:"ai,omitempty"`
-	// Ví Xu hiện tại của người dùng.
-	Wallet *model.Wallet `json:"wallet,omitempty"`
-}
-
-type walletUpdatedEvent struct {
-	Type        string                   `json:"type"`
-	Wallet      model.Wallet             `json:"wallet"`
-	Transaction *model.WalletTransaction `json:"transaction,omitempty"`
 }
 
 type messageNewEvent struct {
@@ -68,6 +61,22 @@ type typingEvent struct {
 	Type      string `json:"type"`
 	ChannelID int64  `json:"channel_id"`
 	UserID    int64  `json:"user_id"`
+	ParentID  int64  `json:"parent_id,omitempty"`
+}
+
+type SpectatorInfo struct {
+	UserID      int64   `json:"user_id"`
+	Username    string  `json:"username"`
+	DisplayName string  `json:"display_name"`
+	Avatar      *string `json:"avatar"`
+}
+
+type gameSpectatorsEvent struct {
+	Type       string          `json:"type"`
+	MessageID  int64           `json:"message_id"`
+	ChannelID  int64           `json:"channel_id"`
+	Count      int             `json:"count"`
+	Spectators []SpectatorInfo `json:"spectators"`
 }
 
 type presenceEvent struct {
@@ -95,6 +104,12 @@ type memberJoinedEvent struct {
 	Type      string           `json:"type"`
 	ChannelID int64            `json:"channel_id"`
 	User      model.PublicUser `json:"user"`
+}
+
+type channelLeftEvent struct {
+	Type      string `json:"type"`
+	ChannelID int64  `json:"channel_id"`
+	Kicked    bool   `json:"kicked,omitempty"`
 }
 
 type memberLeftEvent struct {

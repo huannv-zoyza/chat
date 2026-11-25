@@ -6,120 +6,287 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
-	"time"
 
 	"chat/model"
 )
 
+// Ví xu ảo: dùng chung cả server, tạo lười (1.000 xu) lần đầu chạm tới.
+// Ván dùng chip (bầu cua) chỉ chạm ví ở hai lúc: mua chip (BuyIn) và trả chip (PayOut),
+// mỗi lần là một transaction ghi cả ví lẫn trạng thái ván.
+
 const (
-	InitialWalletBalance int64 = 10000
-	DailyCheckinReward   int64 = 2000
-	BailoutReward        int64 = 1000
-	BailoutMaxTotal      int64 = 500
-	BailoutDailyLimit          = 3
+	WalletStart = 1000
+	DailyAmount = 100
+	LoanAmount  = 500
+	LoanBelow   = 100 // chỉ được vay khi số dư dưới mức này
 )
 
 var (
-	ErrInsufficientBalance   = errors.New("insufficient balance")
-	ErrCheckinAlreadyClaimed = errors.New("daily checkin already claimed")
-	ErrBailoutNotEligible    = errors.New("bailout not eligible")
-	ErrBailoutLimitReached   = errors.New("bailout daily limit reached")
-	ErrInvalidAmount         = errors.New("invalid amount")
-	ErrSelfTransfer          = errors.New("cannot transfer to self")
-	ErrRecipientNotFound     = errors.New("recipient not found")
-	ErrBetAlreadyLocked      = errors.New("bet already locked")
+	ErrAlreadyClaimed      = errors.New("already claimed today")
+	ErrLoanNotAllowed      = errors.New("loan not allowed")
+	ErrNothingToRepay      = errors.New("nothing to repay")
+	ErrInsufficientBalance = errors.New("insufficient balance")
+	ErrInvalidAmount       = errors.New("invalid amount")
+	ErrSelfTransfer        = errors.New("cannot transfer to self")
+	ErrRecipientNotFound   = errors.New("recipient not found")
+	ErrBetAlreadyLocked    = errors.New("bet already locked")
 )
 
-var ictZone = time.FixedZone("ICT", 7*3600)
-
-func ictDate(t time.Time) string {
-	return t.In(ictZone).Format("2006-01-02")
+type Wallet struct {
+	UserID    int64  `json:"-"`
+	Balance   int64  `json:"balance"`
+	Debt      int64  `json:"debt"`
+	LastClaim string `json:"-"`
 }
 
-// WalletUpdate đại diện cho trạng thái ví và bút toán mới nhất của một người dùng sau một thao tác.
-type WalletUpdate struct {
-	UserID      int64
-	Wallet      model.Wallet
-	Transaction model.WalletTransaction
+// Payout: số chip trả về ví và nợ phát sinh trong ván của một người.
+type Payout struct {
+	UserID, Chips, Loans int64
 }
 
-type walletRow struct {
-	UserID        int64
-	Balance       int64
-	LockedBalance int64
-	LastCheckinAt sql.NullTime
-	BailoutDate   string
-	BailoutCount  int
-	UpdatedAt     time.Time
+type BoardEntry struct {
+	User    model.PublicUser `json:"user"`
+	Balance int64            `json:"balance"`
+	Debt    int64            `json:"debt"`
 }
 
-func toModelWallet(w walletRow, now time.Time) model.Wallet {
-	today := ictDate(now)
-	canCheckin := true
-	var lastCheckin *time.Time
-	if w.LastCheckinAt.Valid {
-		t := w.LastCheckinAt.Time
-		lastCheckin = &t
-		if ictDate(t) == today {
-			canCheckin = false
-		}
+type execQuerier interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+func loadWallet(ctx context.Context, q execQuerier, userID int64) (Wallet, error) {
+	if _, err := q.ExecContext(ctx, `INSERT OR IGNORE INTO wallets (user_id) VALUES (?)`, userID); err != nil {
+		return Wallet{}, err
 	}
-	bailoutCount := w.BailoutCount
-	if w.BailoutDate != today {
-		bailoutCount = 0
-	}
-	canBailout := (w.Balance+w.LockedBalance) < BailoutMaxTotal && bailoutCount < BailoutDailyLimit
-	return model.Wallet{
-		UserID:        w.UserID,
-		Balance:       w.Balance,
-		LockedBalance: w.LockedBalance,
-		CanCheckin:    canCheckin,
-		CanBailout:    canBailout,
-		LastCheckinAt: lastCheckin,
-		UpdatedAt:     w.UpdatedAt,
-	}
-}
-
-func readWalletTx(ctx context.Context, tx *sql.Tx, userID int64) (walletRow, error) {
-	var w walletRow
-	err := tx.QueryRowContext(ctx, `
-		SELECT user_id, balance, locked_balance, last_checkin_at, bailout_date, bailout_count, updated_at
-		FROM wallets WHERE user_id = ?`, userID).
-		Scan(&w.UserID, &w.Balance, &w.LockedBalance, &w.LastCheckinAt, &w.BailoutDate, &w.BailoutCount, &w.UpdatedAt)
+	w := Wallet{UserID: userID}
+	var last sql.NullString
+	err := q.QueryRowContext(ctx, `SELECT balance, debt, last_claim FROM wallets WHERE user_id = ?`, userID).
+		Scan(&w.Balance, &w.Debt, &last)
+	w.LastClaim = last.String
 	return w, err
 }
 
-func ensureWalletTx(ctx context.Context, tx *sql.Tx, userID int64) (walletRow, error) {
-	w, err := readWalletTx(ctx, tx, userID)
-	if err == nil {
-		return w, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return walletRow{}, err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO wallets (user_id, balance, locked_balance) VALUES (?, ?, 0)`,
-		userID, InitialWalletBalance); err != nil {
-		return walletRow{}, err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		INSERT OR IGNORE INTO wallet_transactions (user_id, type, amount, balance_after, ref_type, note, idempotency_key)
-		VALUES (?, 'signup_bonus', ?, ?, 'system', 'Vốn khởi tạo tài khoản', ?)`,
-		userID, InitialWalletBalance, InitialWalletBalance, fmt.Sprintf("signup_bonus:%d", userID)); err != nil {
-		return walletRow{}, err
-	}
-	return readWalletTx(ctx, tx, userID)
+func (s *Store) GetWallet(ctx context.Context, userID int64) (Wallet, error) {
+	return loadWallet(ctx, s.db, userID)
 }
 
-func insertWalletTx(ctx context.Context, tx *sql.Tx, userID int64, txType string, amount, balanceAfter int64, refType string, refID *int64, peerUserID *int64, note, idempotencyKey string) (model.WalletTransaction, error) {
-	var idem any
-	if idempotencyKey != "" {
-		idem = idempotencyKey
+// walletTx chạy fn trong một transaction trên ví userID rồi trả ví sau khi commit.
+func (s *Store) walletTx(ctx context.Context, userID int64, fn func(tx *sql.Tx, w Wallet) error) (Wallet, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Wallet{}, err
 	}
-	var rID any
-	if refID != nil {
-		rID = *refID
+	defer tx.Rollback()
+	w, err := loadWallet(ctx, tx, userID)
+	if err != nil {
+		return Wallet{}, err
+	}
+	if err := fn(tx, w); err != nil {
+		return Wallet{}, err
+	}
+	w, err = loadWallet(ctx, tx, userID)
+	if err != nil {
+		return Wallet{}, err
+	}
+	return w, tx.Commit()
+}
+
+func addTx(ctx context.Context, tx *sql.Tx, userID int64, kind string, amount, debt int64) error {
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE wallets SET balance = balance + ?, debt = debt + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`,
+		amount, debt, userID); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx,
+		`INSERT INTO wallet_tx (user_id, kind, amount, debt_delta) VALUES (?, ?, ?, ?)`, userID, kind, amount, debt)
+	return err
+}
+
+// ClaimDaily: nhận DailyAmount xu, mỗi ngày (today = "YYYY-MM-DD" giờ VN) một lần.
+func (s *Store) ClaimDaily(ctx context.Context, userID int64, today string) (Wallet, error) {
+	return s.walletTx(ctx, userID, func(tx *sql.Tx, w Wallet) error {
+		if w.LastClaim == today {
+			return ErrAlreadyClaimed
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE wallets SET last_claim = ? WHERE user_id = ?`, today, userID); err != nil {
+			return err
+		}
+		return addTx(ctx, tx, userID, "daily", DailyAmount, 0)
+	})
+}
+
+// TakeLoan: vay LoanAmount xu (thành nợ), chỉ khi số dư dưới LoanBelow.
+func (s *Store) TakeLoan(ctx context.Context, userID int64) (Wallet, error) {
+	return s.walletTx(ctx, userID, func(tx *sql.Tx, w Wallet) error {
+		if w.Balance >= LoanBelow {
+			return ErrLoanNotAllowed
+		}
+		return addTx(ctx, tx, userID, "loan", LoanAmount, LoanAmount)
+	})
+}
+
+// RepayDebt: trả nợ bằng số dư, tối đa bằng số nợ.
+func (s *Store) RepayDebt(ctx context.Context, userID int64) (Wallet, error) {
+	return s.walletTx(ctx, userID, func(tx *sql.Tx, w Wallet) error {
+		pay := min(w.Balance, w.Debt)
+		if pay <= 0 {
+			return ErrNothingToRepay
+		}
+		return addTx(ctx, tx, userID, "repay", -pay, -pay)
+	})
+}
+
+// BuyIn: mang toàn bộ số dư của userID vào ván gameID. apply nhận số xu mang vào, cập nhật ván
+// trong bộ nhớ và trả trạng thái mới để lưu cùng transaction. apply lỗi thì không gì thay đổi.
+func (s *Store) BuyIn(ctx context.Context, gameID, userID, seq int64,
+	apply func(amount int64) (status string, state []byte, err error)) (Wallet, error) {
+	return s.walletTx(ctx, userID, func(tx *sql.Tx, w Wallet) error {
+		status, state, err := apply(w.Balance)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE wallets SET balance = 0, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`, userID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO wallet_tx (user_id, kind, amount, game_id, seq) VALUES (?, 'buyin', ?, ?, ?)`,
+			userID, -w.Balance, gameID, seq); err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx,
+			`UPDATE games SET status = ?, state = ?, updated_at = CURRENT_TIMESTAMP WHERE message_id = ?`,
+			status, string(state), gameID)
+		return err
+	})
+}
+
+// PayOut trả chip về ví (kind "refund" khi rời phòng chờ, "cashout" khi hết ván) và lưu trạng thái ván,
+// trong một transaction. Mỗi (ván, người, kind, seq) chỉ được cộng một lần: gọi lại không đổi gì.
+// Trả về các ví đã thay đổi.
+func (s *Store) PayOut(ctx context.Context, gameID int64, kind string, seq int64, payouts []Payout,
+	status string, state []byte) ([]Wallet, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	var changed []int64
+	for _, p := range payouts {
+		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO wallets (user_id) VALUES (?)`, p.UserID); err != nil {
+			return nil, err
+		}
+		res, err := tx.ExecContext(ctx, `
+			INSERT INTO wallet_tx (user_id, kind, amount, debt_delta, game_id, seq) VALUES (?, ?, ?, ?, ?, ?)
+			ON CONFLICT DO NOTHING`, p.UserID, kind, p.Chips, p.Loans, gameID, seq)
+		if err != nil {
+			return nil, err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE wallets SET balance = balance + ?, debt = debt + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`,
+			p.Chips, p.Loans, p.UserID); err != nil {
+			return nil, err
+		}
+		changed = append(changed, p.UserID)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE games SET status = ?, state = ?, updated_at = CURRENT_TIMESTAMP WHERE message_id = ?`,
+		status, string(state), gameID); err != nil {
+		return nil, err
+	}
+	out := make([]Wallet, 0, len(changed))
+	for _, id := range changed {
+		w, err := loadWallet(ctx, tx, id)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, w)
+	}
+	return out, tx.Commit()
+}
+
+// GamesNeedingCashout: ván kind đã kết thúc (hoặc tin đã bị xoá) mà chưa trả chip.
+func (s *Store) GamesNeedingCashout(ctx context.Context, kind string) ([]GameRow, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT g.message_id, m.channel_id, g.kind, g.state FROM games g JOIN messages m ON m.id = g.message_id
+		WHERE g.kind = ? AND (g.status = 'ended' OR m.deleted_at IS NOT NULL)
+		  AND NOT EXISTS (SELECT 1 FROM wallet_tx t WHERE t.game_id = g.message_id AND t.kind = 'cashout')`, kind)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []GameRow
+	for rows.Next() {
+		var g GameRow
+		var state string
+		if err := rows.Scan(&g.MessageID, &g.ChannelID, &g.Kind, &state); err != nil {
+			return nil, err
+		}
+		g.State = []byte(state)
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}
+
+// WalletBoard: thành viên kênh xếp theo tài sản ròng (số dư - nợ) và danh sách con nợ, mỗi bảng tối đa 10 người.
+func (s *Store) WalletBoard(ctx context.Context, channelID int64) (rich, debtors []BoardEntry, err error) {
+	members, err := s.ListMembers(ctx, channelID)
+	if err != nil {
+		return nil, nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT w.user_id, w.balance, w.debt FROM wallets w
+		JOIN channel_members m ON m.user_id = w.user_id WHERE m.channel_id = ?`, channelID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	type bal struct{ b, d int64 }
+	wallets := map[int64]bal{}
+	for rows.Next() {
+		var id int64
+		var v bal
+		if err := rows.Scan(&id, &v.b, &v.d); err != nil {
+			return nil, nil, err
+		}
+		wallets[id] = v
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	all := make([]BoardEntry, 0, len(members))
+	for _, u := range members {
+		v, ok := wallets[u.ID]
+		if !ok {
+			v = bal{WalletStart, 0}
+		}
+		all = append(all, BoardEntry{User: u, Balance: v.b, Debt: v.d})
+	}
+	sort.SliceStable(all, func(i, j int) bool { return all[i].Balance-all[i].Debt > all[j].Balance-all[j].Debt })
+	rich = all[:min(10, len(all))]
+	debtors = []BoardEntry{}
+	for _, e := range all {
+		if e.Debt > 0 {
+			debtors = append(debtors, e)
+		}
+	}
+	sort.SliceStable(debtors, func(i, j int) bool { return debtors[i].Debt > debtors[j].Debt })
+	debtors = debtors[:min(10, len(debtors))]
+	return rich, debtors, nil
+}
+
+/* ---------- Lịch sử giao dịch, Chuyển Xu P2P & Đặt cược Cờ tướng ---------- */
+
+func insertWalletLedgerTx(ctx context.Context, tx *sql.Tx, userID int64, kind string, amount, debtDelta int64, gameID *int64, seq int64, peerUserID *int64, note string) (model.WalletTransaction, error) {
+	var gID any
+	if gameID != nil {
+		gID = *gameID
 	}
 	var pID any
 	if peerUserID != nil {
@@ -127,57 +294,39 @@ func insertWalletTx(ctx context.Context, tx *sql.Tx, userID int64, txType string
 	}
 	var wt model.WalletTransaction
 	err := tx.QueryRowContext(ctx, `
-		INSERT INTO wallet_transactions (user_id, type, amount, balance_after, ref_type, ref_id, peer_user_id, note, idempotency_key)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		RETURNING id, user_id, type, amount, balance_after, ref_type, ref_id, note, created_at`,
-		userID, txType, amount, balanceAfter, refType, rID, pID, note, idem).
-		Scan(&wt.ID, &wt.UserID, &wt.Type, &wt.Amount, &wt.BalanceAfter, &wt.RefType, &wt.RefID, &wt.Note, &wt.CreatedAt)
+		INSERT INTO wallet_tx (user_id, kind, amount, debt_delta, game_id, seq, peer_user_id, note)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		RETURNING id, user_id, kind, amount, debt_delta, game_id, seq, note, created_at`,
+		userID, kind, amount, debtDelta, gID, seq, pID, note).
+		Scan(&wt.ID, &wt.UserID, &wt.Kind, &wt.Amount, &wt.DebtDelta, &wt.GameID, &wt.Seq, &wt.Note, &wt.CreatedAt)
 	if err != nil {
 		return model.WalletTransaction{}, err
 	}
 	if peerUserID != nil {
 		var u model.PublicUser
-		err := tx.QueryRowContext(ctx, `SELECT id, username, display_name, avatar, status_text FROM users WHERE id = ?`, *peerUserID).
-			Scan(&u.ID, &u.Username, &u.DisplayName, &u.Avatar, &u.StatusText)
-		if err == nil {
+		if err := tx.QueryRowContext(ctx, `SELECT id, username, display_name, avatar, status_text FROM users WHERE id = ?`, *peerUserID).
+			Scan(&u.ID, &u.Username, &u.DisplayName, &u.Avatar, &u.StatusText); err == nil {
 			wt.PeerUser = &u
 		}
 	}
 	return wt, nil
 }
 
-// GetWallet trả về thông tin ví Xu hiện tại của người dùng.
-func (s *Store) GetWallet(ctx context.Context, userID int64) (model.Wallet, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return model.Wallet{}, err
-	}
-	defer tx.Rollback()
-	w, err := ensureWalletTx(ctx, tx, userID)
-	if err != nil {
-		return model.Wallet{}, notFound(err)
-	}
-	if err := tx.Commit(); err != nil {
-		return model.Wallet{}, err
-	}
-	return toModelWallet(w, time.Now()), nil
-}
-
-// ListWalletTransactions trả về lịch sử giao dịch ví Xu phân trang theo cursor beforeID.
-func (s *Store) ListWalletTransactions(ctx context.Context, userID int64, txType string, beforeID int64, limit int) ([]model.WalletTransaction, bool, error) {
+// ListWalletTransactions trả về lịch sử giao dịch ví xu phân trang theo cursor beforeID.
+func (s *Store) ListWalletTransactions(ctx context.Context, userID int64, kind string, beforeID int64, limit int) ([]model.WalletTransaction, bool, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 30
 	}
 	query := `
-		SELECT t.id, t.user_id, t.type, t.amount, t.balance_after, t.ref_type, t.ref_id, t.note, t.created_at,
+		SELECT t.id, t.user_id, t.kind, t.amount, t.debt_delta, t.game_id, t.seq, t.note, t.created_at,
 		       u.id, u.username, u.display_name, u.avatar, u.status_text
-		FROM wallet_transactions t
+		FROM wallet_tx t
 		LEFT JOIN users u ON u.id = t.peer_user_id
 		WHERE t.user_id = ?`
 	args := []any{userID}
-	if txType != "" && txType != "all" {
-		query += ` AND t.type = ?`
-		args = append(args, txType)
+	if kind != "" && kind != "all" {
+		query += ` AND t.kind = ?`
+		args = append(args, kind)
 	}
 	if beforeID > 0 {
 		query += ` AND t.id < ?`
@@ -199,7 +348,7 @@ func (s *Store) ListWalletTransactions(ctx context.Context, userID int64, txType
 		var pUser, pDisp, pStatus sql.NullString
 		var pAvatar *string
 		if err := rows.Scan(
-			&wt.ID, &wt.UserID, &wt.Type, &wt.Amount, &wt.BalanceAfter, &wt.RefType, &wt.RefID, &wt.Note, &wt.CreatedAt,
+			&wt.ID, &wt.UserID, &wt.Kind, &wt.Amount, &wt.DebtDelta, &wt.GameID, &wt.Seq, &wt.Note, &wt.CreatedAt,
 			&pID, &pUser, &pDisp, &pAvatar, &pStatus,
 		); err != nil {
 			return nil, false, err
@@ -226,145 +375,57 @@ func (s *Store) ListWalletTransactions(ctx context.Context, userID int64, txType
 	return out, hasMore, nil
 }
 
-// ClaimDailyCheckin điểm danh nhận +2,000 Xu mỗi ngày (theo ngày UTC+7).
-func (s *Store) ClaimDailyCheckin(ctx context.Context, userID int64, now time.Time) (model.Wallet, model.WalletTransaction, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return model.Wallet{}, model.WalletTransaction{}, err
-	}
-	defer tx.Rollback()
-
-	w, err := ensureWalletTx(ctx, tx, userID)
-	if err != nil {
-		return model.Wallet{}, model.WalletTransaction{}, err
-	}
-	today := ictDate(now)
-	if w.LastCheckinAt.Valid && ictDate(w.LastCheckinAt.Time) == today {
-		return model.Wallet{}, model.WalletTransaction{}, ErrCheckinAlreadyClaimed
-	}
-	newBal := w.Balance + DailyCheckinReward
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE wallets SET balance = ?, last_checkin_at = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`,
-		newBal, now.UTC(), userID); err != nil {
-		return model.Wallet{}, model.WalletTransaction{}, err
-	}
-	wt, err := insertWalletTx(ctx, tx, userID, "daily_checkin", DailyCheckinReward, newBal, "system", nil, nil,
-		fmt.Sprintf("Điểm danh ngày %s", today), fmt.Sprintf("checkin:%d:%s", userID, today))
-	if err != nil {
-		if isUniqueViolation(err) {
-			return model.Wallet{}, model.WalletTransaction{}, ErrCheckinAlreadyClaimed
-		}
-		return model.Wallet{}, model.WalletTransaction{}, err
-	}
-	w, err = readWalletTx(ctx, tx, userID)
-	if err != nil {
-		return model.Wallet{}, model.WalletTransaction{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return model.Wallet{}, model.WalletTransaction{}, err
-	}
-	return toModelWallet(w, now), wt, nil
-}
-
-// ClaimBailout nhận hỗ trợ +1,000 Xu khi tổng tài sản (balance + locked_balance) < 500 Xu (tối đa 3 lần/ngày).
-func (s *Store) ClaimBailout(ctx context.Context, userID int64, now time.Time) (model.Wallet, model.WalletTransaction, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return model.Wallet{}, model.WalletTransaction{}, err
-	}
-	defer tx.Rollback()
-
-	w, err := ensureWalletTx(ctx, tx, userID)
-	if err != nil {
-		return model.Wallet{}, model.WalletTransaction{}, err
-	}
-	if w.Balance+w.LockedBalance >= BailoutMaxTotal {
-		return model.Wallet{}, model.WalletTransaction{}, ErrBailoutNotEligible
-	}
-	today := ictDate(now)
-	count := w.BailoutCount
-	if w.BailoutDate != today {
-		count = 0
-	}
-	if count >= BailoutDailyLimit {
-		return model.Wallet{}, model.WalletTransaction{}, ErrBailoutLimitReached
-	}
-	count++
-	newBal := w.Balance + BailoutReward
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE wallets SET balance = ?, bailout_date = ?, bailout_count = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`,
-		newBal, today, count, userID); err != nil {
-		return model.Wallet{}, model.WalletTransaction{}, err
-	}
-	wt, err := insertWalletTx(ctx, tx, userID, "bailout", BailoutReward, newBal, "system", nil, nil,
-		fmt.Sprintf("Nhận cứu trợ vốn lần %d/%d ngày %s", count, BailoutDailyLimit, today),
-		fmt.Sprintf("bailout:%d:%s:%d", userID, today, count))
-	if err != nil {
-		return model.Wallet{}, model.WalletTransaction{}, err
-	}
-	w, err = readWalletTx(ctx, tx, userID)
-	if err != nil {
-		return model.Wallet{}, model.WalletTransaction{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return model.Wallet{}, model.WalletTransaction{}, err
-	}
-	return toModelWallet(w, now), wt, nil
-}
-
-// TransferCoins chuyển Xu P2P nguyên tử từ fromUserID sang toUserID.
-func (s *Store) TransferCoins(ctx context.Context, fromUserID, toUserID, amount int64, note string) (WalletUpdate, WalletUpdate, error) {
+// TransferCoins chuyển xu P2P nguyên tử từ fromUserID sang toUserID.
+func (s *Store) TransferCoins(ctx context.Context, fromUserID, toUserID, amount int64, note string) (Wallet, Wallet, model.WalletTransaction, error) {
 	if amount <= 0 {
-		return WalletUpdate{}, WalletUpdate{}, ErrInvalidAmount
+		return Wallet{}, Wallet{}, model.WalletTransaction{}, ErrInvalidAmount
 	}
 	if fromUserID == toUserID {
-		return WalletUpdate{}, WalletUpdate{}, ErrSelfTransfer
+		return Wallet{}, Wallet{}, model.WalletTransaction{}, ErrSelfTransfer
 	}
 	note = strings.TrimSpace(note)
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return WalletUpdate{}, WalletUpdate{}, err
+		return Wallet{}, Wallet{}, model.WalletTransaction{}, err
 	}
 	defer tx.Rollback()
 
-	var toStatus string
-	var toName, toUsername string
+	var toStatus, toName, toUsername string
 	if err := tx.QueryRowContext(ctx, `SELECT status, display_name, username FROM users WHERE id = ?`, toUserID).
 		Scan(&toStatus, &toName, &toUsername); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return WalletUpdate{}, WalletUpdate{}, ErrRecipientNotFound
+			return Wallet{}, Wallet{}, model.WalletTransaction{}, ErrRecipientNotFound
 		}
-		return WalletUpdate{}, WalletUpdate{}, err
+		return Wallet{}, Wallet{}, model.WalletTransaction{}, err
 	}
 	if toStatus != string(model.UserStatusActive) {
-		return WalletUpdate{}, WalletUpdate{}, ErrRecipientNotFound
+		return Wallet{}, Wallet{}, model.WalletTransaction{}, ErrRecipientNotFound
 	}
 	var fromName, fromUsername string
 	if err := tx.QueryRowContext(ctx, `SELECT display_name, username FROM users WHERE id = ?`, fromUserID).
 		Scan(&fromName, &fromUsername); err != nil {
-		return WalletUpdate{}, WalletUpdate{}, notFound(err)
+		return Wallet{}, Wallet{}, model.WalletTransaction{}, notFound(err)
 	}
 
-	senderW, err := ensureWalletTx(ctx, tx, fromUserID)
+	senderW, err := loadWallet(ctx, tx, fromUserID)
 	if err != nil {
-		return WalletUpdate{}, WalletUpdate{}, err
+		return Wallet{}, Wallet{}, model.WalletTransaction{}, err
 	}
 	if senderW.Balance < amount {
-		return WalletUpdate{}, WalletUpdate{}, ErrInsufficientBalance
+		return Wallet{}, Wallet{}, model.WalletTransaction{}, ErrInsufficientBalance
 	}
-	recvW, err := ensureWalletTx(ctx, tx, toUserID)
+	recvW, err := loadWallet(ctx, tx, toUserID)
 	if err != nil {
-		return WalletUpdate{}, WalletUpdate{}, err
+		return Wallet{}, Wallet{}, model.WalletTransaction{}, err
 	}
+	_ = recvW
 
-	newSenderBal := senderW.Balance - amount
-	newRecvBal := recvW.Balance + amount
-	if _, err := tx.ExecContext(ctx, `UPDATE wallets SET balance = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`, newSenderBal, fromUserID); err != nil {
-		return WalletUpdate{}, WalletUpdate{}, err
+	if _, err := tx.ExecContext(ctx, `UPDATE wallets SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`, amount, fromUserID); err != nil {
+		return Wallet{}, Wallet{}, model.WalletTransaction{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE wallets SET balance = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`, newRecvBal, toUserID); err != nil {
-		return WalletUpdate{}, WalletUpdate{}, err
+	if _, err := tx.ExecContext(ctx, `UPDATE wallets SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`, amount, toUserID); err != nil {
+		return Wallet{}, Wallet{}, model.WalletTransaction{}, err
 	}
 
 	toLabel := toName
@@ -382,73 +443,74 @@ func (s *Store) TransferCoins(ctx context.Context, fromUserID, toUserID, amount 
 		recvNote += ": " + note
 	}
 
-	sTx, err := insertWalletTx(ctx, tx, fromUserID, "transfer_out", -amount, newSenderBal, "transfer", nil, &toUserID, senderNote, "")
+	sTx, err := insertWalletLedgerTx(ctx, tx, fromUserID, "transfer_out", -amount, 0, nil, 0, &toUserID, senderNote)
 	if err != nil {
-		return WalletUpdate{}, WalletUpdate{}, err
+		return Wallet{}, Wallet{}, model.WalletTransaction{}, err
 	}
-	rTx, err := insertWalletTx(ctx, tx, toUserID, "transfer_in", amount, newRecvBal, "transfer", &sTx.ID, &fromUserID, recvNote, "")
-	if err != nil {
-		return WalletUpdate{}, WalletUpdate{}, err
+	if _, err := insertWalletLedgerTx(ctx, tx, toUserID, "transfer_in", amount, 0, nil, 0, &fromUserID, recvNote); err != nil {
+		return Wallet{}, Wallet{}, model.WalletTransaction{}, err
 	}
 
-	senderW, err = readWalletTx(ctx, tx, fromUserID)
+	senderW, err = loadWallet(ctx, tx, fromUserID)
 	if err != nil {
-		return WalletUpdate{}, WalletUpdate{}, err
+		return Wallet{}, Wallet{}, model.WalletTransaction{}, err
 	}
-	recvW, err = readWalletTx(ctx, tx, toUserID)
+	recvW, err = loadWallet(ctx, tx, toUserID)
 	if err != nil {
-		return WalletUpdate{}, WalletUpdate{}, err
+		return Wallet{}, Wallet{}, model.WalletTransaction{}, err
 	}
 	if err := tx.Commit(); err != nil {
-		return WalletUpdate{}, WalletUpdate{}, err
+		return Wallet{}, Wallet{}, model.WalletTransaction{}, err
 	}
-	now := time.Now()
-	return WalletUpdate{UserID: fromUserID, Wallet: toModelWallet(senderW, now), Transaction: sTx},
-		WalletUpdate{UserID: toUserID, Wallet: toModelWallet(recvW, now), Transaction: rTx}, nil
+	return senderW, recvW, sTx, nil
 }
 
-func lockGameBetTx(ctx context.Context, tx *sql.Tx, userID, messageID, amount int64) (WalletUpdate, error) {
+// LockedXiangqiBets trả về tổng số xu của userID đang bị tạm giữ trong các ván Cờ tướng chưa kết thúc.
+func (s *Store) LockedXiangqiBets(ctx context.Context, userID int64) (int64, error) {
+	var total int64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(gb.amount), 0)
+		FROM game_bets gb
+		JOIN games g ON g.message_id = gb.message_id
+		JOIN messages m ON m.id = g.message_id
+		WHERE gb.user_id = ? AND gb.status = 'locked' AND m.deleted_at IS NULL`, userID).Scan(&total)
+	return total, err
+}
+
+func lockGameBetTx(ctx context.Context, tx *sql.Tx, userID, messageID, amount int64) (Wallet, error) {
 	if amount <= 0 {
-		return WalletUpdate{}, ErrInvalidAmount
+		return Wallet{}, ErrInvalidAmount
 	}
-	w, err := ensureWalletTx(ctx, tx, userID)
+	w, err := loadWallet(ctx, tx, userID)
 	if err != nil {
-		return WalletUpdate{}, err
+		return Wallet{}, err
 	}
 	if w.Balance < amount {
-		return WalletUpdate{}, ErrInsufficientBalance
+		return Wallet{}, ErrInsufficientBalance
 	}
 	res, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO game_bets (message_id, user_id, amount, status) VALUES (?, ?, ?, 'locked')`,
 		messageID, userID, amount)
 	if err != nil {
-		return WalletUpdate{}, err
+		return Wallet{}, err
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		return WalletUpdate{}, ErrBetAlreadyLocked
+	if n, _ := res.RowsAffected(); n == 0 {
+		return Wallet{}, ErrBetAlreadyLocked
 	}
-	newBal := w.Balance - amount
-	newLocked := w.LockedBalance + amount
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE wallets SET balance = ?, locked_balance = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`,
-		newBal, newLocked, userID); err != nil {
-		return WalletUpdate{}, err
+		UPDATE wallets SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`,
+		amount, userID); err != nil {
+		return Wallet{}, err
 	}
-	wt, err := insertWalletTx(ctx, tx, userID, "bet_lock", -amount, newBal, "game", &messageID, nil,
-		fmt.Sprintf("Đặt cược Cờ tướng #%d", messageID), fmt.Sprintf("bet_lock:%d:%d", messageID, userID))
-	if err != nil {
-		return WalletUpdate{}, err
+	if _, err := insertWalletLedgerTx(ctx, tx, userID, "bet_lock", -amount, 0, &messageID, 0, nil,
+		fmt.Sprintf("Đặt cược Cờ tướng #%d", messageID)); err != nil {
+		return Wallet{}, err
 	}
-	w, err = readWalletTx(ctx, tx, userID)
-	if err != nil {
-		return WalletUpdate{}, err
-	}
-	return WalletUpdate{UserID: userID, Wallet: toModelWallet(w, time.Now()), Transaction: wt}, nil
+	return loadWallet(ctx, tx, userID)
 }
 
-// CreateGameWithBet tạo tin nhắn game và tạm giữ tiền cược của chủ phòng (nếu betAmount > 0) trong một transaction nguyên tử.
-func (s *Store) CreateGameWithBet(ctx context.Context, channelID, userID int64, embed model.Embed, status string, state []byte, betAmount int64) (model.Message, *WalletUpdate, error) {
+// CreateGameWithBet tạo tin nhắn game và tạm giữ tiền cược của chủ phòng (nếu betAmount > 0) trong một transaction.
+func (s *Store) CreateGameWithBet(ctx context.Context, channelID, userID int64, embed model.Embed, status string, state []byte, betAmount int64) (model.Message, *Wallet, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return model.Message{}, nil, err
@@ -470,41 +532,69 @@ func (s *Store) CreateGameWithBet(ctx context.Context, channelID, userID int64, 
 		id, embed.ID, status, string(state)); err != nil {
 		return model.Message{}, nil, err
 	}
-	var wu *WalletUpdate
+	var wPtr *Wallet
 	if betAmount > 0 {
-		u, err := lockGameBetTx(ctx, tx, userID, id, betAmount)
+		w, err := lockGameBetTx(ctx, tx, userID, id, betAmount)
 		if err != nil {
 			return model.Message{}, nil, err
 		}
-		wu = &u
+		wPtr = &w
 	}
 	if err := tx.Commit(); err != nil {
 		return model.Message{}, nil, err
 	}
 	m, err := s.GetMessage(ctx, id)
-	return m, wu, err
+	return m, wPtr, err
 }
 
-// LockGameBet tạm giữ tiền cược của người chơi khi tham gia ván cờ.
-func (s *Store) LockGameBet(ctx context.Context, userID, messageID, amount int64) (WalletUpdate, error) {
+// LockGameBet tạm giữ tiền cược của người chơi khi tham gia bàn Cờ tướng.
+func (s *Store) LockGameBet(ctx context.Context, userID, messageID, amount int64) (Wallet, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return WalletUpdate{}, err
+		return Wallet{}, err
 	}
 	defer tx.Rollback()
 
-	wu, err := lockGameBetTx(ctx, tx, userID, messageID, amount)
+	w, err := lockGameBetTx(ctx, tx, userID, messageID, amount)
 	if err != nil {
-		return WalletUpdate{}, err
+		return Wallet{}, err
 	}
 	if err := tx.Commit(); err != nil {
-		return WalletUpdate{}, err
+		return Wallet{}, err
 	}
-	return wu, nil
+	return w, nil
 }
 
-// RefundUserBet hoàn lại tiền cược đã giữ cho một người chơi cụ thể (khi rời phòng hoặc rollback join lỗi).
-func (s *Store) RefundUserBet(ctx context.Context, userID, messageID int64, note string) (*WalletUpdate, error) {
+func refundLockedBetRowTx(ctx context.Context, tx *sql.Tx, messageID, userID, amount int64, note string) (Wallet, error) {
+	if _, err := loadWallet(ctx, tx, userID); err != nil {
+		return Wallet{}, err
+	}
+	res, err := tx.ExecContext(ctx, `
+		UPDATE game_bets SET status = 'refunded', payout = ?, settled_at = CURRENT_TIMESTAMP
+		WHERE message_id = ? AND user_id = ? AND status = 'locked'`,
+		amount, messageID, userID)
+	if err != nil {
+		return Wallet{}, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return loadWallet(ctx, tx, userID)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE wallets SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`,
+		amount, userID); err != nil {
+		return Wallet{}, err
+	}
+	if note == "" {
+		note = fmt.Sprintf("Hoàn tiền cược ván #%d", messageID)
+	}
+	if _, err := insertWalletLedgerTx(ctx, tx, userID, "bet_refund", amount, 0, &messageID, 0, nil, note); err != nil {
+		return Wallet{}, err
+	}
+	return loadWallet(ctx, tx, userID)
+}
+
+// RefundUserBet hoàn tiền cược đã giữ cho một người chơi (khi rời phòng hoặc rollback join lỗi).
+func (s *Store) RefundUserBet(ctx context.Context, userID, messageID int64, note string) (*Wallet, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -521,55 +611,19 @@ func (s *Store) RefundUserBet(ctx context.Context, userID, messageID int64, note
 	if err != nil {
 		return nil, err
 	}
-	wu, err := refundLockedBetRowTx(ctx, tx, messageID, userID, amount, note)
+	w, err := refundLockedBetRowTx(ctx, tx, messageID, userID, amount, note)
 	if err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	return &wu, nil
+	return &w, nil
 }
 
-func refundLockedBetRowTx(ctx context.Context, tx *sql.Tx, messageID, userID, amount int64, note string) (WalletUpdate, error) {
-	w, err := ensureWalletTx(ctx, tx, userID)
-	if err != nil {
-		return WalletUpdate{}, err
-	}
-	newBal := w.Balance + amount
-	newLocked := w.LockedBalance - amount
-	if newLocked < 0 {
-		newLocked = 0
-	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE wallets SET balance = ?, locked_balance = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`,
-		newBal, newLocked, userID); err != nil {
-		return WalletUpdate{}, err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE game_bets SET status = 'refunded', payout = ?, settled_at = CURRENT_TIMESTAMP
-		WHERE message_id = ? AND user_id = ? AND status = 'locked'`,
-		amount, messageID, userID); err != nil {
-		return WalletUpdate{}, err
-	}
-	if note == "" {
-		note = fmt.Sprintf("Hoàn tiền cược ván #%d", messageID)
-	}
-	wt, err := insertWalletTx(ctx, tx, userID, "bet_refund", amount, newBal, "game", &messageID, nil,
-		note, fmt.Sprintf("bet_settle:%d:%d", messageID, userID))
-	if err != nil {
-		return WalletUpdate{}, err
-	}
-	w, err = readWalletTx(ctx, tx, userID)
-	if err != nil {
-		return WalletUpdate{}, err
-	}
-	return WalletUpdate{UserID: userID, Wallet: toModelWallet(w, time.Now()), Transaction: wt}, nil
-}
-
-func refundGameBetsTx(ctx context.Context, tx *sql.Tx, messageID int64, note string) ([]WalletUpdate, error) {
+func refundGameBetsTx(ctx context.Context, tx *sql.Tx, messageID int64, note string) ([]Wallet, error) {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT user_id, amount FROM game_bets WHERE message_id = ? AND status = 'locked'`, messageID)
+		SELECT user_id, amount FROM game_bets WHERE message_id = ? AND status = 'locked' ORDER BY user_id`, messageID)
 	if err != nil {
 		return nil, err
 	}
@@ -593,37 +647,37 @@ func refundGameBetsTx(ctx context.Context, tx *sql.Tx, messageID int64, note str
 	if len(list) == 0 {
 		return nil, nil
 	}
-	updates := make([]WalletUpdate, 0, len(list))
+	out := make([]Wallet, 0, len(list))
 	for _, r := range list {
-		wu, err := refundLockedBetRowTx(ctx, tx, messageID, r.userID, r.amount, note)
+		w, err := refundLockedBetRowTx(ctx, tx, messageID, r.userID, r.amount, note)
 		if err != nil {
 			return nil, err
 		}
-		updates = append(updates, wu)
+		out = append(out, w)
 	}
-	return updates, nil
+	return out, nil
 }
 
 // RefundGameBets hoàn tiền cho tất cả người chơi đang khoá cược trên ván messageID (idempotent).
-func (s *Store) RefundGameBets(ctx context.Context, messageID int64, note string) ([]WalletUpdate, error) {
+func (s *Store) RefundGameBets(ctx context.Context, messageID int64, note string) ([]Wallet, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
 
-	updates, err := refundGameBetsTx(ctx, tx, messageID, note)
+	out, err := refundGameBetsTx(ctx, tx, messageID, note)
 	if err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	return updates, nil
+	return out, nil
 }
 
-// SettleGameBets thanh toán kết quả ván cờ một lần duy nhất (idempotent theo game_bets.status='locked').
-func (s *Store) SettleGameBets(ctx context.Context, messageID int64, winners []int64) ([]WalletUpdate, error) {
+// SettleGameBets thanh toán kết quả ván Cờ tướng một lần duy nhất (idempotent theo game_bets.status='locked').
+func (s *Store) SettleGameBets(ctx context.Context, messageID int64, winners []int64) ([]Wallet, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -658,7 +712,6 @@ func (s *Store) SettleGameBets(ctx context.Context, messageID int64, winners []i
 		return nil, nil
 	}
 
-	// Nếu chỉ có <= 1 người lock (ví dụ huỷ ở lobby / hết hạn lobby) hoặc hoà (len(winners) == 0): hoàn tiền 100%.
 	winSet := make(map[int64]bool, len(winners))
 	var validWinners []int64
 	for _, wid := range winners {
@@ -671,82 +724,73 @@ func (s *Store) SettleGameBets(ctx context.Context, messageID int64, winners []i
 		}
 	}
 	if len(validWinners) == 0 || len(list) < 2 {
-		note := fmt.Sprintf("Hoàn tiền cược ván Cờ tướng #%d (hoà/huỷ)", messageID)
-		updates, err := refundGameBetsTx(ctx, tx, messageID, note)
+		out, err := refundGameBetsTx(ctx, tx, messageID, fmt.Sprintf("Hoàn tiền cược ván Cờ tướng #%d (hoà/huỷ)", messageID))
 		if err != nil {
 			return nil, err
 		}
 		if err := tx.Commit(); err != nil {
 			return nil, err
 		}
-		return updates, nil
+		return out, nil
 	}
 
 	perWinner := totalPot / int64(len(validWinners))
 	remainder := totalPot % int64(len(validWinners))
-	updates := make([]WalletUpdate, 0, len(list))
+	out := make([]Wallet, 0, len(list))
 
 	for _, r := range list {
-		w, err := ensureWalletTx(ctx, tx, r.userID)
-		if err != nil {
+		if _, err := loadWallet(ctx, tx, r.userID); err != nil {
 			return nil, err
 		}
-		newLocked := w.LockedBalance - r.amount
-		if newLocked < 0 {
-			newLocked = 0
-		}
-		var wt model.WalletTransaction
 		if winSet[r.userID] {
 			payout := perWinner
 			if r.userID == validWinners[0] {
 				payout += remainder
 			}
-			newBal := w.Balance + payout
-			if _, err := tx.ExecContext(ctx, `
-				UPDATE wallets SET balance = ?, locked_balance = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`,
-				newBal, newLocked, r.userID); err != nil {
-				return nil, err
-			}
-			if _, err := tx.ExecContext(ctx, `
+			res, err := tx.ExecContext(ctx, `
 				UPDATE game_bets SET status = 'won', payout = ?, settled_at = CURRENT_TIMESTAMP
 				WHERE message_id = ? AND user_id = ? AND status = 'locked'`,
-				payout, messageID, r.userID); err != nil {
+				payout, messageID, r.userID)
+			if err != nil {
 				return nil, err
 			}
-			wt, err = insertWalletTx(ctx, tx, r.userID, "bet_win", payout, newBal, "game", &messageID, nil,
-				fmt.Sprintf("Thắng cược ván Cờ tướng #%d (+%d Xu)", messageID, payout),
-				fmt.Sprintf("bet_settle:%d:%d", messageID, r.userID))
-			if err != nil {
+			if n, _ := res.RowsAffected(); n == 0 {
+				continue
+			}
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE wallets SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`,
+				payout, r.userID); err != nil {
+				return nil, err
+			}
+			if _, err := insertWalletLedgerTx(ctx, tx, r.userID, "bet_win", payout, 0, &messageID, 0, nil,
+				fmt.Sprintf("Thắng cược ván Cờ tướng #%d (+%d xu)", messageID, payout)); err != nil {
 				return nil, err
 			}
 		} else {
-			if _, err := tx.ExecContext(ctx, `
-				UPDATE wallets SET locked_balance = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`,
-				newLocked, r.userID); err != nil {
-				return nil, err
-			}
-			if _, err := tx.ExecContext(ctx, `
+			res, err := tx.ExecContext(ctx, `
 				UPDATE game_bets SET status = 'lost', payout = 0, settled_at = CURRENT_TIMESTAMP
 				WHERE message_id = ? AND user_id = ? AND status = 'locked'`,
-				messageID, r.userID); err != nil {
-				return nil, err
-			}
-			wt, err = insertWalletTx(ctx, tx, r.userID, "bet_loss", 0, w.Balance, "game", &messageID, nil,
-				fmt.Sprintf("Thua cược ván Cờ tướng #%d (-%d Xu)", messageID, r.amount),
-				fmt.Sprintf("bet_settle:%d:%d", messageID, r.userID))
+				messageID, r.userID)
 			if err != nil {
 				return nil, err
 			}
+			if n, _ := res.RowsAffected(); n == 0 {
+				continue
+			}
+			if _, err := insertWalletLedgerTx(ctx, tx, r.userID, "bet_loss", 0, 0, &messageID, 0, nil,
+				fmt.Sprintf("Thua cược ván Cờ tướng #%d (-%d xu)", messageID, r.amount)); err != nil {
+				return nil, err
+			}
 		}
-		w, err = readWalletTx(ctx, tx, r.userID)
+		w, err := loadWallet(ctx, tx, r.userID)
 		if err != nil {
 			return nil, err
 		}
-		updates = append(updates, WalletUpdate{UserID: r.userID, Wallet: toModelWallet(w, time.Now()), Transaction: wt})
+		out = append(out, w)
 	}
 
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	return updates, nil
+	return out, nil
 }

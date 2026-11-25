@@ -750,9 +750,12 @@ export function MessageRow(props: RowProps) {
               role="progressbar"
               aria-valuenow={Math.round((pending.progress ?? 0) * 100)}
             >
-              <span className="upload-bar">
-                <span style={{ width: `${Math.round((pending.progress ?? 0) * 100)}%` }} />
-              </span>
+              {/* có ảnh xem trước thì thanh tiến trình đã nằm trên ảnh: không vẽ thêm thanh thứ hai */}
+              {!pending.files?.some((f) => /^image\/(png|jpeg|gif|webp)$/.test(f.type)) && (
+                <span className="upload-bar">
+                  <span style={{ width: `${Math.round((pending.progress ?? 0) * 100)}%` }} />
+                </span>
+              )}
               <span className="msg-state">
                 {(pending.progress ?? 0) >= 1
                   ? "Đang xử lý…"

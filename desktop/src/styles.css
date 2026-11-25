@@ -16006,5 +16006,6 @@ button.villager:focus-visible .villager-name {
   margin: 0 0.04em;
   vertical-align: -0.3em;
   object-fit: contain;
+  -webkit-user-select: none;
   user-select: none;
 }

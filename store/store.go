@@ -75,6 +75,36 @@ func (s *Store) CreateUser(ctx context.Context, username, email, passwordHash, d
 	return u, err
 }
 
+// ErrSignupLimit: IP này đã tạo đủ số tài khoản cho phép trong 24 giờ qua.
+var ErrSignupLimit = errors.New("too many signups from this ip")
+
+// RegisterUser tạo tài khoản như CreateUser và ghi lại IP tạo. ip khác rỗng và maxPerDay > 0 thì
+// chỉ tạo khi IP đó tạo chưa tới maxPerDay tài khoản trong 24 giờ qua (đếm và chèn trong cùng một
+// câu lệnh nên hai request song song không lọt qua cùng lúc), quá thì ErrSignupLimit.
+func (s *Store) RegisterUser(ctx context.Context, username, email, passwordHash, displayName, ip string, maxPerDay int) (model.User, error) {
+	if ip == "" || maxPerDay <= 0 {
+		u, err := s.CreateUser(ctx, username, email, passwordHash, displayName)
+		if err == nil && ip != "" {
+			_, err = s.db.ExecContext(ctx, `UPDATE users SET signup_ip = ? WHERE id = ?`, ip, u.ID)
+		}
+		return u, err
+	}
+	since := s.Now().Add(-24 * time.Hour).UTC().Format("2006-01-02 15:04:05")
+	row := s.db.QueryRowContext(ctx, `
+		INSERT INTO users (username, email, password_hash, display_name, signup_ip)
+		SELECT ?, ?, ?, ?, ?
+		WHERE (SELECT COUNT(*) FROM users WHERE signup_ip = ? AND created_at > ?) < ?
+		RETURNING `+userColumns, username, email, passwordHash, displayName, ip, ip, since, maxPerDay)
+	u, err := scanUser(row)
+	switch {
+	case isUniqueViolation(err):
+		return u, ErrConflict
+	case errors.Is(err, sql.ErrNoRows):
+		return u, ErrSignupLimit
+	}
+	return u, err
+}
+
 func (s *Store) GetUserByID(ctx context.Context, id int64) (model.User, error) {
 	u, err := scanUser(s.db.QueryRowContext(ctx, `SELECT `+userColumns+` FROM users WHERE id = ?`, id))
 	return u, notFound(err)

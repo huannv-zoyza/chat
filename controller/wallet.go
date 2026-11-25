@@ -180,6 +180,10 @@ func (a *API) transferCoins(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	me := currentUser(r)
+	if until := a.coinsLockedUntil(me); until != nil {
+		writeError(w, http.StatusForbidden, newAccountMsg("chuyển xu", *until))
+		return
+	}
 	note := strings.TrimSpace(req.Note)
 	if utf8.RuneCountInString(note) > 120 {
 		note = string([]rune(note)[:120])

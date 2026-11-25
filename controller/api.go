@@ -29,7 +29,9 @@ type API struct {
 	uploadsDir     string // thư mục lưu file người dùng gửi
 	minFreeDisk    uint64 // còn ít hơn chừng này byte trống thì không nhận file mới
 	logins         *loginLimiter
-	unfurlClient   *http.Client // xem trước link: chỉ kết nối được tới internet công khai
+	signupsPerIP   int           // số tài khoản mỗi IP tạo được trong 24 giờ (<= 0: không giới hạn)
+	newAccountHold time.Duration // tài khoản mới phải chờ chừng này mới đưa xu cho người khác được
+	unfurlClient   *http.Client  // xem trước link: chỉ kết nối được tới internet công khai
 	unfurls        unfurlCache
 	giphyKey       string // rỗng: tắt tìm GIF
 	giphyBase      string
@@ -56,11 +58,13 @@ func (a *API) SetUIBuild(id string) { a.uiBuild = id }
 func NewAPI(st *store.Store, hub *socket.Hub, originPatterns []string, uploadsDir string) *API {
 	return &API{
 		store: st, hub: hub, originPatterns: originPatterns, uploadsDir: uploadsDir,
-		minFreeDisk:  defaultMinFreeDisk,
-		logins:       newLoginLimiter(10, 15*time.Minute),
-		unfurlClient: newUnfurlClient(),
-		hookRate:     newRateWindow(hookRatePerMin, time.Minute),
-		botClient:    &http.Client{Timeout: outgoingTimeout},
+		minFreeDisk:    defaultMinFreeDisk,
+		logins:         newLoginLimiter(10, 15*time.Minute),
+		signupsPerIP:   defaultSignupsPerIP,
+		newAccountHold: defaultNewAccountHold,
+		unfurlClient:   newUnfurlClient(),
+		hookRate:       newRateWindow(hookRatePerMin, time.Minute),
+		botClient:      &http.Client{Timeout: outgoingTimeout},
 	}
 }
 

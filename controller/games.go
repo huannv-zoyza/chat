@@ -407,6 +407,11 @@ func (a *API) startGame(ctx context.Context, ch model.Channel, host model.User, 
 	if err != nil {
 		return model.Message{}, err
 	}
+	if g.BetAmount() > 0 {
+		if until := a.coinsLockedUntil(host); until != nil {
+			return model.Message{}, game.Error(newAccountMsg("mở bàn cược", *until))
+		}
+	}
 	state, err := g.Marshal()
 	if err != nil {
 		return model.Message{}, err
@@ -488,6 +493,10 @@ func (a *API) gameAction(w http.ResponseWriter, r *http.Request) {
 	if req.Action == "join" && betAmount > 0 {
 		_, maxP := s.g.Limits()
 		if s.g.Status() == game.Lobby && !s.g.IsPlayer(me.ID) && len(s.g.Players()) < maxP {
+			if until := a.coinsLockedUntil(me); until != nil {
+				writeError(w, http.StatusForbidden, newAccountMsg("vào bàn cược", *until))
+				return
+			}
 			wUpd, err := a.store.LockGameBet(r.Context(), me.ID, msg.ID, betAmount)
 			if err != nil {
 				if errors.Is(err, store.ErrInsufficientBalance) {

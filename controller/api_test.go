@@ -46,6 +46,7 @@ func newEnv(t *testing.T) *env {
 	hub := socket.NewHub()
 	st := store.New(db)
 	api := controller.NewAPI(st, hub, []string{"localhost", "localhost:*", "tauri.localhost"}, t.TempDir())
+	api.SetNewAccountRules(3, 0) // test chuyển xu ngay sau khi tạo tài khoản; antiabuse_test bật lại
 	srv := httptest.NewServer(api.Handler(nil))
 	t.Cleanup(func() { hub.Shutdown(); srv.Close() })
 	return &env{t: t, srv: srv, api: api, st: st}

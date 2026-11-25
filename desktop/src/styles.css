@@ -15079,9 +15079,6 @@ button.villager:focus-visible .villager-name {
     height: 980px;
     margin: -470px 0 0 -500px;
   }
-  .farm-world .w {
-    font-size: 70% !important;
-  }
   .w-barn .farm-barn {
     width: 6rem;
     height: 5.4rem;
@@ -15148,5 +15145,101 @@ button.villager:focus-visible .villager-name {
     width: 820px;
     height: 780px;
     margin: -380px 0 0 -410px;
+  }
+}
+
+/* Thế giới theo lưới cố định (đơn vị = cạnh ô ruộng): ruộng và cảnh vật co giãn cùng nhau,
+   không khu nào đè lên khu nào. Kích thước ô vừa để cả trang trại nằm gọn trong khung nhìn. */
+.farm {
+  --p: clamp(3.6rem, calc((100vw - 26rem) / 15.5), 6.2rem);
+}
+.farm-world {
+  width: calc(var(--p) * 15);
+  height: calc(var(--p) * 13.5);
+  margin: calc(var(--p) * -6.4) 0 0 calc(var(--p) * -7.5);
+}
+.farm-world::before,
+.farm-world::after {
+  display: none;
+}
+.farm-plots {
+  top: calc(var(--p) * 4.65);
+  left: calc(var(--p) * 7.8);
+}
+.world-decor > span {
+  position: absolute;
+  display: block;
+}
+.g-pen {
+  border-width: calc(var(--p) * 0.12);
+  border-image-width: calc(var(--p) * 0.12);
+}
+.g-path {
+  border-radius: calc(var(--p) * 0.3);
+  background-size: calc(var(--p) * 0.45) calc(var(--p) * 0.4), calc(var(--p) * 0.45) calc(var(--p) * 0.4), auto;
+}
+.g-bed {
+  border-radius: calc(var(--p) * 0.15);
+}
+.w-barn .farm-barn {
+  width: calc(var(--p) * 1.55);
+  height: calc(var(--p) * 1.35);
+}
+.w-barn .farm-barn::before {
+  inset: calc(var(--p) * 0.55) 0 0;
+}
+.w-barn .farm-barn-roof {
+  inset: 0 calc(var(--p) * -0.08) auto;
+  height: calc(var(--p) * 0.6);
+}
+.w-barn .farm-barn-door {
+  width: calc(var(--p) * 0.5);
+  height: calc(var(--p) * 0.5);
+  margin-left: calc(var(--p) * -0.25);
+}
+.w-barn .farm-barn-window {
+  top: calc(var(--p) * 0.22);
+  width: calc(var(--p) * 0.2);
+  height: calc(var(--p) * 0.2);
+  margin-left: calc(var(--p) * -0.1);
+}
+.w-silo .farm-silo {
+  width: calc(var(--p) * 0.45);
+  height: calc(var(--p) * 1.5);
+  border-radius: calc(var(--p) * 0.22) calc(var(--p) * 0.22) 3px 3px;
+}
+@media (max-width: 960px) {
+  .farm {
+    --p: 4.2rem;
+  }
+  .farm-world {
+    width: calc(var(--p) * 15);
+    height: calc(var(--p) * 13.5);
+    margin: calc(var(--p) * -6.4) 0 0 calc(var(--p) * -7.8);
+  }
+}
+@media (max-width: 480px) {
+  .farm {
+    --p: 3.8rem;
+  }
+}
+/* phối cảnh "phẳng" hơn: phía trước không bị phóng to, cả trang trại vừa khung, ruộng to hơn */
+.farm {
+  --p: clamp(3.8rem, calc((100vw - 26rem) / 14), 6.4rem);
+}
+.farm-iso {
+  perspective: 2800px;
+}
+@media (max-width: 960px) {
+  .farm {
+    --p: 4.2rem;
+  }
+  .farm-iso {
+    perspective: 1800px;
+  }
+}
+@media (max-width: 480px) {
+  .farm {
+    --p: 3.8rem;
   }
 }

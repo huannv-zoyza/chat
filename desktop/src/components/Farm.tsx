@@ -597,11 +597,26 @@ function Scenery({ tod }: { tod: string; dog: boolean }) {
   return <div className={`farm-tint is-${tod}`} aria-hidden />;
 }
 
-/** Một vật đứng trên mặt đất (cây, thú, nhà…): x, y là % mặt đất, s là cỡ (rem). */
+/*
+ * Thế giới nông trại (kiểu FarmVille) xếp theo lưới cố định, đơn vị = cạnh một ô ruộng (--p),
+ * mặt đất rộng 15 × sâu 13.5 đơn vị. Mỗi khu một vùng riêng, không khu nào đè lên đường:
+ *
+ *   x: 0.3 ──── 3.9 │4.3 path 4.85│ 5.3 ─── ruộng ─── 10.3 │ 11 ── vườn / ao ── 14.6
+ *   y 2.6–6.0  chuồng thú           y 2.7–6.6 ruộng          y 2.6–6.4 vườn cây
+ *   y 6.6–10.0 chuồng gà            dưới ruộng: nông dân     y 7.0–9.8 ao
+ *   y 10.5–11.1 đường đá ngang ─────────────────────────────────────────────
+ *   y 11.5–12.6 hai luống hoa
+ */
+const WORLD_W = 15;
+const WORLD_H = 13.5;
+const X = (u: number) => `${(u / WORLD_W) * 100}%`;
+const Y = (u: number) => `${(u / WORLD_H) * 100}%`;
+
+/** Vật đứng trên mặt đất (cây, thú, nhà…): neo đáy-giữa ở (x, y), cỡ s tính theo cạnh ô ruộng. */
 function W({
   x,
   y,
-  s = 2.4,
+  s = 0.35,
   c,
   anim,
   children,
@@ -618,9 +633,9 @@ function W({
       className={`w${c ? ` ${c}` : ""}`}
       style={
         {
-          left: `${x}%`,
-          top: `${y}%`,
-          fontSize: `${s}rem`,
+          left: X(x),
+          top: Y(y),
+          fontSize: `calc(var(--p) * ${s})`,
           animationDelay: anim,
         } as CSSProperties
       }
@@ -630,166 +645,165 @@ function W({
   );
 }
 
-const ORCHARD: [number, number, string][] = [
-  [80, 30, "🌳"],
-  [87, 30, "🌳"],
-  [94, 30, "🌳"],
-  [80, 40, "🌳"],
-  [87, 40, "🌳"],
-  [94, 40, "🌳"],
-  [80, 50, "🌳"],
-  [87, 50, "🌳"],
-  [94, 50, "🌳"],
-];
-const BORDER: [number, number, string, number][] = Array.from(
-  { length: 16 },
-  (_, i) => [
-    3 + i * 6.3,
-    i % 2 ? 4 : 7,
-    i % 3 === 0 ? "🌲" : "🌳",
-    i % 2 ? 3.4 : 3,
-  ],
-);
+/** Mảng nền nằm phẳng trên mặt đất (đường, ao, chuồng, luống): góc trên-trái (x, y), rộng w, sâu h. */
+function G({
+  x,
+  y,
+  w,
+  h,
+  c,
+}: {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  c: string;
+}) {
+  return (
+    <span
+      className={c}
+      style={{ left: X(x), top: Y(y), width: X(w), height: Y(h) }}
+    />
+  );
+}
+
 const FLOWERS = ["🌷", "🌻", "🌼", "🌷", "🌸", "🌻"];
 
-/**
- * Thế giới nông trại quanh ruộng (kiểu FarmVille): hàng cây bao quanh, nhà kho, silo, chuồng
- * cừu/bò rào gỗ, chuồng gà, vườn cây ăn quả, luống hoa, ao vịt, đường đá. Ruộng nằm giữa.
- */
 function WorldDecor({ dog }: { dog: boolean }) {
   return (
     <div className="world-decor" aria-hidden>
-      <span className="g-patch p1" />
-      <span className="g-patch p2" />
-      <span className="g-patch p3" />
-      <span className="g-path path-h" />
-      <span className="g-path path-v" />
-      <span className="g-pond" />
-      <span className="g-pen pen-animals" />
-      <span className="g-pen pen-chicks" />
-      <span className="g-bed bed-1" />
-      <span className="g-bed bed-2" />
+      {/* nền */}
+      <G x={0.3} y={10.5} w={14.4} h={0.6} c="g-path" />
+      <G x={4.3} y={2.3} w={0.55} h={8.5} c="g-path" />
+      <G x={0.3} y={2.6} w={3.6} h={3.4} c="g-pen pen-animals" />
+      <G x={0.3} y={6.6} w={3.6} h={3.4} c="g-pen pen-chicks" />
+      <G x={11.2} y={7.1} w={3.4} h={2.6} c="g-pond" />
+      <G x={8.7} y={1.1} w={2.0} h={1.25} c="g-bed" />
+      <G x={0.8} y={11.5} w={6.2} h={1.1} c="g-bed" />
+      <G x={8.0} y={11.5} w={6.2} h={1.1} c="g-bed" />
 
-      {BORDER.map(([x, y, e, s], i) => (
-        <W key={`b${i}`} x={x} y={y} s={s}>
-          {e}
+      {/* hàng cây bao quanh phía sau */}
+      {Array.from({ length: 16 }, (_, i) => (
+        <W
+          key={`b${i}`}
+          x={0.4 + i * 0.95}
+          y={i % 2 ? 0.7 : 0.95}
+          s={i % 2 ? 0.5 : 0.45}
+        >
+          {i % 3 === 0 ? "🌲" : "🌳"}
         </W>
       ))}
-      <W x={30} y={18} s={1} c="w-barn">
+
+      {/* nhà kho, silo, ruộng lúa */}
+      <W x={6.3} y={2.25} s={0.15} c="w-barn">
         <span className="farm-barn">
           <span className="farm-barn-roof" />
           <span className="farm-barn-door" />
           <span className="farm-barn-window" />
         </span>
       </W>
-      <W x={38.5} y={17} s={1} c="w-silo">
+      <W x={7.75} y={2.2} s={0.15} c="w-silo">
         <span className="farm-silo" />
       </W>
-      <W x={44} y={19} s={2.2}>
-        🌾
-      </W>
-      <W x={47} y={20} s={1.9}>
-        🌾
-      </W>
-      <W x={24} y={21} s={1.8}>
-        🪵
-      </W>
+      {Array.from({ length: 12 }, (_, i) => (
+        <W
+          key={`w${i}`}
+          x={9.0 + (i % 6) * 0.29}
+          y={1.55 + Math.floor(i / 6) * 0.55}
+          s={0.24}
+        >
+          🌾
+        </W>
+      ))}
 
-      {/* chuồng cừu, bò */}
-      <W x={8} y={36} s={2.6} c="w-graze">
+      {/* chuồng bò, cừu, heo, dê */}
+      <W x={1.0} y={3.6} s={0.4} c="w-graze">
         🐄
       </W>
-      <W x={15} y={33} s={2} c="w-graze" anim="-1.2s">
+      <W x={2.4} y={3.3} s={0.3} c="w-graze" anim="-1.2s">
         🐑
       </W>
-      <W x={19} y={39} s={2} c="w-graze" anim="-2.4s">
+      <W x={3.2} y={4.2} s={0.3} c="w-graze" anim="-2.4s">
         🐑
       </W>
-      <W x={11} y={45} s={2} c="w-graze" anim="-0.6s">
+      <W x={1.6} y={5.0} s={0.3} c="w-graze" anim="-0.6s">
         🐑
       </W>
-      <W x={18} y={48} s={2.2} c="w-graze" anim="-1.8s">
+      <W x={2.9} y={5.6} s={0.34} c="w-graze" anim="-1.8s">
         🐖
       </W>
-      <W x={6} y={49} s={1.9} c="w-graze" anim="-3s">
+      <W x={0.8} y={5.6} s={0.28} c="w-graze" anim="-3s">
         🐐
       </W>
 
       {/* chuồng gà */}
-      <W x={12} y={66} s={2.6}>
+      <W x={2.1} y={7.7} s={0.42}>
         🛖
       </W>
-      <W x={8} y={74} s={1.6} c="w-walk">
+      <W x={0.9} y={8.6} s={0.26} c="w-walk">
         🐔
       </W>
-      <W x={15} y={78} s={1.3} c="w-walk" anim="-3s">
+      <W x={2.0} y={9.3} s={0.2} c="w-walk" anim="-3s">
         🐥
       </W>
-      <W x={19} y={71} s={1.6} c="w-walk" anim="-6s">
+      <W x={2.8} y={8.4} s={0.26} c="w-walk" anim="-6s">
         🐓
       </W>
-      <W x={6} y={82} s={1.2} c="w-walk" anim="-1.5s">
+      <W x={1.2} y={9.7} s={0.2} c="w-walk" anim="-1.5s">
         🐥
       </W>
 
       {/* vườn cây ăn quả */}
-      {ORCHARD.map(([x, y, e], i) => (
-        <W key={`o${i}`} x={x} y={y} s={2.7}>
-          {e}
-          <b className="w-fruit">{i % 3 === 1 ? "🍊" : "🍎"}</b>
+      {Array.from({ length: 9 }, (_, i) => (
+        <W
+          key={`o${i}`}
+          x={11.7 + (i % 3) * 1.2}
+          y={3.6 + Math.floor(i / 3) * 1.3}
+          s={0.42}
+        >
+          🌳<b className="w-fruit">{i % 3 === 1 ? "🍊" : "🍎"}</b>
         </W>
       ))}
 
       {/* ao vịt */}
-      <W x={92} y={68} s={1.5} c="w-swim">
+      <W x={12.4} y={8.3} s={0.24} c="w-swim">
         🦆
       </W>
-      <W x={95} y={72} s={1.3} c="w-swim" anim="-2s">
+      <W x={13.4} y={8.9} s={0.2} c="w-swim" anim="-2s">
         🦆
       </W>
-      <W x={86} y={60} s={1.6}>
-        🪨
-      </W>
 
-      {/* luống hoa */}
-      {Array.from({ length: 14 }, (_, i) => (
-        <W
-          key={`f${i}`}
-          x={30 + (i % 7) * 2.6}
-          y={84 + Math.floor(i / 7) * 4}
-          s={1.4}
-        >
-          {FLOWERS[i % FLOWERS.length]}
-        </W>
-      ))}
-      {Array.from({ length: 12 }, (_, i) => (
-        <W
-          key={`g${i}`}
-          x={56 + (i % 6) * 2.8}
-          y={84 + Math.floor(i / 6) * 4}
-          s={1.4}
-        >
-          {FLOWERS[(i + 2) % FLOWERS.length]}
-        </W>
-      ))}
-
-      {/* ruộng lúa, ruộng rau trang trí cho dày như nông trại thật */}
-      {Array.from({ length: 18 }, (_, i) => (
-        <W key={`w${i}`} x={58.5 + (i % 6) * 2.4} y={13 + Math.floor(i / 6) * 3.6} s={1.7}>
-          🌾
-        </W>
-      ))}
-      <W x={27} y={60} s={2.8} c="w-idle">
+      {/* quanh ruộng (ngoài đường đi) */}
+      <W x={5.8} y={8.3} s={0.44} c="w-idle">
         🧑‍🌾
       </W>
-      <W x={70} y={24} s={2}>
+      <W x={6.8} y={8.0} s={0.26}>
         🧺
       </W>
+      <W x={10.7} y={7.6} s={0.24}>
+        🪨
+      </W>
       {dog && (
-        <W x={77} y={72} s={2.3} c="w-wag">
+        <W x={9.9} y={9.4} s={0.34} c="w-wag">
           🐕
         </W>
       )}
+
+      {/* luống hoa */}
+      {Array.from({ length: 24 }, (_, i) => {
+        const bed = i < 12 ? 0.8 : 8.0;
+        const k = i % 12;
+        return (
+          <W
+            key={`f${i}`}
+            x={bed + 0.45 + (k % 6) * 1.0}
+            y={11.95 + Math.floor(k / 6) * 0.5}
+            s={0.22}
+          >
+            {FLOWERS[i % FLOWERS.length]}
+          </W>
+        );
+      })}
     </div>
   );
 }

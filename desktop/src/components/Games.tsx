@@ -10,6 +10,7 @@ import {
   type RpsChoice,
   type RpsMe,
   type RpsState,
+  type BauCuaState,
   type SpyMe,
   type SpyState,
   type WerewolfMe,
@@ -444,8 +445,15 @@ function Lobby({ ctx }: { ctx: Ctx }) {
         Bàn cờ 9×10 chuẩn · Luật WXF · {mins} phút/nước · {firstStr}
       </p>
     );
-  } else {
-    setup = <p className="game-setup">Chạm {Math.floor((game.state as RpsState).best_of / 2) + 1} ván thắng</p>;
+  } else if (game.kind === "baucua") {
+    const rolls = (game.state as BauCuaState | undefined)?.rolls_per_dealer || 3;
+    setup = (
+      <p className="game-setup">
+        Mỗi người cầm cái {rolls} lượt lắc · Vào bàn là mang toàn bộ xu trong ví, hết ván chip tự về ví
+      </p>
+    );
+  } else if (game.kind === "rps") {
+    setup = <p className="game-setup">Chạm {Math.floor(((game.state as RpsState)?.best_of || 3) / 2) + 1} ván thắng</p>;
   }
 
   return (

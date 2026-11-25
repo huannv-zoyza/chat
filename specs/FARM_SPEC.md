@@ -165,3 +165,104 @@ type LeaderRow = { user: PublicUser; level: number; xp: number };
 ```
 
 Sự kiện websocket tới chủ nông trại: `{ "type": "farm.updated", "log": LogEntry }`.
+
+---
+
+# Phần 2: Kho, chăn nuôi, đơn hàng, mở rộng đất
+
+Tham khảo: Nông trại vui vẻ (mở rộng đất, cho vật nuôi ăn ra trứng/sữa), FarmVille (con vật cho sản phẩm
+theo giờ, không chết, sẵn sàng thì có dấu báo; mở rộng đất bằng xu), Hay Day (nông sản vào kho, dùng làm
+thức ăn, giao đơn hàng xe tải lấy xu; kho có sức chứa, nâng cấp được).
+
+## 4. Kho
+
+- Thu hoạch **không trả xu ngay** nữa: mỗi vụ cho `3` đơn vị nông sản vào kho (còn sâu: `2`).
+  XP vẫn cộng lúc thu hoạch. Quest `harvest` vẫn đếm vụ; quest `earn` đếm xu **bán từ kho / giao đơn**.
+- Giá bán một đơn vị nông sản = `ceil(sell / 3)` (bán 3 đơn vị ≈ giá cũ của cả vụ).
+- **Trộm**: lấy `1` đơn vị vào kho kẻ trộm (thay vì xu); một vụ bị trộm tối đa 2 lần nên chủ còn ≥ 1.
+  Thu hoạch vụ bị trộm: `3 - stolen` (còn sâu thì `2 - stolen`, tối thiểu 1). Cột `stolen` đổi nghĩa thành
+  số đơn vị bị lấy. Chó đuổi: như cũ (kẻ trộm mất 10 xu cho chủ).
+- Sức chứa kho: bắt đầu `60` đơn vị (mọi loại cộng lại); nâng cấp `+30` mỗi lần, giá `[300, 600, 1000, 1600, 2400]`
+  (tối đa 210). Kho đầy thì không thu hoạch / thu sản phẩm / trộm được (lỗi "Kho đầy, bán bớt hoặc nâng cấp kho.").
+- Bán: `POST /api/farm/sell {item, qty}` (qty ≤ số đang có) và `{all: true}` bán sạch mọi thứ.
+  Tiền bán qua `earn` (đang nợ thì 50% tự trả nợ).
+
+## 5. Chăn nuôi
+
+Chuồng là công trình phải xây (mua) trước khi nuôi:
+
+| id | Tên | Giá xây | Cấp cần | Sức chứa (cơ bản → nâng cấp) | Giá nâng cấp |
+|---|---|---|---|---|---|
+| `coop` | Chuồng gà | 200 | 2 | 4 → 8 | 400 |
+| `pasture` | Đồng cỏ (bò, cừu, dê, heo) | 600 | 3 | 3 → 6 | 900 |
+
+| id | Tên | emoji | Chuồng | Giá | Cấp | Ăn (từ kho) | Thời gian | Sản phẩm | Giá SP | XP |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `ga` | Gà | 🐔 | coop | 80 | 2 | 1 `rau_muong` | 20 phút | `trung` Trứng 🥚 | 22 | 2 |
+| `bo` | Bò | 🐄 | pasture | 300 | 3 | 1 `ngo` | 1 giờ | `sua` Sữa 🥛 | 75 | 6 |
+| `de` | Dê | 🐐 | pasture | 400 | 5 | 1 `ca_chua` | 1.5 giờ | `pho_mai` Phô mai 🧀 | 95 | 8 |
+| `cuu` | Cừu | 🐑 | pasture | 450 | 4 | 2 `ca_rot` | 2 giờ | `len` Len 🧶 | 110 | 10 |
+| `heo` | Heo | 🐖 | pasture | 650 | 6 | 1 `dau_tay` | 3 giờ | `nam` Nấm truffle 🍄 | 220 | 15 |
+
+- Con vật có 3 trạng thái: `hungry` (đói, chờ cho ăn) → `producing` (đã ăn, đang làm ra sản phẩm, có `ready_at`)
+  → `ready` (sẵn sàng thu). Không chết, không héo. Mới mua thì `hungry`.
+- **Cho ăn** (chủ): trừ thức ăn trong kho (thiếu thì lỗi "Thiếu <tên cây> trong kho để cho <tên con> ăn.").
+  Có `feed all` cho mọi con đang đói mà đủ thức ăn.
+- **Thu** (chủ): sản phẩm `1` vào kho, + XP, con vật về `hungry`. Có `collect all`.
+- Người khác **cho ăn giúp** bằng thức ăn trong kho **của chủ**? Không. Hàng xóm chỉ xem được vật nuôi.
+- Bán vật nuôi: không (đơn giản).
+
+## 6. Đơn hàng (xe tải)
+
+- Luôn có tối đa **3 đơn**. Mỗi đơn đòi 1–3 loại hàng (nông sản hoặc sản phẩm chăn nuôi **người chơi đã mở
+  khoá theo cấp**), mỗi loại 1–4 đơn vị. Thưởng xu = `ceil(1.35 × tổng giá trị đơn vị)`, XP = `ceil(xu/10)`.
+- Giao đơn (`POST /api/farm/orders/{id}/deliver`): đủ hàng thì trừ kho, cộng xu (qua `earn`) và XP. Ô đơn đó
+  trống, **đơn mới sau 5 phút**. Huỷ đơn (`DELETE /api/farm/orders/{id}`): ô trống, đơn mới sau 15 phút.
+- Sinh đơn ngẫu nhiên phía máy chủ (dùng RNG đã có), lưu DB.
+- Quest mới `order`: "Giao n đơn hàng" (n = 2, thưởng 50 xu, 12 XP) vào kho quest.
+
+## 7. Mở rộng đất
+
+- Thay cho mua từng ô: **mở rộng theo bậc**. Số ô theo bậc: `[6, 9, 12, 16, 20]`, giá lên bậc kế:
+  `[400, 1000, 2200, 4500]`, cấp cần: `[2, 4, 6, 8]`.
+- Người đã mua lẻ ô trước đây: bậc hiện tại = bậc lớn nhất có số ô ≤ số ô đang có; bậc kế cho số ô của bậc kế.
+  Ô đã có không bị mất.
+- `max_plots` = 20.
+
+## 8. API thêm / đổi
+
+```
+POST /api/farm/sell            {item, qty} | {all:true}        -> FarmView + gained {xu}
+POST /api/farm/expand                                           -> FarmView   (thay /buy-plot; giữ /buy-plot làm bí danh)
+POST /api/farm/storage/upgrade                                  -> FarmView
+POST /api/farm/buildings/{id}           (xây coop | pasture)    -> FarmView
+POST /api/farm/buildings/{id}/upgrade                           -> FarmView
+POST /api/farm/animals         {kind}                           -> FarmView   (mua con vật)
+POST /api/farm/animals/feed    {id} | {all:true}                -> FarmView
+POST /api/farm/animals/collect {id} | {all:true}                -> FarmView + gained {xp}
+POST /api/farm/orders/{id}/deliver                              -> FarmView + gained {xu, xp}
+DELETE /api/farm/orders/{id}                                    -> FarmView
+```
+
+FarmView thêm (chỉ khi `me`, trừ `animals`, `buildings` và `expansion` thì có cả khi xem nhà người khác):
+
+```ts
+items: Item[];        // danh mục mọi món có thể vào kho: nông sản + sản phẩm chăn nuôi
+storage: { cap: number; used: number; next_upgrade?: {price:number} | null; stock: Record<string, number> };
+buildings: { id: "coop"|"pasture"; name: string; built: boolean; cap: number; price: number; level: number;
+             upgrade_price?: number | null }[];
+animal_kinds: AnimalKind[];
+animals: Animal[];
+orders: Order[];      // 3 ô; ô trống có next_at
+expansion: { tier: number; plots: number; next?: { plots: number; price: number; level: number } | null };
+
+type Item = { id: string; name: string; emoji: string; price: number; kind: "crop" | "product"; level: number };
+type AnimalKind = { id: string; name: string; emoji: string; building: "coop"|"pasture"; price: number;
+                    level: number; feed: string; feed_qty: number; time_sec: number; product: string; xp: number };
+type Animal = { id: number; kind: string; state: "hungry"|"producing"|"ready"; ready_at?: string; can_feed: boolean };
+type Order = { slot: number; id?: number; items?: {item:string; qty:number}[]; xu?: number; xp?: number;
+               next_at?: string; can_deliver?: boolean };
+```
+
+`gained` có thêm `items?: Record<string, number>` khi vật vào kho (thu hoạch / thu sản phẩm / trộm).
+`crops[].sell` giữ nguyên (giá cả vụ); giá đơn vị lấy từ `items[].price`.

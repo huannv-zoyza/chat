@@ -20,9 +20,18 @@ import (
 //	POST /api/farm/water      {user_id, plot}
 //	POST /api/farm/bug        {user_id, plot}
 //	POST /api/farm/steal      {user_id, plot}
-//	POST /api/farm/buy-plot
+//	POST /api/farm/expand                  (bí danh cũ: /api/farm/buy-plot)
 //	POST /api/farm/buy-dog
 //	POST /api/farm/quests/{questId}/claim  ("chest" = rương thưởng ngày)
+//	POST /api/farm/sell       {item, qty} | {all: true}
+//	POST /api/farm/storage/upgrade
+//	POST /api/farm/buildings/{id}          xây coop | pasture
+//	POST /api/farm/buildings/{id}/upgrade
+//	POST /api/farm/animals    {kind}       mua con vật
+//	POST /api/farm/animals/feed    {id} | {all: true}
+//	POST /api/farm/animals/collect {id} | {all: true}
+//	POST /api/farm/orders/{id}/deliver
+//	DELETE /api/farm/orders/{id}           huỷ đơn
 //
 // Hành động trả FarmView của nông trại vừa tác động (kèm "gained" / "dog" nếu có). Ví đổi thì người đó
 // nhận wallet.updated; người khác tưới / bắt sâu / trộm / bị chó đuổi thì chủ nhận farm.updated {log}.
@@ -197,8 +206,8 @@ func ownerOrMe(owner, me int64) int64 {
 	return owner
 }
 
-func (a *API) farmBuyPlot(w http.ResponseWriter, r *http.Request) {
-	res, err := a.store.FarmBuyPlot(r.Context(), currentUser(r).ID)
+func (a *API) farmExpand(w http.ResponseWriter, r *http.Request) {
+	res, err := a.store.FarmExpand(r.Context(), currentUser(r).ID)
 	a.farmRespond(w, r, res, err)
 }
 
@@ -209,5 +218,83 @@ func (a *API) farmBuyDog(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) farmClaimQuest(w http.ResponseWriter, r *http.Request) {
 	res, err := a.store.FarmClaimQuest(r.Context(), currentUser(r).ID, r.PathValue("questId"))
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmSell(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Item string `json:"item"`
+		Qty  int64  `json:"qty"`
+		All  bool   `json:"all"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	res, err := a.store.FarmSell(r.Context(), currentUser(r).ID, req.Item, req.Qty, req.All)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmUpgradeStorage(w http.ResponseWriter, r *http.Request) {
+	res, err := a.store.FarmUpgradeStorage(r.Context(), currentUser(r).ID)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmBuild(w http.ResponseWriter, r *http.Request) {
+	res, err := a.store.FarmBuild(r.Context(), currentUser(r).ID, r.PathValue("id"))
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmUpgradeBuilding(w http.ResponseWriter, r *http.Request) {
+	res, err := a.store.FarmUpgradeBuilding(r.Context(), currentUser(r).ID, r.PathValue("id"))
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmBuyAnimal(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Kind string `json:"kind"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	res, err := a.store.FarmBuyAnimal(r.Context(), currentUser(r).ID, req.Kind)
+	a.farmRespond(w, r, res, err)
+}
+
+type farmAnimalReq struct {
+	ID  int64 `json:"id"`
+	All bool  `json:"all"`
+}
+
+func (a *API) farmFeed(w http.ResponseWriter, r *http.Request) {
+	var req farmAnimalReq
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	res, err := a.store.FarmFeed(r.Context(), currentUser(r).ID, req.ID, req.All)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmCollect(w http.ResponseWriter, r *http.Request) {
+	var req farmAnimalReq
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	res, err := a.store.FarmCollect(r.Context(), currentUser(r).ID, req.ID, req.All)
+	a.farmRespond(w, r, res, err)
+}
+
+// orderID: id đơn trên đường dẫn (không hợp lệ thì 0, store báo "Không tìm thấy đơn hàng này.").
+func orderID(r *http.Request) int64 {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	return id
+}
+
+func (a *API) farmDeliverOrder(w http.ResponseWriter, r *http.Request) {
+	res, err := a.store.FarmDeliverOrder(r.Context(), currentUser(r).ID, orderID(r))
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmDiscardOrder(w http.ResponseWriter, r *http.Request) {
+	res, err := a.store.FarmDiscardOrder(r.Context(), currentUser(r).ID, orderID(r))
 	a.farmRespond(w, r, res, err)
 }

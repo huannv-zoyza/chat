@@ -4,7 +4,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
@@ -16,6 +15,7 @@ import {
   formatGrow,
   formatLeft,
   useFarmOpen,
+  type Animal,
   type Crop,
   type FarmLog,
   type FarmView,
@@ -27,6 +27,7 @@ import {
 } from "../lib/farm";
 import { playCoinSound } from "../lib/sound";
 import { useChat } from "../state/ChatProvider";
+import { FarmWorld } from "./FarmWorld";
 import { Avatar, Dialog, EmptyState, Icon } from "./ui";
 
 const errMsg = (err: unknown) =>
@@ -97,11 +98,14 @@ export function FarmOverlay() {
   return createPortal(<Farm />, document.body);
 }
 
-type Tab = "quests" | "neighbors" | "shop" | "log" | "top";
+type Tab =
+  "quests" | "orders" | "storage" | "shop" | "neighbors" | "log" | "top";
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "quests", label: "Nhiệm vụ", icon: "📋" },
-  { id: "neighbors", label: "Hàng xóm", icon: "🏡" },
+  { id: "orders", label: "Đơn hàng", icon: "🚚" },
+  { id: "storage", label: "Kho", icon: "🏚️" },
   { id: "shop", label: "Cửa hàng", icon: "🛒" },
+  { id: "neighbors", label: "Hàng xóm", icon: "🏡" },
   { id: "log", label: "Nhật ký", icon: "📜" },
   { id: "top", label: "Xếp hạng", icon: "🏆" },
 ];
@@ -241,6 +245,15 @@ function Farm() {
         pop(at, `🐕 −${Math.abs(g?.xu ?? 10)} xu`, "bad");
         showToast("Chó giữ nhà đuổi bạn chạy mất dép! 🐕", "bad");
       } else if (g) {
+        // vật vào kho (thu hoạch, thu trứng sữa, trộm): "+3 🍅"
+        const catalog = f.items ?? mine?.items ?? [];
+        Object.entries(g.items ?? {}).forEach(([id, n], i) => {
+          const e =
+            catalog.find((x) => x.id === id)?.emoji ??
+            f.crops.find((c) => c.id === id)?.emoji ??
+            "📦";
+          pop(at, `+${n} ${e}`, "xu", i * 160);
+        });
         if (g.xu)
           pop(at, `${g.xu > 0 ? "+" : ""}${g.xu} 🪙`, g.xu > 0 ? "xu" : "bad");
         if (g.xp) pop(at, `+${g.xp} XP`, "xp", 180);
@@ -318,6 +331,27 @@ function Farm() {
         "Tưới giúp hàng xóm 💧",
       );
     return showToast(plotHint(p, live.state, false, view));
+  };
+
+  const onAnimal = (a: Animal) => {
+    if (!view?.me || busy) return;
+    const k = view.animal_kinds?.find((x) => x.id === a.kind);
+    const ready =
+      a.state === "ready" ||
+      (a.state === "producing" &&
+        !!a.ready_at &&
+        new Date(a.ready_at).getTime() <= now);
+    if (ready) return void act(-1, () => api.farmCollect(a.id));
+    if (a.state === "hungry")
+      return void act(
+        -1,
+        () => api.farmFeed(a.id),
+        `Đã cho ${k?.name.toLowerCase() ?? "con vật"} ăn 🍽️`,
+      );
+    const left = a.ready_at ? new Date(a.ready_at).getTime() - now : 0;
+    showToast(
+      `${k?.name ?? "Con vật"} đang làm ra sản phẩm, còn ${formatLeft(left)}.`,
+    );
   };
 
   const tod = timeOfDay(new Date(now));
@@ -427,69 +461,35 @@ function Farm() {
                     </div>
                   )}
                 </div>
-                <div className="farm-iso">
-                  <div className="farm-world">
-                    <WorldDecor dog={dogLeft > 0} />
-                    <div
-                      className="farm-plots"
-                      style={
-                        {
-                          "--cols": view.max_plots > 9 ? 4 : 3,
-                          "--rows": Math.ceil(
-                            (view.me ? view.max_plots : view.plot_count) /
-                              (view.max_plots > 9 ? 4 : 3),
-                          ),
-                        } as CSSProperties
-                      }
-                    >
-                      {view.plots.map((p) => (
-                        <PlotTile
-                          key={p.index}
-                          plot={p}
-                          view={view}
-                          now={now}
-                          busy={busy}
-                          pops={pops.filter((x) => x.plot === p.index)}
-                          onClick={() => onPlot(p)}
-                        />
-                      ))}
-                      {view.me &&
-                        Array.from(
-                          { length: view.max_plots - view.plot_count },
-                          (_, i) => (
-                            <button
-                              key={`lock${i}`}
-                              type="button"
-                              className="plot is-locked"
-                              onClick={() => setTab("shop")}
-                              aria-label="Ô đất chưa mở, mua ở cửa hàng"
-                            >
-                              <span className="plot-soil" aria-hidden />
-                              <span className="plot-stand" aria-hidden>
-                                <span className="plot-lock">
-                                  {i === 0 ? "🪧" : "🌿"}
-                                </span>
-                                {i === 0 && view.next_plot && (
-                                  <span className="plot-tag">
-                                    <span className="plot-meta">
-                                      Mở ô: {view.next_plot.price} 🪙 · cấp{" "}
-                                      {view.next_plot.level}
-                                    </span>
-                                  </span>
-                                )}
-                              </span>
-                            </button>
-                          ),
-                        )}
-                    </div>
-                  </div>
-                  {pops
-                    .filter((x) => x.plot < 0)
-                    .map((x) => (
-                      <span key={x.id} className={`farm-pop is-${x.tone}`}>
-                        {x.text}
-                      </span>
-                    ))}
+                <FarmWorld
+                  view={view}
+                  now={now}
+                  busy={busy}
+                  dog={dogLeft > 0}
+                  live={(p) => liveState(p, now)}
+                  onPlot={onPlot}
+                  onAnimal={onAnimal}
+                  onBuild={(id) =>
+                    void act(
+                      -1,
+                      () => api.farmBuild(id),
+                      id === "coop"
+                        ? "Đã xây chuồng gà 🐔"
+                        : "Đã xây đồng cỏ 🐄",
+                    )
+                  }
+                  onExpand={() =>
+                    void act(-1, () => api.farmExpand(), "Đã mở rộng ruộng 🌱")
+                  }
+                  onStorage={() => setTab("storage")}
+                  onOrders={() => setTab("orders")}
+                />
+                <div className="farm-pops" aria-hidden>
+                  {pops.map((x) => (
+                    <span key={x.id} className={`farm-pop is-${x.tone}`}>
+                      {x.text}
+                    </span>
+                  ))}
                 </div>
               </>
             ) : (
@@ -559,16 +559,71 @@ function Farm() {
                   visiting={visit?.user.id ?? null}
                 />
               )}
+              {tab === "orders" && mine && (
+                <OrdersPanel
+                  farm={mine}
+                  now={now}
+                  busy={busy}
+                  onDeliver={(id) =>
+                    void act(
+                      -1,
+                      () => api.farmDeliver(id),
+                      "Xe tải đã chở hàng đi 🚚",
+                    )
+                  }
+                  onDiscard={(id) =>
+                    void act(
+                      -1,
+                      () => api.farmDiscard(id),
+                      "Đã huỷ đơn, đơn mới sẽ tới sau ít phút.",
+                    )
+                  }
+                />
+              )}
+              {tab === "storage" && mine && (
+                <StoragePanel
+                  farm={mine}
+                  busy={busy}
+                  onSell={(item, qty) =>
+                    void act(-1, () => api.farmSell(item, qty))
+                  }
+                  onUpgrade={() =>
+                    void act(
+                      -1,
+                      () => api.farmUpgradeStorage(),
+                      "Kho đã rộng hơn 📦",
+                    )
+                  }
+                />
+              )}
               {tab === "shop" && mine && (
                 <ShopPanel
                   farm={mine}
                   now={now}
                   busy={busy}
+                  onBuild={(id) =>
+                    void act(-1, () => api.farmBuild(id), "Đã xây xong 🔨")
+                  }
+                  onUpgradeBuilding={(id) =>
+                    void act(
+                      -1,
+                      () => api.farmUpgradeBuilding(id),
+                      "Chuồng đã rộng hơn 🔨",
+                    )
+                  }
+                  onBuyAnimal={(k) =>
+                    void act(
+                      -1,
+                      () => api.farmBuyAnimal(k),
+                      "Vật nuôi mới đã về chuồng 🐾",
+                    )
+                  }
                   onBuyPlot={() =>
                     void act(
                       -1,
-                      () => api.farmBuyPlot(),
-                      "Đã mở thêm một ô đất 🌱",
+                      () =>
+                        mine.expansion ? api.farmExpand() : api.farmBuyPlot(),
+                      "Đã mở rộng ruộng 🌱",
                     )
                   }
                   onBuyDog={() =>
@@ -628,381 +683,6 @@ function Farm() {
 function Scenery({ tod }: { tod: string; dog: boolean }) {
   // ánh sáng theo giờ phủ lên cả thế giới (bình minh cam, hoàng hôn tím, đêm xanh thẫm)
   return <div className={`farm-tint is-${tod}`} aria-hidden />;
-}
-
-/*
- * Thế giới nông trại (kiểu FarmVille) xếp theo lưới cố định, đơn vị = cạnh một ô ruộng (--p),
- * mặt đất rộng 15 × sâu 13.5 đơn vị. Mỗi khu một vùng riêng, không khu nào đè lên đường:
- *
- *   x: 0.3 ──── 3.9 │4.3 path 4.85│ 5.3 ─── ruộng ─── 10.3 │ 11 ── vườn / ao ── 14.6
- *   y 2.6–6.0  chuồng thú           y 2.7–6.6 ruộng          y 2.6–6.4 vườn cây
- *   y 6.6–10.0 chuồng gà            dưới ruộng: nông dân     y 7.0–9.8 ao
- *   y 10.5–11.1 đường đá ngang ─────────────────────────────────────────────
- *   y 11.5–12.6 hai luống hoa
- */
-const WORLD_W = 15;
-const WORLD_H = 13.5;
-const X = (u: number) => `${(u / WORLD_W) * 100}%`;
-const Y = (u: number) => `${(u / WORLD_H) * 100}%`;
-
-/** Vật đứng trên mặt đất (cây, thú, nhà…): neo đáy-giữa ở (x, y), cỡ s tính theo cạnh ô ruộng. */
-function W({
-  x,
-  y,
-  s = 0.35,
-  c,
-  anim,
-  children,
-}: {
-  x: number;
-  y: number;
-  s?: number;
-  c?: string;
-  anim?: string;
-  children: ReactNode;
-}) {
-  return (
-    <i
-      className={`w${c ? ` ${c}` : ""}`}
-      style={
-        {
-          left: X(x),
-          top: Y(y),
-          fontSize: `calc(var(--p) * ${s})`,
-          animationDelay: anim,
-        } as CSSProperties
-      }
-    >
-      {children}
-    </i>
-  );
-}
-
-/** Mảng nền nằm phẳng trên mặt đất (đường, ao, chuồng, luống): góc trên-trái (x, y), rộng w, sâu h. */
-function G({
-  x,
-  y,
-  w,
-  h,
-  c,
-}: {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  c: string;
-}) {
-  return (
-    <span
-      className={c}
-      style={{ left: X(x), top: Y(y), width: X(w), height: Y(h) }}
-    />
-  );
-}
-
-const FLOWERS = ["🌷", "🌻", "🌼", "🌷", "🌸", "🌻"];
-
-function WorldDecor({ dog }: { dog: boolean }) {
-  return (
-    <div className="world-decor" aria-hidden>
-      {/* nền */}
-      <G x={0.3} y={10.5} w={14.4} h={0.6} c="g-path" />
-      <G x={4.3} y={2.3} w={0.55} h={8.5} c="g-path" />
-      <G x={0.3} y={2.6} w={3.6} h={3.4} c="g-pen pen-animals" />
-      <G x={0.3} y={6.6} w={3.6} h={3.4} c="g-pen pen-chicks" />
-      <G x={11.2} y={7.1} w={3.4} h={2.6} c="g-pond" />
-      <G x={8.7} y={1.1} w={2.0} h={1.25} c="g-bed" />
-      <G x={0.8} y={11.5} w={6.2} h={1.1} c="g-bed" />
-      <G x={8.0} y={11.5} w={6.2} h={1.1} c="g-bed" />
-
-      {/* hàng cây bao quanh phía sau */}
-      {Array.from({ length: 16 }, (_, i) => (
-        <W
-          key={`b${i}`}
-          x={0.4 + i * 0.95}
-          y={i % 2 ? 0.7 : 0.95}
-          s={i % 2 ? 0.5 : 0.45}
-        >
-          {i % 3 === 0 ? "🌲" : "🌳"}
-        </W>
-      ))}
-
-      {/* nhà kho, silo, ruộng lúa */}
-      <W x={6.3} y={2.25} s={0.15} c="w-barn">
-        <span className="farm-barn">
-          <span className="farm-barn-roof" />
-          <span className="farm-barn-door" />
-          <span className="farm-barn-window" />
-        </span>
-      </W>
-      <W x={7.75} y={2.2} s={0.15} c="w-silo">
-        <span className="farm-silo" />
-      </W>
-      {Array.from({ length: 12 }, (_, i) => (
-        <W
-          key={`w${i}`}
-          x={9.0 + (i % 6) * 0.29}
-          y={1.55 + Math.floor(i / 6) * 0.55}
-          s={0.24}
-        >
-          🌾
-        </W>
-      ))}
-
-      {/* chuồng bò, cừu, heo, dê */}
-      <W x={1.0} y={3.6} s={0.4} c="w-graze">
-        🐄
-      </W>
-      <W x={2.4} y={3.3} s={0.3} c="w-graze" anim="-1.2s">
-        🐑
-      </W>
-      <W x={3.2} y={4.2} s={0.3} c="w-graze" anim="-2.4s">
-        🐑
-      </W>
-      <W x={1.6} y={5.0} s={0.3} c="w-graze" anim="-0.6s">
-        🐑
-      </W>
-      <W x={2.9} y={5.6} s={0.34} c="w-graze" anim="-1.8s">
-        🐖
-      </W>
-      <W x={0.8} y={5.6} s={0.28} c="w-graze" anim="-3s">
-        🐐
-      </W>
-
-      {/* chuồng gà */}
-      <W x={2.1} y={7.7} s={0.42}>
-        🛖
-      </W>
-      <W x={0.9} y={8.6} s={0.26} c="w-walk">
-        🐔
-      </W>
-      <W x={2.0} y={9.3} s={0.2} c="w-walk" anim="-3s">
-        🐥
-      </W>
-      <W x={2.8} y={8.4} s={0.26} c="w-walk" anim="-6s">
-        🐓
-      </W>
-      <W x={1.2} y={9.7} s={0.2} c="w-walk" anim="-1.5s">
-        🐥
-      </W>
-
-      {/* vườn cây ăn quả */}
-      {Array.from({ length: 9 }, (_, i) => (
-        <W
-          key={`o${i}`}
-          x={11.7 + (i % 3) * 1.2}
-          y={3.6 + Math.floor(i / 3) * 1.3}
-          s={0.42}
-        >
-          🌳<b className="w-fruit">{i % 3 === 1 ? "🍊" : "🍎"}</b>
-        </W>
-      ))}
-
-      {/* ao vịt */}
-      <W x={12.4} y={8.3} s={0.24} c="w-swim">
-        🦆
-      </W>
-      <W x={13.4} y={8.9} s={0.2} c="w-swim" anim="-2s">
-        🦆
-      </W>
-
-      {/* quanh ruộng (ngoài đường đi) */}
-      <W x={5.8} y={8.3} s={0.44} c="w-idle">
-        🧑‍🌾
-      </W>
-      <W x={6.8} y={8.0} s={0.26}>
-        🧺
-      </W>
-      <W x={10.7} y={7.6} s={0.24}>
-        🪨
-      </W>
-      {dog && (
-        <W x={9.9} y={9.4} s={0.34} c="w-wag">
-          🐕
-        </W>
-      )}
-
-      {/* luống hoa */}
-      {Array.from({ length: 24 }, (_, i) => {
-        const bed = i < 12 ? 0.8 : 8.0;
-        const k = i % 12;
-        return (
-          <W
-            key={`f${i}`}
-            x={bed + 0.45 + (k % 6) * 1.0}
-            y={11.95 + Math.floor(k / 6) * 0.5}
-            s={0.22}
-          >
-            {FLOWERS[i % FLOWERS.length]}
-          </W>
-        );
-      })}
-    </div>
-  );
-}
-
-/* =========================================================
-   Một ô đất
-   ========================================================= */
-
-function cropOf(view: FarmView, id?: string): Crop | undefined {
-  return view.crops.find((c) => c.id === id);
-}
-
-function PlotTile({
-  plot,
-  view,
-  now,
-  busy,
-  pops,
-  onClick,
-}: {
-  plot: Plot;
-  view: FarmView;
-  now: number;
-  busy: boolean;
-  pops: Pop[];
-  onClick: () => void;
-}) {
-  const live = liveState(plot, now);
-  const crop = cropOf(view, plot.crop);
-  const st = live.state;
-  // cây lớn dần: mầm -> lá -> quả nhỏ -> quả chín
-  const glyph =
-    st === "empty"
-      ? null
-      : st === "withered"
-        ? "🥀"
-        : st === "ripe"
-          ? crop?.emoji
-          : live.progress < 0.34
-            ? "🌱"
-            : live.progress < 0.67
-              ? "🌿"
-              : crop?.emoji;
-  const growScale =
-    st === "growing" && live.progress >= 0.67
-      ? 0.62 + (live.progress - 0.67) * 0.9
-      : 1;
-  const action = plotAction(plot, st, view);
-  const label =
-    st === "empty"
-      ? view.me
-        ? "Gieo hạt"
-        : "Đất trống"
-      : st === "ripe"
-        ? view.me
-          ? "Thu hoạch"
-          : plot.can_steal
-            ? "Trộm!"
-            : "Đã chín"
-        : st === "withered"
-          ? view.me
-            ? "Dọn ô"
-            : "Héo rồi"
-          : formatLeft(live.left);
-  const cls = [
-    "plot",
-    `is-${st}`,
-    plot.bug && st === "growing" && "has-bug",
-    plot.waters > 0 && st === "growing" && "is-wet",
-    action && "is-actionable",
-    st === "ripe" && !view.me && plot.can_steal && "is-stealable",
-  ]
-    .filter(Boolean)
-    .join(" ");
-  return (
-    <button
-      type="button"
-      className={cls}
-      onClick={onClick}
-      disabled={busy && st !== "empty"}
-      aria-label={`Ô ${plot.index + 1}: ${crop ? crop.name : "trống"}, ${label}${plot.bug ? ", có sâu" : ""}`}
-    >
-      <span className="plot-soil" aria-hidden />
-      {/* một thửa là cả khóm cây: mỗi cây dựng đứng ở một điểm trên mặt ruộng */}
-      {glyph &&
-        plantSpots(plot.crop).map(([x, y], i) => (
-          <span
-            key={i}
-            className="plot-stand"
-            style={
-              {
-                left: `${50 + x * 100}%`,
-                top: `${50 + y * 100}%`,
-              } as CSSProperties
-            }
-            aria-hidden
-          >
-            <span
-              className={`plot-crop${st === "growing" && live.progress < 0.67 ? " is-sprout" : ""}${
-                plantSpots(plot.crop).length > 4 ? " is-small" : ""
-              }`}
-              style={
-                {
-                  "--grow": growScale,
-                  animationDelay: `${(i % 3) * -0.4}s`,
-                } as CSSProperties
-              }
-            >
-              {glyph}
-            </span>
-          </span>
-        ))}
-      {/* nhãn, sâu, nước… dựng ở giữa thửa */}
-      <span className="plot-stand" aria-hidden>
-        {st === "ripe" && <span className="plot-sparkle">✨</span>}
-        {plot.bug && st === "growing" && <span className="plot-bug">🐛</span>}
-        {plot.waters > 0 && st === "growing" && (
-          <span className="plot-drops">
-            {"💧".repeat(Math.min(3, plot.waters))}
-          </span>
-        )}
-        {st === "empty" && view.me && <span className="plot-plus">+</span>}
-        <span className="plot-tag">
-          {st === "growing" && (
-            <span className="plot-bar">
-              <i style={{ width: `${Math.round(live.progress * 100)}%` }} />
-            </span>
-          )}
-          <span className="plot-meta">{label}</span>
-        </span>
-        {action && <span className="plot-action">{action}</span>}
-        {pops.map((x) => (
-          <span key={x.id} className={`farm-pop is-${x.tone}`}>
-            {x.text}
-          </span>
-        ))}
-      </span>
-    </button>
-  );
-}
-
-/** Vị trí các cây trên một thửa (lệch khỏi tâm, theo tỉ lệ cạnh thửa). Cây to (dưa, bí) 2×2, còn lại 3×3. */
-const SPOTS_3: [number, number][] = [-0.28, 0, 0.28].flatMap((y) =>
-  [-0.28, 0, 0.28].map((x) => [x, y] as [number, number]),
-);
-const SPOTS_2: [number, number][] = [-0.2, 0.2].flatMap((y) =>
-  [-0.2, 0.2].map((x) => [x, y] as [number, number]),
-);
-function plantSpots(crop?: string): [number, number][] {
-  return crop === "dua_hau" || crop === "bi_ngo" ? SPOTS_2 : SPOTS_3;
-}
-
-/** Nút gợi ý nổi trên ô khi rê chuột: việc sẽ xảy ra khi bấm. */
-function plotAction(p: Plot, st: PlotState, view: FarmView): string | null {
-  if (view.me) {
-    if (st === "ripe") return "🧺 Hái";
-    if (st === "withered") return "🧹 Dọn";
-    if (st === "empty") return "🌱 Gieo";
-    if (p.bug) return "🐛 Bắt sâu";
-    if (p.can_water) return "💧 Tưới";
-    return null;
-  }
-  if (st === "ripe" && p.can_steal) return "🫣 Trộm";
-  if (p.bug && p.can_bug) return "🐛 Bắt sâu";
-  if (st === "growing" && p.can_water) return "💧 Tưới giúp";
-  return null;
 }
 
 function plotHint(p: Plot, st: PlotState, me: boolean, view: FarmView): string {
@@ -1464,15 +1144,24 @@ function ShopPanel({
   busy,
   onBuyPlot,
   onBuyDog,
+  onBuild,
+  onUpgradeBuilding,
+  onBuyAnimal,
 }: {
   farm: FarmView;
   now: number;
   busy: boolean;
   onBuyPlot: () => void;
   onBuyDog: () => void;
+  onBuild: (id: string) => void;
+  onUpgradeBuilding: (id: string) => void;
+  onBuyAnimal: (kind: string) => void;
 }) {
   const balance = farm.wallet?.balance ?? 0;
-  const np = farm.next_plot;
+  const exp = farm.expansion?.next;
+  const np = exp ? { price: exp.price, level: exp.level } : farm.next_plot;
+  const animals = farm.animals ?? [];
+  const items = new Map((farm.items ?? []).map((i) => [i.id, i]));
   const dogLeft = farm.dog_until ? new Date(farm.dog_until).getTime() - now : 0;
   const plotBlock = !np
     ? "Đã mở hết ô đất"
@@ -1488,10 +1177,12 @@ function ShopPanel({
           🟫
         </span>
         <div>
-          <b>Mở rộng ô đất</b>
+          <b>Mở rộng ruộng</b>
           <small>
             Đang có {farm.plot_count}/{farm.max_plots} ô
-            {np && ` · ô tiếp theo ${np.price} 🪙, cần cấp ${np.level}`}
+            {exp
+              ? ` · lên ${exp.plots} ô: ${exp.price} 🪙, cần cấp ${exp.level}`
+              : np && ` · ô tiếp theo ${np.price} 🪙, cần cấp ${np.level}`}
           </small>
         </div>
         <button
@@ -1503,6 +1194,110 @@ function ShopPanel({
           {plotBlock ?? `Mua ${np?.price} 🪙`}
         </button>
       </div>
+      {(farm.buildings ?? []).map((b) => {
+        const count = animals.filter(
+          (a) =>
+            farm.animal_kinds?.find((k) => k.id === a.kind)?.building === b.id,
+        ).length;
+        const block = !b.built
+          ? farm.level < b.level
+            ? `Cần cấp ${b.level}`
+            : balance < b.price
+              ? "Thiếu xu"
+              : null
+          : null;
+        return (
+          <div key={b.id} className="shop-card">
+            <span className="shop-icon" aria-hidden>
+              {b.id === "coop" ? "🛖" : "🌿"}
+            </span>
+            <div>
+              <b>{b.name}</b>
+              <small>
+                {b.built
+                  ? `Đang nuôi ${count}/${b.cap} con${b.upgrade_price ? ` · nới chuồng ${b.upgrade_price} 🪙` : ""}`
+                  : `Xây để nuôi ${b.id === "coop" ? "gà" : "bò, dê, cừu, heo"} · cần cấp ${b.level}`}
+              </small>
+            </div>
+            {b.built ? (
+              b.upgrade_price ? (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={busy || balance < b.upgrade_price}
+                  onClick={() => onUpgradeBuilding(b.id)}
+                >
+                  Nới · {b.upgrade_price} 🪙
+                </button>
+              ) : (
+                <span className="quest-claimed">Tối đa</span>
+              )
+            ) : (
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                disabled={!!block || busy}
+                onClick={() => onBuild(b.id)}
+              >
+                {block ?? `Xây · ${b.price} 🪙`}
+              </button>
+            )}
+          </div>
+        );
+      })}
+
+      {(farm.animal_kinds?.length ?? 0) > 0 && (
+        <h3 className="farm-h">Vật nuôi</h3>
+      )}
+      <ul className="animal-shop">
+        {(farm.animal_kinds ?? []).map((k) => {
+          const b = farm.buildings?.find((x) => x.id === k.building);
+          const count = animals.filter(
+            (a) =>
+              farm.animal_kinds?.find((x) => x.id === a.kind)?.building ===
+              k.building,
+          ).length;
+          const block =
+            farm.level < k.level
+              ? `Cấp ${k.level}`
+              : !b?.built
+                ? `Cần ${b?.name.toLowerCase() ?? "chuồng"}`
+                : count >= (b?.cap ?? 0)
+                  ? "Chuồng đầy"
+                  : balance < k.price
+                    ? "Thiếu xu"
+                    : null;
+          const feed = items.get(k.feed);
+          const prod = items.get(k.product);
+          return (
+            <li
+              key={k.id}
+              className={`animal-card${farm.level < k.level ? " is-locked" : ""}`}
+            >
+              <span className="animal-emoji" aria-hidden>
+                {k.emoji}
+              </span>
+              <div>
+                <b>{k.name}</b>
+                <small>
+                  Ăn {k.feed_qty} {feed?.emoji ?? ""}{" "}
+                  {feed?.name.toLowerCase() ?? k.feed} → {prod?.emoji}{" "}
+                  {prod?.name.toLowerCase()} sau {formatGrow(k.time_sec)}
+                </small>
+              </div>
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                disabled={!!block || busy}
+                onClick={() => onBuyAnimal(k.id)}
+              >
+                {block ?? `${k.price} 🪙`}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+
       <div className="shop-card">
         <span className="shop-icon" aria-hidden>
           🐕
@@ -1554,6 +1349,200 @@ function ShopPanel({
             ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/* =========================================================
+   Đơn hàng (xe tải) & Kho
+   ========================================================= */
+
+function OrdersPanel({
+  farm,
+  now,
+  busy,
+  onDeliver,
+  onDiscard,
+}: {
+  farm: FarmView;
+  now: number;
+  busy: boolean;
+  onDeliver: (id: number) => void;
+  onDiscard: (id: number) => void;
+}) {
+  const items = new Map((farm.items ?? []).map((i) => [i.id, i]));
+  const stock = farm.storage?.stock ?? {};
+  if (!farm.orders)
+    return (
+      <EmptyState icon="clock" title="Xe tải chưa tới">
+        Đơn hàng sẽ có sau khi máy chủ cập nhật.
+      </EmptyState>
+    );
+  return (
+    <div className="farm-section">
+      <p className="farm-foot">
+        Gom đủ hàng trong kho rồi giao cho xe tải: lời hơn bán lẻ khoảng 35%.
+      </p>
+      <ul className="order-list">
+        {farm.orders.map((o) =>
+          o.id ? (
+            <li
+              key={o.slot}
+              className={`order-card${o.can_deliver ? " is-ready" : ""}`}
+            >
+              <ul className="order-items">
+                {o.items?.map((it) => {
+                  const have = stock[it.item] ?? 0;
+                  const info = items.get(it.item);
+                  return (
+                    <li
+                      key={it.item}
+                      className={have >= it.qty ? "is-ok" : ""}
+                      title={info?.name}
+                    >
+                      <span aria-hidden>{info?.emoji ?? "📦"}</span>
+                      <b>
+                        {Math.min(have, it.qty)}/{it.qty}
+                      </b>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="order-foot">
+                <span className="order-reward">
+                  +{o.xu} 🪙 · +{o.xp} XP
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={busy}
+                  onClick={() => onDiscard(o.id!)}
+                  title="Huỷ đơn"
+                >
+                  🗑️
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  disabled={busy || !o.can_deliver}
+                  onClick={() => onDeliver(o.id!)}
+                >
+                  Giao
+                </button>
+              </div>
+            </li>
+          ) : (
+            <li key={o.slot} className="order-card is-empty">
+              <span aria-hidden>🚚💨</span>
+              <small>
+                Đơn mới tới sau{" "}
+                {o.next_at
+                  ? formatLeft(new Date(o.next_at).getTime() - now)
+                  : "ít phút"}
+              </small>
+            </li>
+          ),
+        )}
+      </ul>
+    </div>
+  );
+}
+
+function StoragePanel({
+  farm,
+  busy,
+  onSell,
+  onUpgrade,
+}: {
+  farm: FarmView;
+  busy: boolean;
+  onSell: (item: string | "all", qty?: number) => void;
+  onUpgrade: () => void;
+}) {
+  const st = farm.storage;
+  if (!st)
+    return (
+      <EmptyState icon="clock" title="Kho chưa mở">
+        Kho sẽ có sau khi máy chủ cập nhật.
+      </EmptyState>
+    );
+  const rows = (farm.items ?? []).filter((i) => (st.stock[i.id] ?? 0) > 0);
+  const total = rows.reduce((n, i) => n + (st.stock[i.id] ?? 0) * i.price, 0);
+  const pct = Math.min(100, (st.used / Math.max(1, st.cap)) * 100);
+  return (
+    <div className="farm-section">
+      <div className={`storage-cap${pct >= 90 ? " is-full" : ""}`}>
+        <div>
+          <b>
+            Kho {st.used}/{st.cap}
+          </b>
+          <span className="quest-bar">
+            <i style={{ width: `${pct}%` }} />
+          </span>
+        </div>
+        {st.next_upgrade && (
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={
+              busy || (farm.wallet?.balance ?? 0) < st.next_upgrade.price
+            }
+            onClick={onUpgrade}
+          >
+            Nới kho · {st.next_upgrade.price} 🪙
+          </button>
+        )}
+      </div>
+      {rows.length === 0 ? (
+        <EmptyState icon="clock" title="Kho trống">
+          Thu hoạch ruộng và thu trứng, sữa… sẽ cất vào đây.
+        </EmptyState>
+      ) : (
+        <>
+          <ul className="stock-list">
+            {rows.map((i) => {
+              const n = st.stock[i.id] ?? 0;
+              return (
+                <li key={i.id}>
+                  <span className="stock-emoji" aria-hidden>
+                    {i.emoji}
+                  </span>
+                  <span className="stock-main">
+                    <b>{i.name}</b>
+                    <small>
+                      ×{n} · {i.price} 🪙/cái
+                    </small>
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={busy}
+                    onClick={() => onSell(i.id, 1)}
+                  >
+                    Bán 1
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    disabled={busy}
+                    onClick={() => onSell(i.id, n)}
+                  >
+                    Bán hết
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <button
+            type="button"
+            className="btn btn-primary btn-block"
+            disabled={busy}
+            onClick={() => onSell("all")}
+          >
+            Bán tất cả · {total.toLocaleString("vi-VN")} 🪙
+          </button>
+        </>
+      )}
     </div>
   );
 }

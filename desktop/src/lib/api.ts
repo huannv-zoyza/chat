@@ -600,6 +600,19 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     farmBuyPlot: () => request<import("./farm").FarmView>("POST", "/api/farm/buy-plot"),
     farmBuyDog: () => request<import("./farm").FarmView>("POST", "/api/farm/buy-dog"),
     farmClaim: (questId: string) => request<import("./farm").FarmView>("POST", `/api/farm/quests/${questId}/claim`),
+    farmSell: (item: string | "all", qty = 1) =>
+      request<import("./farm").FarmView>("POST", "/api/farm/sell", item === "all" ? { all: true } : { item, qty }),
+    farmExpand: () => request<import("./farm").FarmView>("POST", "/api/farm/expand"),
+    farmUpgradeStorage: () => request<import("./farm").FarmView>("POST", "/api/farm/storage/upgrade"),
+    farmBuild: (id: string) => request<import("./farm").FarmView>("POST", `/api/farm/buildings/${id}`),
+    farmUpgradeBuilding: (id: string) => request<import("./farm").FarmView>("POST", `/api/farm/buildings/${id}/upgrade`),
+    farmBuyAnimal: (kind: string) => request<import("./farm").FarmView>("POST", "/api/farm/animals", { kind }),
+    farmFeed: (id: number | "all") =>
+      request<import("./farm").FarmView>("POST", "/api/farm/animals/feed", id === "all" ? { all: true } : { id }),
+    farmCollect: (id: number | "all") =>
+      request<import("./farm").FarmView>("POST", "/api/farm/animals/collect", id === "all" ? { all: true } : { id }),
+    farmDeliver: (orderId: number) => request<import("./farm").FarmView>("POST", `/api/farm/orders/${orderId}/deliver`),
+    farmDiscard: (orderId: number) => request<import("./farm").FarmView>("DELETE", `/api/farm/orders/${orderId}`),
     listIntegrations: (channelId: number) => request<Integration[]>("GET", `/api/channels/${channelId}/integrations`),
     createIntegration: (channelId: number, name: string, outgoingUrl: string) =>
       request<Integration>("POST", `/api/channels/${channelId}/integrations`, { name, outgoing_url: outgoingUrl }),

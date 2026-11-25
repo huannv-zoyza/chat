@@ -89,7 +89,7 @@ func TestFarmPlantHarvestEconomics(t *testing.T) {
 
 	v := e.view(alice.ID, alice.ID)
 	if !v.Me || v.Level != 1 || v.PlotCount != 6 || len(v.Plots) != 6 || v.Plots[0].State != "empty" ||
-		v.NextPlot == nil || v.NextPlot.Price != 200 || v.NextPlot.Level != 2 || v.Wallet == nil ||
+		v.NextPlot == nil || v.NextPlot.Price != 400 || v.NextPlot.Level != 2 || v.Wallet == nil ||
 		len(v.Quests) != 4 || v.Chest == nil || v.Log == nil || v.StealsLeft != 5 || v.DogUntil != nil ||
 		v.NextLevelXP == nil || *v.NextLevelXP != 30 || len(v.Crops) != 8 {
 		t.Fatalf("fresh farm: %+v", v)
@@ -121,19 +121,21 @@ func TestFarmPlantHarvestEconomics(t *testing.T) {
 	if p := e.view(alice.ID, alice.ID).Plots[0]; p.State != "ripe" || p.Progress != 1 || !p.CanHarvest || p.CanSteal {
 		t.Fatalf("ripe: %+v", p)
 	}
+	// thu hoạch không trả xu: 3 đơn vị vào kho, cộng XP
 	res, err := e.st.FarmHarvest(e.ctx, alice.ID, 0, false)
-	if err != nil || res.Gained == nil || res.Gained.Xu != 14 || res.Gained.XP != 2 || res.Gained.LevelUp != 0 {
+	if err != nil || res.Gained == nil || res.Gained.Xu != 0 || res.Gained.XP != 2 || res.Gained.LevelUp != 0 ||
+		fmt.Sprint(res.Gained.Items) != "map[rau_muong:3]" {
 		t.Fatalf("harvest: %v %+v", err, res.Gained)
 	}
-	if b := e.balance(alice.ID); b != 1004 {
+	if b := e.balance(alice.ID); b != 990 {
 		t.Fatalf("after harvest: %d", b)
 	}
-	if len(res.Wallets) != 1 || res.Wallets[0].Balance != 1004 {
+	if len(res.Wallets) != 0 {
 		t.Fatalf("changed wallets: %+v", res.Wallets)
 	}
 	v = e.view(alice.ID, alice.ID)
-	if v.XP != 2 || v.Plots[0].State != "empty" {
-		t.Fatalf("after harvest view: xp %d plot %+v", v.XP, v.Plots[0])
+	if v.XP != 2 || v.Plots[0].State != "empty" || v.Storage.Used != 3 || v.Storage.Stock["rau_muong"] != 3 {
+		t.Fatalf("after harvest view: xp %d plot %+v storage %+v", v.XP, v.Plots[0], v.Storage)
 	}
 
 	// có sâu (lộ ra từ 50%), không bắt: −30%; bị trộm thì trừ thêm phần bị trộm
@@ -149,11 +151,11 @@ func TestFarmPlantHarvestEconomics(t *testing.T) {
 		t.Fatalf("bug hidden after 50%%: %+v", p)
 	}
 	e.advance(7 * time.Minute)
-	if res, err := e.st.FarmSteal(e.ctx, bob.ID, alice.ID, 0); err != nil || res.Gained.Xu != 3 || *res.Dog {
+	if res, err := e.st.FarmSteal(e.ctx, bob.ID, alice.ID, 0); err != nil || res.Gained.Items["ca_rot"] != 1 || *res.Dog {
 		t.Fatalf("steal: %v %+v", err, res)
 	}
 	res, err = e.st.FarmHarvest(e.ctx, alice.ID, 0, false)
-	if err != nil || res.Gained.Xu != 30*7/10-3 { // 21 − 3 = 18
+	if err != nil || res.Gained.Items["ca_rot"] != 1 { // còn sâu 2, bị trộm 1
 		t.Fatalf("buggy stolen harvest: %v %+v", err, res.Gained)
 	}
 
@@ -170,7 +172,7 @@ func TestFarmPlantHarvestEconomics(t *testing.T) {
 	_, err = e.st.FarmBug(e.ctx, alice.ID, alice.ID, 0)
 	wantErr(t, err, store.ErrFarmNoBug)
 	e.advance(2 * time.Minute)
-	if res, err := e.st.FarmHarvest(e.ctx, alice.ID, 0, true); err != nil || res.Gained.Xu != 14 {
+	if res, err := e.st.FarmHarvest(e.ctx, alice.ID, 0, true); err != nil || res.Gained.Items["rau_muong"] != 3 {
 		t.Fatalf("harvest after bug caught: %v %+v", err, res.Gained)
 	}
 
@@ -182,7 +184,7 @@ func TestFarmPlantHarvestEconomics(t *testing.T) {
 	e.plant(alice.ID, 2, "ca_rot")
 	e.advance(5 * time.Minute)
 	res, err = e.st.FarmHarvest(e.ctx, alice.ID, 0, true)
-	if err != nil || res.Gained.Xu != 28 || res.Gained.XP != 4 {
+	if err != nil || res.Gained.Xu != 0 || res.Gained.XP != 4 || fmt.Sprint(res.Gained.Items) != "map[rau_muong:6]" {
 		t.Fatalf("harvest all: %v %+v", err, res.Gained)
 	}
 	if p := e.view(alice.ID, alice.ID).Plots; p[0].State != "empty" || p[1].State != "empty" || p[2].State != "growing" {
@@ -265,11 +267,15 @@ func TestFarmStealLimits(t *testing.T) {
 	_, err = e.st.FarmSteal(e.ctx, alice.ID, alice.ID, 0)
 	wantErr(t, err, store.ErrFarmOwnSteal)
 	res, err := e.st.FarmSteal(e.ctx, bob.ID, alice.ID, 0)
-	if err != nil || res.Gained.Xu != 2 || res.Dog == nil || *res.Dog || res.Log.Action != "steal" || res.Log.Xu != 2 {
+	if err != nil || res.Gained.Xu != 0 || fmt.Sprint(res.Gained.Items) != "map[rau_muong:1]" || res.Dog == nil || *res.Dog ||
+		res.Log.Action != "steal" || res.Log.Xu != 0 || res.Log.Crop != "rau_muong" {
 		t.Fatalf("steal: %v %+v", err, res)
 	}
-	if b := e.balance(bob.ID); b != 1002 {
+	if b := e.balance(bob.ID); b != 1000 {
 		t.Fatalf("thief balance: %d", b)
+	}
+	if st := e.view(bob.ID, bob.ID).Storage; st.Stock["rau_muong"] != 1 || st.Used != 1 {
+		t.Fatalf("thief storage: %+v", st)
 	}
 	_, err = e.st.FarmSteal(e.ctx, bob.ID, alice.ID, 0)
 	wantErr(t, err, store.ErrFarmStolen) // mỗi người một vụ một lần
@@ -278,7 +284,7 @@ func TestFarmStealLimits(t *testing.T) {
 	}
 	_, err = e.st.FarmSteal(e.ctx, dave.ID, alice.ID, 0)
 	wantErr(t, err, store.ErrFarmStealMax) // mỗi vụ bị trộm tối đa 2 lần
-	if p := e.view(alice.ID, dave.ID).Plots[0]; p.CanSteal || p.Steals != 2 || p.Stolen != 4 {
+	if p := e.view(alice.ID, dave.ID).Plots[0]; p.CanSteal || p.Steals != 2 || p.Stolen != 2 {
 		t.Fatalf("plot after 2 steals: %+v", p)
 	}
 
@@ -386,7 +392,7 @@ func TestFarmDog(t *testing.T) {
 	}
 	// chó không đuổi (roll ≥ 0.5): trộm bình thường
 	e.setRoll(0.7)
-	if res, err := e.st.FarmSteal(e.ctx, bob.ID, alice.ID, 1); err != nil || *res.Dog || res.Gained.Xu != 2 {
+	if res, err := e.st.FarmSteal(e.ctx, bob.ID, alice.ID, 1); err != nil || *res.Dog || res.Gained.Items["rau_muong"] != 1 {
 		t.Fatalf("lucky thief: %v %+v", err, res)
 	}
 	// hết hạn chó: không đuổi nữa
@@ -438,10 +444,10 @@ func TestFarmWitherAndClear(t *testing.T) {
 	e.plant(alice.ID, 0, "rau_muong")
 }
 
-func TestFarmLevelUpAndBuyPlot(t *testing.T) {
+func TestFarmLevelUpAndExpand(t *testing.T) {
 	e := newFarmEnv(t)
 	alice := e.user("alice")
-	_, err := e.st.FarmBuyPlot(e.ctx, alice.ID)
+	_, err := e.st.FarmExpand(e.ctx, alice.ID)
 	wantFarmErr(t, err) // cần cấp 2
 
 	// 6 ô cà rốt × 4 XP = 24; vụ thứ hai vượt 30 XP: lên cấp 2, thưởng 40 xu
@@ -461,29 +467,29 @@ func TestFarmLevelUpAndBuyPlot(t *testing.T) {
 	}
 	before := e.balance(alice.ID)
 	res := round()
-	if res.Gained.LevelUp != 2 || res.Gained.Xu != 180 {
+	if res.Gained.LevelUp != 2 || res.Gained.Xu != 0 || res.Gained.Items["ca_rot"] != 18 || len(res.Wallets) != 1 {
 		t.Fatalf("round 2: %+v", res.Gained)
 	}
-	if got := e.balance(alice.ID); got != before-120+180+40 {
-		t.Fatalf("level-up reward: %d, want %d", got, before-120+180+40)
+	if got := e.balance(alice.ID); got != before-120+40 {
+		t.Fatalf("level-up reward: %d, want %d", got, before-120+40)
 	}
 	v := e.view(alice.ID, alice.ID)
-	if v.Level != 2 || v.XP != 48 || v.LevelXP != 30 || *v.NextLevelXP != 80 {
+	if v.Level != 2 || v.XP != 48 || v.LevelXP != 30 || *v.NextLevelXP != 80 || v.Storage.Stock["ca_rot"] != 36 {
 		t.Fatalf("level view: %+v", v)
 	}
 	before = e.balance(alice.ID)
-	if _, err := e.st.FarmBuyPlot(e.ctx, alice.ID); err != nil {
+	if _, err := e.st.FarmExpand(e.ctx, alice.ID); err != nil {
 		t.Fatal(err)
 	}
 	v = e.view(alice.ID, alice.ID)
-	if v.PlotCount != 7 || len(v.Plots) != 7 || e.balance(alice.ID) != before-200 || v.NextPlot.Price != 300 || v.NextPlot.Level != 3 {
-		t.Fatalf("after buying plot: count %d next %+v balance %d", v.PlotCount, v.NextPlot, e.balance(alice.ID))
+	if v.PlotCount != 9 || len(v.Plots) != 9 || e.balance(alice.ID) != before-400 || v.NextPlot.Price != 1000 || v.NextPlot.Level != 4 {
+		t.Fatalf("after expanding: count %d next %+v balance %d", v.PlotCount, v.NextPlot, e.balance(alice.ID))
 	}
-	e.plant(alice.ID, 6, "ca_chua") // ô mới dùng được, cà chua đã mở ở cấp 2
-	_, err = e.st.FarmBuyPlot(e.ctx, alice.ID)
-	wantFarmErr(t, err) // ô thứ 8 cần cấp 3
-	if v := e.view(alice.ID, alice.ID); v.PlotCount != 7 {
-		t.Fatalf("plot bought without level: %d", v.PlotCount)
+	e.plant(alice.ID, 8, "ca_chua") // ô mới dùng được, cà chua đã mở ở cấp 2
+	_, err = e.st.FarmExpand(e.ctx, alice.ID)
+	wantFarmErr(t, err) // bậc 3 cần cấp 4
+	if v := e.view(alice.ID, alice.ID); v.PlotCount != 9 {
+		t.Fatalf("expanded without level: %d", v.PlotCount)
 	}
 }
 
@@ -496,7 +502,11 @@ func TestFarmAutoRepayWhileInDebt(t *testing.T) {
 	}
 	e.plant(alice.ID, 0, "ca_rot") // −20 → 330
 	e.advance(15 * time.Minute)
-	e.st.FarmHarvest(e.ctx, alice.ID, 0, false) // +30, trả nợ 15 → 345 / 345
+	e.st.FarmHarvest(e.ctx, alice.ID, 0, false) // 3 cà rốt vào kho, chưa có xu
+	if w, _ := e.st.GetWallet(e.ctx, alice.ID); w.Balance != 330 || w.Debt != 360 {
+		t.Fatalf("harvest paid coins: %+v", w)
+	}
+	e.st.FarmSell(e.ctx, alice.ID, "", 0, true) // 3 × 10 = +30, trả nợ 15 → 345 / 345
 	w, _ := e.st.GetWallet(e.ctx, alice.ID)
 	if w.Balance != 345 || w.Debt != 345 {
 		t.Fatalf("auto repay: %+v", w)
@@ -508,6 +518,8 @@ func TestFarmQuestsAndChest(t *testing.T) {
 	me := e.user("farmer")
 	n := []model.User{e.user("n1"), e.user("n2"), e.user("n3")}
 
+	// đơn hàng sinh lúc xem lần đầu: roll 0 → mỗi đơn 1 rau muống (thưởng 7 xu, 1 XP)
+	e.setRoll(0)
 	// chọn ngày có bộ nhiệm vụ không gồm plant_rare (cần cấp 3) để làm xong được cả 4
 	var quests []store.Quest
 	for range 60 {
@@ -526,6 +538,7 @@ func TestFarmQuestsAndChest(t *testing.T) {
 		}
 		e.advance(24 * time.Hour)
 	}
+	e.setRoll(0.9)
 	if again := e.view(me.ID, me.ID).Quests; fmt.Sprint(again) != fmt.Sprint(quests) {
 		t.Fatalf("quests not stable: %v vs %v", again, quests)
 	}
@@ -537,7 +550,7 @@ func TestFarmQuestsAndChest(t *testing.T) {
 	wantErr(t, err, store.ErrFarmNoQuest)
 
 	// làm đủ mọi loại việc (trừ plant_rare)
-	for range 11 { // harvest ≥ 5, plant ≥ 6, earn 11 × 14 = 154 ≥ 150
+	for range 11 { // harvest ≥ 5, plant ≥ 6; 33 rau muống vào kho
 		e.plant(me.ID, 0, "rau_muong")
 		e.advance(5 * time.Minute)
 		if _, err := e.st.FarmHarvest(e.ctx, me.ID, 0, false); err != nil {
@@ -573,6 +586,15 @@ func TestFarmQuestsAndChest(t *testing.T) {
 		}
 	}
 	e.st.FarmVisit(e.ctx, me.ID, n[0].ID) // ghé lại không tính thêm
+	// giao 2 đơn (order), rồi bán hết kho: 33 + 2 trộm − 2 giao = 33 × 5 = 165 (+ 14 tiền đơn) ≥ 150 (earn)
+	for _, o := range e.view(me.ID, me.ID).Orders[:2] {
+		if _, err := e.st.FarmDeliverOrder(e.ctx, me.ID, o.ID); err != nil {
+			t.Fatalf("deliver %+v: %v", o, err)
+		}
+	}
+	if res, err := e.st.FarmSell(e.ctx, me.ID, "", 0, true); err != nil || res.Gained.Xu != 165 {
+		t.Fatalf("sell all: %v %+v", err, res.Gained)
+	}
 
 	v := e.view(me.ID, me.ID)
 	for _, q := range v.Quests {

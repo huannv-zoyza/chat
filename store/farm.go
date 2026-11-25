@@ -53,15 +53,9 @@ func cropByID(id string) (Crop, bool) {
 // LevelXP[n-1]: tổng XP cần để đạt cấp n (cấp 1..10).
 var LevelXP = []int64{0, 30, 80, 160, 280, 450, 680, 1000, 1400, 1900}
 
-// Ô đất thứ 7..12: giá và cấp tối thiểu.
-var (
-	PlotPrices = []int64{200, 300, 450, 600, 800, 1000}
-	PlotLevels = []int{2, 3, 4, 5, 6, 7}
-)
-
 const (
 	FarmStartPlots   = 6
-	FarmMaxPlots     = 12
+	FarmMaxPlots     = 20 // ô tối đa (bậc mở rộng cuối, xem ExpandPlots)
 	FarmWitherAfter  = 12 * time.Hour
 	FarmMaxWaters    = 3
 	FarmMaxSteals    = 2 // mỗi vụ bị trộm tối đa
@@ -103,8 +97,9 @@ var questDefs = []questDef{
 	{"water", "Tưới nước giúp 3 người hàng xóm", 3, 30, 8},
 	{"bug", "Bắt 2 con sâu", 2, 30, 8},
 	{"steal", "Trộm thành công 2 lần", 2, 25, 6},
-	{"earn", "Bán nông sản được 150 xu", 150, 50, 12},
+	{"earn", "Bán hàng / giao đơn được 150 xu", 150, 50, 12},
 	{"visit", "Ghé thăm 3 nông trại khác", 3, 20, 5},
+	{"order", "Giao 2 đơn hàng", 2, 50, 12},
 }
 
 const (
@@ -170,7 +165,7 @@ var (
 	ErrFarmStealMax     = &FarmError{"Vụ này đã bị trộm đủ 2 lần."}
 	ErrFarmStolen       = &FarmError{"Bạn đã trộm vụ này rồi."}
 	ErrFarmStealDaily   = &FarmError{"Hôm nay bạn đã trộm đủ 5 lần."}
-	ErrFarmMaxPlots     = &FarmError{"Nông trại đã đủ 12 ô."}
+	ErrFarmMaxPlots     = &FarmError{"Nông trại đã mở rộng tối đa."}
 	ErrFarmDogMax       = &FarmError{"Chó đã canh nhà đủ 72 giờ rồi."}
 	ErrFarmNoQuest      = &FarmError{"Hôm nay không có nhiệm vụ này."}
 	ErrFarmQuestNotDone = &FarmError{"Nhiệm vụ chưa hoàn thành."}
@@ -229,11 +224,14 @@ type LogEntry struct {
 	Xu     int64            `json:"xu,omitempty"`
 }
 
-// Gained: kết quả hành động vừa làm. Xu không gồm thưởng lên cấp (20 × cấp mới, cộng riêng).
+// Gained: kết quả hành động vừa làm. Xu là số xu kiếm được trước khi tự trừ nợ, không gồm thưởng
+// lên cấp (20 × cấp mới, cộng riêng); âm khi bị chó đuổi. Items: số đơn vị vừa vào kho (thu hoạch,
+// thu sản phẩm, trộm).
 type Gained struct {
-	Xu      int64 `json:"xu"`
-	XP      int64 `json:"xp"`
-	LevelUp int   `json:"level_up,omitempty"`
+	Xu      int64            `json:"xu"`
+	XP      int64            `json:"xp"`
+	LevelUp int              `json:"level_up,omitempty"`
+	Items   map[string]int64 `json:"items,omitempty"`
 }
 
 type FarmView struct {
@@ -257,6 +255,15 @@ type FarmView struct {
 	StealsLeft  int              `json:"steals_left"`
 	Gained      *Gained          `json:"gained,omitempty"`
 	Dog         *bool            `json:"dog,omitempty"`
+
+	// Phần 2. items, storage, animal_kinds, orders chỉ có khi me; buildings, animals, expansion luôn có.
+	Items       []Item         `json:"items,omitempty"`
+	Storage     *StorageView   `json:"storage,omitempty"`
+	Buildings   []BuildingView `json:"buildings"`
+	AnimalKinds []AnimalKind   `json:"animal_kinds,omitempty"`
+	Animals     []Animal       `json:"animals"`
+	Orders      []Order        `json:"orders,omitempty"`
+	Expansion   Expansion      `json:"expansion"`
 }
 
 type Neighbor struct {
@@ -287,9 +294,10 @@ type FarmResult struct {
 /* ---------- Đọc dữ liệu thô ---------- */
 
 type farmRow struct {
-	XP       int64
-	Plots    int
-	DogUntil int64
+	XP           int64
+	Plots        int
+	DogUntil     int64
+	StorageLevel int
 }
 
 type plotRow struct {
@@ -380,8 +388,8 @@ func userLabel(u model.PublicUser) string {
 
 func readFarm(ctx context.Context, q execQuerier, userID int64) (farmRow, error) {
 	f := farmRow{Plots: FarmStartPlots}
-	err := q.QueryRowContext(ctx, `SELECT xp, plots, dog_until FROM farms WHERE user_id = ?`, userID).
-		Scan(&f.XP, &f.Plots, &f.DogUntil)
+	err := q.QueryRowContext(ctx, `SELECT xp, plots, dog_until, storage_level FROM farms WHERE user_id = ?`, userID).
+		Scan(&f.XP, &f.Plots, &f.DogUntil, &f.StorageLevel)
 	if errors.Is(err, sql.ErrNoRows) {
 		return f, nil
 	}
@@ -651,16 +659,17 @@ func (s *Store) FarmPlant(ctx context.Context, userID int64, idx int, cropID str
 	return res, err
 }
 
-// harvestValue: số xu thu được từ một vụ chín.
-func harvestValue(p *plotRow) int64 {
-	v := p.Crop.Sell
+// harvestUnits: số đơn vị nông sản một vụ chín cho vào kho: 3 (còn sâu: 2) trừ phần bị trộm, tối thiểu 1.
+func harvestUnits(p *plotRow) int64 {
+	u := int64(FarmHarvestUnits)
 	if p.Bug {
-		v = v * 7 / 10
+		u--
 	}
-	return max(v-p.Stolen, 1)
+	return max(u-p.Stolen, 1)
 }
 
-// FarmHarvest: thu hoạch ô idx (hoặc mọi ô chín nếu all) của userID.
+// FarmHarvest: thu hoạch ô idx (hoặc mọi ô chín nếu all) của userID. Nông sản vào kho (không trả xu),
+// cộng XP của cây. Kho không đủ chỗ thì báo đầy; harvest all thu lần lượt các ô còn vừa kho.
 func (s *Store) FarmHarvest(ctx context.Context, userID int64, idx int, all bool) (FarmResult, error) {
 	res := FarmResult{OwnerID: userID}
 	var err error
@@ -695,33 +704,40 @@ func (s *Store) FarmHarvest(ctx context.Context, userID int64, idx int, all bool
 			}
 			ripe = append(ripe, *p)
 		}
-		var xu, xp int64
+		room, err := op.storageRoom(userID)
+		if err != nil {
+			return err
+		}
+		var xp, n int64
+		items := map[string]int64{}
 		for i := range ripe {
 			p := &ripe[i]
-			xu += harvestValue(p)
+			u := harvestUnits(p)
+			if u > room {
+				continue
+			}
+			room -= u
+			n++
+			items[p.Crop.ID] += u
 			xp += p.Crop.XP
 			if _, err := op.tx.ExecContext(ctx, `DELETE FROM farm_plots WHERE id = ?`, p.ID); err != nil {
 				return err
 			}
+			if err := op.addStock(userID, p.Crop.ID, u); err != nil {
+				return err
+			}
 		}
-		note := "Bán " + ripe[0].Crop.Name
-		if len(ripe) > 1 {
-			note = fmt.Sprintf("Bán nông sản (%d ô)", len(ripe))
+		if n == 0 {
+			return ErrFarmStorageFull
 		}
-		if err := op.earn(userID, xu, note); err != nil {
-			return err
-		}
-		if err := op.bump(userID, "harvest", int64(len(ripe))); err != nil {
-			return err
-		}
-		if err := op.bump(userID, "earn", xu); err != nil {
+		if err := op.bump(userID, "harvest", n); err != nil {
 			return err
 		}
 		lv, err := op.addXP(userID, xp)
 		if err != nil {
 			return err
 		}
-		res.Gained = &Gained{Xu: xu, XP: xp, LevelUp: lv}
+		res.Gained = &Gained{XP: xp, LevelUp: lv, Items: items}
 		return nil
 	})
 	return res, err
@@ -749,8 +765,9 @@ func (s *Store) FarmClear(ctx context.Context, userID int64, idx int) (FarmResul
 	return res, err
 }
 
-// FarmBuyPlot: mua thêm một ô đất.
-func (s *Store) FarmBuyPlot(ctx context.Context, userID int64) (FarmResult, error) {
+// FarmExpand: mở rộng nông trại lên bậc kế (ExpandPlots). Người đã mua lẻ ô ở phần 1 đang ở bậc lớn
+// nhất có số ô ≤ số ô đang có; mở rộng thì lên đúng số ô của bậc kế.
+func (s *Store) FarmExpand(ctx context.Context, userID int64) (FarmResult, error) {
 	res := FarmResult{OwnerID: userID}
 	var err error
 	res.Wallets, err = s.farmTx(ctx, func(op *farmOp) error {
@@ -758,17 +775,17 @@ func (s *Store) FarmBuyPlot(ctx context.Context, userID int64) (FarmResult, erro
 		if err != nil {
 			return err
 		}
-		if f.Plots >= FarmMaxPlots {
+		next := expansionOf(f.Plots).Next
+		if next == nil {
 			return ErrFarmMaxPlots
 		}
-		k := f.Plots - FarmStartPlots
-		if levelFor(f.XP) < PlotLevels[k] {
-			return farmErr("Cần đạt cấp %d mới mua được ô đất thứ %d.", PlotLevels[k], f.Plots+1)
+		if levelFor(f.XP) < next.Level {
+			return farmErr("Cần đạt cấp %d mới mở rộng được nông trại.", next.Level)
 		}
-		if err := op.spend(userID, PlotPrices[k], fmt.Sprintf("Mua ô đất thứ %d", f.Plots+1)); err != nil {
+		if err := op.spend(userID, next.Price, fmt.Sprintf("Mở rộng nông trại lên %d ô", next.Plots)); err != nil {
 			return err
 		}
-		_, err = op.tx.ExecContext(ctx, `UPDATE farms SET plots = plots + 1 WHERE user_id = ?`, userID)
+		_, err = op.tx.ExecContext(ctx, `UPDATE farms SET plots = ? WHERE user_id = ?`, next.Plots, userID)
 		return err
 	})
 	return res, err
@@ -906,7 +923,8 @@ func (s *Store) FarmBug(ctx context.Context, actorID, ownerID int64, idx int) (F
 	return res, err
 }
 
-// FarmSteal: thiefID trộm ô idx của ownerID. Chủ có chó còn hạn thì 50% bị chó đuổi.
+// FarmSteal: thiefID trộm ô idx của ownerID: lấy 1 đơn vị nông sản vào kho mình (kho đầy thì không
+// trộm được). Chủ có chó còn hạn thì 50% bị chó đuổi.
 func (s *Store) FarmSteal(ctx context.Context, thiefID, ownerID int64, idx int) (FarmResult, error) {
 	res := FarmResult{OwnerID: ownerID}
 	var err error
@@ -950,6 +968,11 @@ func (s *Store) FarmSteal(ctx context.Context, thiefID, ownerID int64, idx int) 
 		if tries >= FarmStealsPerDay {
 			return ErrFarmStealDaily
 		}
+		if room, err := op.storageRoom(thiefID); err != nil {
+			return err
+		} else if room < 1 {
+			return ErrFarmStorageFull
+		}
 		if _, err := op.addAct(p.ID, thiefID, "steal"); err != nil {
 			return err
 		}
@@ -982,19 +1005,18 @@ func (s *Store) FarmSteal(ctx context.Context, thiefID, ownerID int64, idx int) 
 			res.Log, err = op.log(ownerID, thief, "dog", p.Crop.ID, fine)
 			return err
 		}
-		amount := (p.Crop.Sell + 9) / 10 // ceil(sell * 10%)
 		if _, err := op.tx.ExecContext(ctx,
-			`UPDATE farm_plots SET stolen = stolen + ?, steals = steals + 1 WHERE id = ?`, amount, p.ID); err != nil {
+			`UPDATE farm_plots SET stolen = stolen + 1, steals = steals + 1 WHERE id = ?`, p.ID); err != nil {
 			return err
 		}
-		if err := op.earn(thiefID, amount, "Trộm "+p.Crop.Name+" của "+userLabel(owner)); err != nil {
+		if err := op.addStock(thiefID, p.Crop.ID, 1); err != nil {
 			return err
 		}
 		if err := op.bump(thiefID, "steal", 1); err != nil {
 			return err
 		}
-		res.Gained = &Gained{Xu: amount}
-		res.Log, err = op.log(ownerID, thief, "steal", p.Crop.ID, amount)
+		res.Gained = &Gained{Items: map[string]int64{p.Crop.ID: 1}}
+		res.Log, err = op.log(ownerID, thief, "steal", p.Crop.ID, 0)
 		return err
 	})
 	return res, err
@@ -1133,12 +1155,18 @@ func (s *Store) FarmVisit(ctx context.Context, viewerID, ownerID int64) (FarmVie
 
 // GetFarm: nông trại ownerID dưới góc nhìn viewerID (chính chủ thì kèm ví, nhiệm vụ, nhật ký).
 func (s *Store) GetFarm(ctx context.Context, ownerID, viewerID int64) (FarmView, error) {
-	nowT := s.now()
-	now, day := nowT.Unix(), vnDay(nowT)
+	me := ownerID == viewerID
 	owner, err := farmUser(ctx, s.db, ownerID)
 	if err != nil {
 		return FarmView{}, err
 	}
+	if me { // ô đơn hàng đã tới giờ thì sinh đơn mới trước khi đọc
+		if err := s.refillOrders(ctx, ownerID); err != nil {
+			return FarmView{}, err
+		}
+	}
+	nowT := s.now()
+	now, day := nowT.Unix(), vnDay(nowT)
 	f, err := readFarm(ctx, s.db, ownerID)
 	if err != nil {
 		return FarmView{}, err
@@ -1155,7 +1183,6 @@ func (s *Store) GetFarm(ctx context.Context, ownerID, viewerID int64) (FarmView,
 	if err != nil {
 		return FarmView{}, err
 	}
-	me := ownerID == viewerID
 	lv := levelFor(f.XP)
 	v := FarmView{
 		User: owner, Me: me, Level: lv, XP: f.XP, LevelXP: LevelXP[lv-1],
@@ -1167,8 +1194,9 @@ func (s *Store) GetFarm(ctx context.Context, ownerID, viewerID int64) (FarmView,
 		next := LevelXP[lv]
 		v.NextLevelXP = &next
 	}
-	if k := f.Plots - FarmStartPlots; f.Plots < FarmMaxPlots && k >= 0 {
-		v.NextPlot = &NextPlot{Price: PlotPrices[k], Level: PlotLevels[k]}
+	v.Expansion = expansionOf(f.Plots)
+	if n := v.Expansion.Next; n != nil {
+		v.NextPlot = &NextPlot{Price: n.Price, Level: n.Level}
 	}
 	if f.DogUntil > now {
 		d := rfc(f.DogUntil)
@@ -1181,6 +1209,9 @@ func (s *Store) GetFarm(ctx context.Context, ownerID, viewerID int64) (FarmView,
 	v.Plots = make([]Plot, f.Plots)
 	for i := range v.Plots {
 		v.Plots[i] = buildPlot(i, byIdx[i], now, me, acts, v.StealsLeft)
+	}
+	if err := s.fillFarmV2(ctx, &v, ownerID, f, now); err != nil {
+		return FarmView{}, err
 	}
 	if !me {
 		return v, nil

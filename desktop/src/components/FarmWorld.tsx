@@ -1,0 +1,1359 @@
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as RPointerEvent,
+  type ReactNode,
+} from "react";
+import {
+  formatLeft,
+  type Animal,
+  type Crop,
+  type FarmView,
+  type Plot,
+  type PlotState,
+} from "../lib/farm";
+
+/*
+ * Nông trại vẽ isometric bằng SVG (kiểu FarmVille / Hay Day): mặt đất là lưới ô thoi 2:1, mọi vật là khối
+ * có mặt trên + hai mặt bên đậm nhạt khác nhau, có bóng đổ, vẽ theo thứ tự xa → gần.
+ *
+ * Toạ độ lưới (gx, gy): gx tăng về phía dưới-phải, gy tăng về phía dưới-trái; z là độ cao (px màn hình).
+ * Bố cục (ô lưới), mặt đất 24 × 20:
+ *   - Ruộng: gốc (9, 6), tối đa 5 cột × 4 hàng
+ *   - Chuồng gà: (2..7, 2..6) · Đồng cỏ: (2..7, 9..15)   (bên trái đường dọc gx = 8)
+ *   - Nhà kho (kho chứa): (10..13, 1..3) · Silo (14, 2) · Xe tải đơn hàng: (20, 16)
+ *   - Ao: (17..21, 9..13) · Đường đá: dọc gx = 8, ngang gy = 16
+ */
+
+const TW = 96; // bề ngang một ô thoi
+const TH = 48; // bề cao một ô thoi
+const GW = 24;
+const GH = 20;
+const FIELD = { gx: 9.2, gy: 6.2 };
+const TIERS: { cols: number; rows: number }[] = [
+  { cols: 3, rows: 2 },
+  { cols: 3, rows: 3 },
+  { cols: 4, rows: 3 },
+  { cols: 4, rows: 4 },
+  { cols: 5, rows: 4 },
+];
+const COOP = { gx: 2, gy: 2, w: 5, d: 4.4 };
+const PASTURE = { gx: 2, gy: 9, w: 5.4, d: 5.6 };
+
+/** Danh mục vật nuôi dự phòng: xem vườn hàng xóm máy chủ không gửi animal_kinds. */
+const ANIMAL_FALLBACK: Record<
+  string,
+  { emoji: string; building: "coop" | "pasture"; product: string }
+> = {
+  ga: { emoji: "🐔", building: "coop", product: "🥚" },
+  bo: { emoji: "🐄", building: "pasture", product: "🥛" },
+  de: { emoji: "🐐", building: "pasture", product: "🧀" },
+  cuu: { emoji: "🐑", building: "pasture", product: "🧶" },
+  heo: { emoji: "🐖", building: "pasture", product: "🍄" },
+};
+
+type P = [number, number];
+const pt = (x: number, y: number, z = 0): P => [
+  ((x - y) * TW) / 2,
+  ((x + y) * TH) / 2 - z,
+];
+const poly = (ps: P[]) =>
+  ps.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
+
+function layoutFor(n: number) {
+  return TIERS.find((t) => t.cols * t.rows >= n) ?? TIERS[TIERS.length - 1];
+}
+
+/** Khối hộp: mặt trên + mặt trước-trái + mặt trước-phải. */
+function Box({
+  x,
+  y,
+  w,
+  d,
+  h,
+  z = 0,
+  top,
+  left,
+  right,
+  stroke,
+}: {
+  x: number;
+  y: number;
+  w: number;
+  d: number;
+  h: number;
+  z?: number;
+  top: string;
+  left: string;
+  right: string;
+  stroke?: string;
+}) {
+  const A = (zz: number) => pt(x, y, zz);
+  const B = (zz: number) => pt(x + w, y, zz);
+  const C = (zz: number) => pt(x + w, y + d, zz);
+  const D = (zz: number) => pt(x, y + d, zz);
+  const s = stroke
+    ? { stroke, strokeWidth: 1.2, strokeLinejoin: "round" as const }
+    : {};
+  return (
+    <g>
+      <polygon
+        points={poly([D(z + h), C(z + h), C(z), D(z)])}
+        fill={left}
+        {...s}
+      />
+      <polygon
+        points={poly([B(z + h), C(z + h), C(z), B(z)])}
+        fill={right}
+        {...s}
+      />
+      <polygon
+        points={poly([A(z + h), B(z + h), C(z + h), D(z + h)])}
+        fill={top}
+        {...s}
+      />
+    </g>
+  );
+}
+
+/** Bóng đổ hình bầu dục dưới chân vật. */
+function Shadow({
+  x,
+  y,
+  r = 0.35,
+  o = 0.22,
+}: {
+  x: number;
+  y: number;
+  r?: number;
+  o?: number;
+}) {
+  const [cx, cy] = pt(x, y);
+  return (
+    <ellipse
+      cx={cx}
+      cy={cy}
+      rx={(r * TW) / 1.4}
+      ry={(r * TH) / 1.4}
+      fill={`rgba(30,50,10,${o})`}
+    />
+  );
+}
+
+/** Emoji dựng đứng ở (x, y), đáy chạm đất. */
+function Sprite({
+  x,
+  y,
+  size,
+  children,
+  className,
+  z = 0,
+}: {
+  x: number;
+  y: number;
+  size: number;
+  children: ReactNode;
+  className?: string;
+  z?: number;
+}) {
+  const [cx, cy] = pt(x, y, z);
+  return (
+    <text
+      x={cx}
+      y={cy + size * 0.12}
+      fontSize={size}
+      textAnchor="middle"
+      className={className}
+      style={{ transformOrigin: `${cx}px ${cy}px` }}
+    >
+      {children}
+    </text>
+  );
+}
+
+function Tree({
+  x,
+  y,
+  s = 1,
+  fruit,
+}: {
+  x: number;
+  y: number;
+  s?: number;
+  fruit?: string;
+}) {
+  const [cx, cy] = pt(x, y);
+  const r = 26 * s;
+  return (
+    <g className="iso-tree">
+      <Shadow x={x + 0.15} y={y + 0.15} r={0.45 * s} o={0.25} />
+      <rect
+        x={cx - 4 * s}
+        y={cy - 30 * s}
+        width={8 * s}
+        height={30 * s}
+        rx={3}
+        fill="#8a5a2c"
+      />
+      <circle cx={cx} cy={cy - 44 * s} r={r} fill="url(#leaf)" />
+      <circle
+        cx={cx - r * 0.6}
+        cy={cy - 34 * s}
+        r={r * 0.7}
+        fill="url(#leaf)"
+      />
+      <circle
+        cx={cx + r * 0.62}
+        cy={cy - 36 * s}
+        r={r * 0.68}
+        fill="url(#leaf2)"
+      />
+      {fruit && (
+        <>
+          <circle cx={cx - 9 * s} cy={cy - 48 * s} r={4 * s} fill={fruit} />
+          <circle cx={cx + 11 * s} cy={cy - 40 * s} r={4 * s} fill={fruit} />
+          <circle cx={cx + 2 * s} cy={cy - 60 * s} r={4 * s} fill={fruit} />
+        </>
+      )}
+    </g>
+  );
+}
+
+function Pine({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
+  const [cx, cy] = pt(x, y);
+  return (
+    <g>
+      <Shadow x={x + 0.12} y={y + 0.12} r={0.35 * s} o={0.22} />
+      <rect
+        x={cx - 3.5 * s}
+        y={cy - 16 * s}
+        width={7 * s}
+        height={16 * s}
+        fill="#7a4b22"
+      />
+      <polygon
+        points={poly([
+          [cx, cy - 78 * s],
+          [cx + 24 * s, cy - 14 * s],
+          [cx - 24 * s, cy - 14 * s],
+        ])}
+        fill="#2f7d32"
+      />
+      <polygon
+        points={poly([
+          [cx, cy - 78 * s],
+          [cx + 24 * s, cy - 14 * s],
+          [cx, cy - 18 * s],
+        ])}
+        fill="#25692a"
+      />
+    </g>
+  );
+}
+
+/** Hàng rào gỗ quanh một hình chữ nhật trên lưới. part: "back" (cạnh xa) hoặc "front" (cạnh gần). */
+function Fence({
+  gx,
+  gy,
+  w,
+  d,
+  part,
+}: {
+  gx: number;
+  gy: number;
+  w: number;
+  d: number;
+  part: "back" | "front";
+}) {
+  const els: ReactNode[] = [];
+  const seg = (x1: number, y1: number, x2: number, y2: number, key: string) => {
+    const n = Math.max(1, Math.round(Math.hypot(x2 - x1, y2 - y1) / 0.5));
+    for (const zr of [8, 17]) {
+      const a = pt(x1, y1, zr);
+      const b = pt(x2, y2, zr);
+      els.push(
+        <line
+          key={`${key}r${zr}`}
+          x1={a[0]}
+          y1={a[1]}
+          x2={b[0]}
+          y2={b[1]}
+          stroke="#b07a43"
+          strokeWidth={3.2}
+          strokeLinecap="round"
+        />,
+      );
+    }
+    for (let i = 0; i <= n; i++) {
+      const x = x1 + ((x2 - x1) * i) / n;
+      const y = y1 + ((y2 - y1) * i) / n;
+      const a = pt(x, y, 0);
+      els.push(
+        <rect
+          key={`${key}p${i}`}
+          x={a[0] - 2.5}
+          y={a[1] - 22}
+          width={5}
+          height={22}
+          rx={1.5}
+          fill="#8a5a2c"
+          stroke="#5e3a17"
+          strokeWidth={0.8}
+        />,
+      );
+    }
+  };
+  if (part === "back") {
+    seg(gx, gy, gx + w, gy, "t");
+    seg(gx, gy, gx, gy + d, "l");
+  } else {
+    seg(gx, gy + d, gx + w, gy + d, "b");
+    seg(gx + w, gy, gx + w, gy + d, "r");
+  }
+  return <g>{els}</g>;
+}
+
+/** Nhà kho mái hai mảng. */
+function Barn({
+  x,
+  y,
+  onClick,
+  label,
+}: {
+  x: number;
+  y: number;
+  onClick?: () => void;
+  label?: string;
+}) {
+  const w = 3;
+  const d = 2.2;
+  const h = 46;
+  const rh = 34;
+  const P = (a: number, b: number, z: number) => pt(x + a, y + b, z);
+  const [dx, dy] = P(w, d * 0.5, 0);
+  return (
+    <g className={onClick ? "iso-click" : undefined} onClick={onClick}>
+      <Shadow x={x + w * 0.6} y={y + d * 0.7} r={1.6} o={0.2} />
+      <Box
+        x={x}
+        y={y}
+        w={w}
+        d={d}
+        h={h}
+        top="#c94b36"
+        left="#c94b36"
+        right="#a83a28"
+      />
+      {/* cửa lớn mặt phải */}
+      <polygon
+        points={poly([
+          P(w, d * 0.28, 0),
+          P(w, d * 0.72, 0),
+          P(w, d * 0.72, 30),
+          P(w, d * 0.28, 30),
+        ])}
+        fill="#f4ede0"
+      />
+      <line
+        x1={P(w, d * 0.28, 0)[0]}
+        y1={P(w, d * 0.28, 0)[1]}
+        x2={P(w, d * 0.72, 30)[0]}
+        y2={P(w, d * 0.72, 30)[1]}
+        stroke="#a83a28"
+        strokeWidth={3}
+      />
+      <line
+        x1={P(w, d * 0.72, 0)[0]}
+        y1={P(w, d * 0.72, 0)[1]}
+        x2={P(w, d * 0.28, 30)[0]}
+        y2={P(w, d * 0.28, 30)[1]}
+        stroke="#a83a28"
+        strokeWidth={3}
+      />
+      {/* mái: mảng sau, đầu hồi, mảng trước */}
+      <polygon
+        points={poly([
+          P(0, 0, h),
+          P(w, 0, h),
+          P(w, d / 2, h + rh),
+          P(0, d / 2, h + rh),
+        ])}
+        fill="#7b2a1f"
+      />
+      <polygon
+        points={poly([P(w, 0, h), P(w, d, h), P(w, d / 2, h + rh)])}
+        fill="#b9452f"
+      />
+      <polygon
+        points={poly([
+          P(0, d, h),
+          P(w, d, h),
+          P(w, d / 2, h + rh),
+          P(0, d / 2, h + rh),
+        ])}
+        fill="#8e2f22"
+      />
+      <polygon
+        points={poly([
+          P(w, d * 0.42, h + 8),
+          P(w, d * 0.58, h + 8),
+          P(w, d * 0.58, h + 18),
+          P(w, d * 0.42, h + 18),
+        ])}
+        fill="#f7e08a"
+      />
+      {label && (
+        <g transform={`translate(${dx + 46}, ${dy - 70})`}>
+          <rect
+            x={-34}
+            y={-14}
+            width={68}
+            height={24}
+            rx={12}
+            fill="#fff8e6"
+            stroke="#7a4b22"
+            strokeWidth={2.5}
+          />
+          <text
+            x={0}
+            y={3}
+            textAnchor="middle"
+            fontSize={12}
+            fontWeight={800}
+            fill="#4a2f14"
+          >
+            {label}
+          </text>
+        </g>
+      )}
+    </g>
+  );
+}
+
+function Silo({ x, y }: { x: number; y: number }) {
+  const [cx, cy] = pt(x, y);
+  return (
+    <g>
+      <Shadow x={x + 0.2} y={y + 0.2} r={0.5} o={0.2} />
+      <rect x={cx - 18} y={cy - 96} width={36} height={96} fill="url(#silo)" />
+      <ellipse cx={cx} cy={cy} rx={18} ry={8} fill="#9aa3ad" />
+      <ellipse cx={cx} cy={cy - 96} rx={18} ry={8} fill="#c9ced6" />
+      <path
+        d={`M${cx - 18} ${cy - 96} Q ${cx} ${cy - 126} ${cx + 18} ${cy - 96}`}
+        fill="#8e9aa6"
+      />
+    </g>
+  );
+}
+
+/** Chuồng nhỏ (chuồng gà): khối gỗ mái một mảng. */
+function Hut({ x, y }: { x: number; y: number }) {
+  const P = (a: number, b: number, z: number) => pt(x + a, y + b, z);
+  return (
+    <g>
+      <Shadow x={x + 0.9} y={y + 0.8} r={0.9} o={0.2} />
+      <Box
+        x={x}
+        y={y}
+        w={1.6}
+        d={1.2}
+        h={30}
+        top="#d9a066"
+        left="#c98d4e"
+        right="#a8703a"
+        stroke="#7a4b22"
+      />
+      <polygon
+        points={poly([
+          P(-0.1, -0.1, 30),
+          P(1.7, -0.1, 30),
+          P(1.7, 1.3, 44),
+          P(-0.1, 1.3, 44),
+        ])}
+        fill="#9b3d2b"
+        stroke="#6b2a1d"
+        strokeWidth={1.2}
+      />
+      <polygon
+        points={poly([
+          P(1.6, 0.45, 0),
+          P(1.6, 0.85, 0),
+          P(1.6, 0.85, 18),
+          P(1.6, 0.45, 18),
+        ])}
+        fill="#4a2f14"
+      />
+    </g>
+  );
+}
+
+/* ---------- Ô ruộng ---------- */
+
+const SPOTS3: P[] = [0.22, 0.5, 0.78].flatMap((b) =>
+  [0.22, 0.5, 0.78].map((a) => [a, b] as P),
+);
+const SPOTS2: P[] = [0.32, 0.68].flatMap((b) =>
+  [0.32, 0.68].map((a) => [a, b] as P),
+);
+
+function PlotTile({
+  plot,
+  x,
+  y,
+  crop,
+  live,
+  me,
+  busy,
+  onClick,
+}: {
+  plot: Plot;
+  x: number;
+  y: number;
+  crop?: Crop;
+  live: { state: PlotState; progress: number; left: number };
+  me: boolean;
+  busy: boolean;
+  onClick: () => void;
+}) {
+  const st = live.state;
+  const wet = plot.waters > 0 && st === "growing";
+  const s = 0.9; // cạnh ô (chừa rãnh giữa các ô)
+  const glyph =
+    st === "empty"
+      ? null
+      : st === "withered"
+        ? "🥀"
+        : st === "ripe"
+          ? crop?.emoji
+          : live.progress < 0.34
+            ? "🌱"
+            : live.progress < 0.67
+              ? "🌿"
+              : crop?.emoji;
+  const big = crop?.id === "dua_hau" || crop?.id === "bi_ngo";
+  const spots = big ? SPOTS2 : SPOTS3;
+  const size =
+    st === "ripe"
+      ? big
+        ? 30
+        : 24
+      : st === "withered"
+        ? 18
+        : live.progress < 0.34
+          ? 13
+          : live.progress < 0.67
+            ? 17
+            : big
+              ? 22
+              : 19;
+  const top = wet ? "#6e4426" : st === "empty" ? "#a87447" : "#8f5c35";
+  const cls = [
+    "iso-plot",
+    `is-${st}`,
+    busy && "is-busy",
+    !me && st === "ripe" && plot.can_steal && "is-steal",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const [lx, ly] = pt(x + s, y + s, 0);
+  const label =
+    st === "growing"
+      ? formatLeft(live.left)
+      : !me && st === "ripe" && plot.can_steal
+        ? "Trộm!"
+        : null;
+  return (
+    <g className={cls} onClick={onClick}>
+      <Box
+        x={x}
+        y={y}
+        w={s}
+        d={s}
+        h={7}
+        top={top}
+        left="#6b4423"
+        right="#56361b"
+      />
+      {/* luống: các rãnh song song trên mặt đất */}
+      {[0.25, 0.5, 0.75].map((f) => {
+        const a = pt(x + 0.06, y + f * s, 7);
+        const b = pt(x + s - 0.06, y + f * s, 7);
+        return (
+          <line
+            key={f}
+            x1={a[0]}
+            y1={a[1]}
+            x2={b[0]}
+            y2={b[1]}
+            stroke="rgba(40,20,5,0.35)"
+            strokeWidth={2}
+          />
+        );
+      })}
+      {st === "ripe" && (
+        <polygon
+          className="iso-ripe-glow"
+          points={poly([
+            pt(x, y, 7),
+            pt(x + s, y, 7),
+            pt(x + s, y + s, 7),
+            pt(x, y + s, 7),
+          ])}
+        />
+      )}
+      {glyph &&
+        spots.map(([a, b], i) => (
+          <Sprite
+            key={i}
+            x={x + a * s}
+            y={y + b * s}
+            z={7}
+            size={size}
+            className={st === "ripe" ? "iso-bob" : undefined}
+          >
+            {glyph}
+          </Sprite>
+        ))}
+      {st === "empty" && me && (
+        <Sprite
+          x={x + s / 2}
+          y={y + s / 2}
+          z={7}
+          size={22}
+          className="iso-plus"
+        >
+          ＋
+        </Sprite>
+      )}
+      {plot.bug && st === "growing" && (
+        <Sprite x={x + 0.25} y={y + 0.15} z={30} size={18} className="iso-bug">
+          🐛
+        </Sprite>
+      )}
+      {wet && (
+        <Sprite x={x + 0.85} y={y + 0.15} z={26} size={11}>
+          💧
+        </Sprite>
+      )}
+      {label && (
+        <g transform={`translate(${lx}, ${ly - 2})`} className="iso-tag">
+          <rect
+            x={-26}
+            y={-11}
+            width={52}
+            height={18}
+            rx={9}
+            className={!me && st === "ripe" ? "is-steal" : undefined}
+          />
+          <text x={0} y={3} textAnchor="middle">
+            {label}
+          </text>
+        </g>
+      )}
+    </g>
+  );
+}
+
+/* ---------- Vật nuôi ---------- */
+
+function AnimalSprite({
+  a,
+  x,
+  y,
+  emoji,
+  product,
+  now,
+  me,
+  onClick,
+}: {
+  a: Animal;
+  x: number;
+  y: number;
+  emoji: string;
+  product?: string;
+  now: number;
+  me: boolean;
+  onClick: () => void;
+}) {
+  const [cx, cy] = pt(x, y);
+  const ready =
+    a.state === "ready" ||
+    (a.state === "producing" &&
+      a.ready_at &&
+      new Date(a.ready_at).getTime() <= now);
+  const left = a.ready_at ? new Date(a.ready_at).getTime() - now : 0;
+  return (
+    <g className={`iso-animal${me ? " iso-click" : ""}`} onClick={onClick}>
+      <Shadow x={x} y={y} r={0.3} o={0.25} />
+      <text
+        x={cx}
+        y={cy + 4}
+        fontSize={34}
+        textAnchor="middle"
+        className="iso-graze"
+        style={{ transformOrigin: `${cx}px ${cy}px` }}
+      >
+        {emoji}
+      </text>
+      {ready ? (
+        <g
+          transform={`translate(${cx}, ${cy - 52})`}
+          className="iso-bubble is-ready"
+        >
+          <circle r={15} />
+          <text y={6} textAnchor="middle" fontSize={17}>
+            {product ?? "⭐"}
+          </text>
+        </g>
+      ) : a.state === "hungry" ? (
+        me && (
+          <g
+            transform={`translate(${cx}, ${cy - 50})`}
+            className="iso-bubble is-hungry"
+          >
+            <circle r={12} />
+            <text y={5} textAnchor="middle" fontSize={13}>
+              🍽️
+            </text>
+          </g>
+        )
+      ) : (
+        <g transform={`translate(${cx}, ${cy - 46})`} className="iso-tag">
+          <rect x={-22} y={-10} width={44} height={16} rx={8} />
+          <text x={0} y={2} textAnchor="middle">
+            {formatLeft(left)}
+          </text>
+        </g>
+      )}
+    </g>
+  );
+}
+
+/* ---------- Cả thế giới ---------- */
+
+export type WorldHandlers = {
+  onPlot: (p: Plot) => void;
+  onAnimal: (a: Animal) => void;
+  onBuild: (id: "coop" | "pasture") => void;
+  onExpand: () => void;
+  onStorage: () => void;
+  onOrders: () => void;
+};
+
+export function FarmWorld({
+  view,
+  now,
+  busy,
+  live,
+  dog,
+  ...h
+}: {
+  view: FarmView;
+  now: number;
+  busy: boolean;
+  dog: boolean;
+  live: (p: Plot) => { state: PlotState; progress: number; left: number };
+} & WorldHandlers) {
+  const me = view.me;
+  const crop = (id?: string) => view.crops.find((c) => c.id === id);
+  const kinds = useMemo(
+    () => new Map((view.animal_kinds ?? []).map((k) => [k.id, k])),
+    [view.animal_kinds],
+  );
+  const items = useMemo(
+    () => new Map((view.items ?? []).map((i) => [i.id, i])),
+    [view.items],
+  );
+  const coop = view.buildings?.find((b) => b.id === "coop");
+  const pasture = view.buildings?.find((b) => b.id === "pasture");
+
+  // ô ruộng theo bậc mở rộng; bậc kế tiếp hiện thành vùng đất "chờ mở"
+  const owned = view.plots.length;
+  const tier = layoutFor(owned);
+  const nextPlots =
+    view.expansion?.next?.plots ?? (me && view.next_plot ? owned + 1 : owned);
+  const nextTier = layoutFor(Math.max(owned, nextPlots));
+  const plotXY = (i: number): P => [
+    FIELD.gx + (i % tier.cols),
+    FIELD.gy + Math.floor(i / tier.cols),
+  ];
+
+  const buildingOf = (kind: string) =>
+    kinds.get(kind)?.building ?? ANIMAL_FALLBACK[kind]?.building;
+  const emojiOf = (kind: string) =>
+    kinds.get(kind)?.emoji ?? ANIMAL_FALLBACK[kind]?.emoji ?? "🐾";
+  const productOf = (kind: string) =>
+    items.get(kinds.get(kind)?.product ?? "")?.emoji ??
+    ANIMAL_FALLBACK[kind]?.product;
+  const coopAnimals = (view.animals ?? []).filter(
+    (a) => buildingOf(a.kind) === "coop",
+  );
+  const pastureAnimals = (view.animals ?? []).filter(
+    (a) => buildingOf(a.kind) === "pasture",
+  );
+  const spotIn = (
+    r: { gx: number; gy: number; w: number; d: number },
+    i: number,
+    skip = 0,
+  ): P => {
+    const cols = Math.max(2, Math.floor(r.w / 1.25));
+    const k = i + skip;
+    return [
+      r.gx + 0.8 + (k % cols) * 1.25 + (Math.floor(k / cols) % 2) * 0.55,
+      r.gy + 0.9 + Math.floor(k / cols) * 1.15,
+    ];
+  };
+
+  /* ---- pan & zoom ---- */
+  const wrap = useRef<HTMLDivElement>(null);
+  const [cam, setCam] = useState<{ x: number; y: number; z: number } | null>(
+    null,
+  );
+  const fit = useCallback(() => {
+    const el = wrap.current;
+    if (!el) return;
+    // máy tính: bảng nổi bên phải che ~23.5rem; nhìn trọn khu chính (chuồng, ruộng, nhà kho)
+    const wide = el.clientWidth > 960;
+    const panel = wide ? 376 : 0;
+    const usable = el.clientWidth - panel;
+    if (wide) {
+      const c = pt(8, 7.6);
+      const z = Math.max(0.5, Math.min(1.3, Math.min(usable / 1300, el.clientHeight / 760)));
+      setCam({ x: c[0] + panel / 2 / z, y: c[1], z });
+    } else {
+      // điện thoại: căn vào ruộng, kéo để xem chuồng
+      const c = pt(FIELD.gx + 1.6, FIELD.gy + 1.4);
+      setCam({ x: c[0], y: c[1], z: Math.max(0.55, Math.min(1, usable / 620)) });
+    }
+  }, []);
+  useEffect(() => {
+    fit();
+    const ro = new ResizeObserver(fit);
+    if (wrap.current) ro.observe(wrap.current);
+    return () => ro.disconnect();
+  }, [fit]);
+  const drag = useRef<{
+    x: number;
+    y: number;
+    cx: number;
+    cy: number;
+    moved: boolean;
+  } | null>(null);
+  const onDown = (e: RPointerEvent) => {
+    if (!cam) return;
+    drag.current = {
+      x: e.clientX,
+      y: e.clientY,
+      cx: cam.x,
+      cy: cam.y,
+      moved: false,
+    };
+  };
+  const onMove = (e: RPointerEvent) => {
+    const d = drag.current;
+    if (!d || !cam) return;
+    const dx = e.clientX - d.x;
+    const dy = e.clientY - d.y;
+    if (!d.moved && Math.hypot(dx, dy) < 6) return;
+    if (!d.moved) (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    d.moved = true;
+    setCam({ ...cam, x: d.cx - dx / cam.z, y: d.cy - dy / cam.z });
+  };
+  const onUp = () => {
+    // kéo xong thì chặn cú "click" ngay sau đó (không gieo hạt nhầm khi thả tay)
+    if (drag.current?.moved) {
+      const stop = (ev: Event) => {
+        ev.stopPropagation();
+        ev.preventDefault();
+      };
+      window.addEventListener("click", stop, { capture: true, once: true });
+      window.setTimeout(
+        () => window.removeEventListener("click", stop, { capture: true }),
+        50,
+      );
+    }
+    drag.current = null;
+  };
+  const zoomBy = (f: number) =>
+    cam && setCam({ ...cam, z: Math.max(0.45, Math.min(1.8, cam.z * f)) });
+  useEffect(() => {
+    const el = wrap.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      setCam((c) =>
+        c
+          ? {
+              ...c,
+              z: Math.max(
+                0.45,
+                Math.min(1.8, c.z * (e.deltaY < 0 ? 1.1 : 0.9)),
+              ),
+            }
+          : c,
+      );
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  const W = wrap.current?.clientWidth ?? 1200;
+  const H = wrap.current?.clientHeight ?? 800;
+  const vb = cam
+    ? `${cam.x - W / 2 / cam.z} ${cam.y - H / 2 / cam.z} ${W / cam.z} ${H / cam.z}`
+    : "-800 -100 1600 1000";
+
+  /* ---- vật đứng: sắp xếp theo độ sâu (gx + gy) ---- */
+  type Item = { depth: number; node: ReactNode };
+  const things: Item[] = [];
+  const add = (gx: number, gy: number, node: ReactNode) =>
+    things.push({ depth: gx + gy, node });
+
+  // hàng cây bao quanh
+  for (let i = 0; i < GW; i += 1.6)
+    add(
+      i,
+      -0.4,
+      i % 3.2 < 1.6 ? (
+        <Pine key={`tp${i}`} x={i} y={-0.4} s={1.1} />
+      ) : (
+        <Tree key={`tt${i}`} x={i} y={-0.4} s={1.15} />
+      ),
+    );
+  for (let j = 1.2; j < GH; j += 1.6)
+    add(
+      -0.4,
+      j,
+      j % 3.2 < 1.6 ? (
+        <Tree key={`lt${j}`} x={-0.4} y={j} s={1.1} />
+      ) : (
+        <Pine key={`lp${j}`} x={-0.4} y={j} s={1.05} />
+      ),
+    );
+  // vườn cây ăn quả (bên phải ruộng)
+  for (let i = 0; i < 6; i++) {
+    const x = 16 + (i % 3) * 1.6;
+    const y = 3 + Math.floor(i / 3) * 1.7;
+    add(
+      x,
+      y,
+      <Tree
+        key={`o${i}`}
+        x={x}
+        y={y}
+        s={0.95}
+        fruit={i % 2 ? "#ff9f1c" : "#e63946"}
+      />,
+    );
+  }
+  add(
+    11.5,
+    2.2,
+    <Barn
+      key="barn"
+      x={10}
+      y={1}
+      onClick={me ? h.onStorage : undefined}
+      label={me ? "🏚️ Kho" : undefined}
+    />,
+  );
+  add(14.2, 2.4, <Silo key="silo" x={14.2} y={2.4} />);
+  // xe tải đơn hàng
+  if (me) {
+    const [tx, ty] = pt(20.5, 16.3);
+    add(
+      20.5,
+      16.3,
+      <g key="truck" className="iso-click iso-truck" onClick={h.onOrders}>
+        <Shadow x={20.5} y={16.3} r={0.6} o={0.22} />
+        <text x={tx} y={ty + 6} fontSize={56} textAnchor="middle">
+          🚚
+        </text>
+        <g transform={`translate(${tx}, ${ty - 62})`} className="iso-sign">
+          <rect x={-40} y={-13} width={80} height={24} rx={12} />
+          <text y={4} textAnchor="middle">
+            📦 Đơn hàng
+          </text>
+        </g>
+      </g>,
+    );
+  }
+  // nhà vịt & ao: vịt bơi
+  add(
+    18.6,
+    10.7,
+    <Sprite key="duck1" x={18.6} y={10.7} size={26} className="iso-swim">
+      🦆
+    </Sprite>,
+  );
+  add(
+    19.8,
+    11.8,
+    <Sprite
+      key="duck2"
+      x={19.8}
+      y={11.8}
+      size={22}
+      className="iso-swim is-late"
+    >
+      🦆
+    </Sprite>,
+  );
+  // nông dân, chó, đống rơm, hoa
+  add(
+    8.9,
+    11.3,
+    <Sprite key="farmer" x={8.9} y={11.3} size={40} className="iso-idle">
+      🧑‍🌾
+    </Sprite>,
+  );
+  if (dog)
+    add(
+      15,
+      10.5,
+      <Sprite key="dog" x={15} y={10.5} size={34} className="iso-idle">
+        🐕
+      </Sprite>,
+    );
+  add(
+    15.2,
+    1.6,
+    <Sprite key="hay1" x={15.2} y={1.6} size={30}>
+      🌾
+    </Sprite>,
+  );
+  add(
+    15.8,
+    2.2,
+    <Sprite key="hay2" x={15.8} y={2.2} size={26}>
+      🌾
+    </Sprite>,
+  );
+  const FL = ["🌷", "🌻", "🌼", "🌸"];
+  for (let i = 0; i < 14; i++) {
+    const x = 9.4 + (i % 7) * 0.9;
+    const y = 17.2 + Math.floor(i / 7) * 0.8;
+    add(
+      x,
+      y,
+      <Sprite key={`f${i}`} x={x} y={y} size={20}>
+        {FL[i % 4]}
+      </Sprite>,
+    );
+  }
+
+  // ruộng
+  view.plots.forEach((p, i) => {
+    const [x, y] = plotXY(i);
+    add(
+      x + 0.45,
+      y + 0.45,
+      <PlotTile
+        key={`p${p.index}`}
+        plot={p}
+        x={x}
+        y={y}
+        crop={crop(p.crop)}
+        live={live(p)}
+        me={me}
+        busy={busy}
+        onClick={() => h.onPlot(p)}
+      />,
+    );
+  });
+
+  // chuồng gà
+  const coopOn = coop?.built ?? coopAnimals.length > 0;
+  add(
+    COOP.gx + 0.8,
+    COOP.gy + 0.6,
+    <Hut key="hut" x={COOP.gx + 0.15} y={COOP.gy + 0.15} />,
+  );
+  coopAnimals.forEach((a, i) => {
+    const [x, y] = spotIn(COOP, i, 2);
+    add(
+      x,
+      y,
+      <AnimalSprite
+        key={`a${a.id}`}
+        a={a}
+        x={x}
+        y={y}
+        emoji={emojiOf(a.kind)}
+        product={productOf(a.kind)}
+        now={now}
+        me={me}
+        onClick={() => h.onAnimal(a)}
+      />,
+    );
+  });
+  pastureAnimals.forEach((a, i) => {
+    const [x, y] = spotIn(PASTURE, i);
+    add(
+      x,
+      y,
+      <AnimalSprite
+        key={`a${a.id}`}
+        a={a}
+        x={x}
+        y={y}
+        emoji={emojiOf(a.kind)}
+        product={productOf(a.kind)}
+        now={now}
+        me={me}
+        onClick={() => h.onAnimal(a)}
+      />,
+    );
+  });
+  // hàng rào phía trước của chuồng vẽ sau vật nuôi bên trong
+  add(
+    COOP.gx + COOP.w,
+    COOP.gy + COOP.d,
+    <Fence key="coopF" {...COOP} part="front" />,
+  );
+  add(
+    PASTURE.gx + PASTURE.w,
+    PASTURE.gy + PASTURE.d,
+    <Fence key="pasF" {...PASTURE} part="front" />,
+  );
+
+  things.sort((a, b) => a.depth - b.depth);
+
+  /* ---- mặt đất ---- */
+  const ground: ReactNode[] = [];
+  for (let gx = -1; gx < GW; gx++)
+    for (let gy = -1; gy < GH; gy++) {
+      const v = (((gx * 7 + gy * 13) % 5) + 5) % 5; // toạ độ âm: % trả số âm
+      ground.push(
+        <polygon
+          key={`g${gx}_${gy}`}
+          points={poly([
+            pt(gx, gy),
+            pt(gx + 1, gy),
+            pt(gx + 1, gy + 1),
+            pt(gx, gy + 1),
+          ])}
+          fill={["#7cc04a", "#78bb46", "#80c44e", "#74b743", "#7dbf4b"][v]}
+        />,
+      );
+    }
+  const path: ReactNode[] = [];
+  for (let gy = 0.5; gy < 16; gy += 1)
+    path.push(<Stone key={`sv${gy}`} x={8} y={gy} />);
+  for (let gx = 0; gx < GW; gx += 1)
+    path.push(<Stone key={`sh${gx}`} x={gx} y={16} />);
+
+  // vùng đất mở rộng kế tiếp: khung nét đứt + biển "Mở rộng"
+  const expandArea =
+    me &&
+    nextTier &&
+    (nextTier.cols > tier.cols || nextTier.rows > tier.rows) ? (
+      <g className="iso-click iso-expand" onClick={h.onExpand}>
+        <polygon
+          points={poly([
+            pt(FIELD.gx - 0.1, FIELD.gy - 0.1, 1),
+            pt(FIELD.gx + nextTier.cols, FIELD.gy - 0.1, 1),
+            pt(FIELD.gx + nextTier.cols, FIELD.gy + nextTier.rows, 1),
+            pt(FIELD.gx - 0.1, FIELD.gy + nextTier.rows, 1),
+          ])}
+        />
+      </g>
+    ) : null;
+  const signAt = pt(
+    FIELD.gx + nextTier.cols - 0.3,
+    FIELD.gy + nextTier.rows - 0.3,
+  );
+
+  return (
+    <div
+      ref={wrap}
+      className="iso-wrap"
+      onPointerDown={onDown}
+      onPointerMove={onMove}
+      onPointerUp={onUp}
+      onPointerCancel={onUp}
+    >
+      <svg
+        className="iso-svg"
+        viewBox={vb}
+        preserveAspectRatio="xMidYMid meet"
+        role="img"
+        aria-label="Bản đồ nông trại"
+      >
+        <defs>
+          <radialGradient id="leaf" cx="0.35" cy="0.3" r="0.8">
+            <stop offset="0" stopColor="#8fd16a" />
+            <stop offset="0.6" stopColor="#4f9e35" />
+            <stop offset="1" stopColor="#3a7d27" />
+          </radialGradient>
+          <radialGradient id="leaf2" cx="0.35" cy="0.3" r="0.8">
+            <stop offset="0" stopColor="#7fc35a" />
+            <stop offset="1" stopColor="#2f6e22" />
+          </radialGradient>
+          <linearGradient id="silo" x1="0" x2="1">
+            <stop offset="0" stopColor="#d9dee5" />
+            <stop offset="0.6" stopColor="#b9c0c9" />
+            <stop offset="1" stopColor="#959ea9" />
+          </linearGradient>
+          <radialGradient id="water" cx="0.4" cy="0.35" r="0.8">
+            <stop offset="0" stopColor="#8fdcff" />
+            <stop offset="0.7" stopColor="#3aa3dc" />
+            <stop offset="1" stopColor="#2b85bd" />
+          </radialGradient>
+        </defs>
+        <g>{ground}</g>
+        {/* nền chuồng */}
+        <Pen r={COOP} fill="#d8bf86" />
+        <Pen r={PASTURE} fill="#9fd36a" />
+        {/* ao */}
+        <Pond />
+        <g>{path}</g>
+        {/* hàng rào phía sau, vẽ trước mọi vật */}
+        <Fence {...COOP} part="back" />
+        <Fence {...PASTURE} part="back" />
+        {/* viền ruộng */}
+        <polygon
+          className="iso-field-bed"
+          points={poly([
+            pt(FIELD.gx - 0.15, FIELD.gy - 0.15),
+            pt(FIELD.gx + tier.cols + 0.05, FIELD.gy - 0.15),
+            pt(FIELD.gx + tier.cols + 0.05, FIELD.gy + tier.rows + 0.05),
+            pt(FIELD.gx - 0.15, FIELD.gy + tier.rows + 0.05),
+          ])}
+        />
+        {expandArea}
+        {things.map((t) => t.node)}
+        {/* biển chuồng chưa xây */}
+        {me && !coopOn && (
+          <BuildSign
+            r={COOP}
+            text={`Xây chuồng gà · ${coop?.price ?? 200}🪙`}
+            onClick={() => h.onBuild("coop")}
+          />
+        )}
+        {me && !(pasture?.built ?? pastureAnimals.length > 0) && (
+          <BuildSign
+            r={PASTURE}
+            text={`Xây đồng cỏ · ${pasture?.price ?? 600}🪙`}
+            onClick={() => h.onBuild("pasture")}
+          />
+        )}
+        {expandArea && view.expansion?.next && (
+          <g
+            className="iso-click iso-sign"
+            transform={`translate(${signAt[0]}, ${signAt[1] - 6})`}
+            onClick={h.onExpand}
+          >
+            <rect x={-62} y={-14} width={124} height={26} rx={13} />
+            <text y={4} textAnchor="middle">
+              🪧 Mở rộng · {view.expansion.next.price}🪙
+            </text>
+          </g>
+        )}
+      </svg>
+      <div className="iso-zoom">
+        <button
+          type="button"
+          onClick={() => zoomBy(1.15)}
+          aria-label="Phóng to"
+        >
+          +
+        </button>
+        <button
+          type="button"
+          onClick={() => zoomBy(1 / 1.15)}
+          aria-label="Thu nhỏ"
+        >
+          −
+        </button>
+        <button type="button" onClick={fit} aria-label="Về giữa ruộng">
+          ⌂
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Stone({ x, y }: { x: number; y: number }) {
+  const s = 0.86;
+  const o = (1 - s) / 2;
+  return (
+    <polygon
+      points={poly([
+        pt(x + o, y + o, 1),
+        pt(x + o + s, y + o, 1),
+        pt(x + o + s, y + o + s, 1),
+        pt(x + o, y + o + s, 1),
+      ])}
+      fill="#cfc8b6"
+      stroke="#a89f88"
+      strokeWidth={1.5}
+    />
+  );
+}
+
+function Pen({
+  r,
+  fill,
+}: {
+  r: { gx: number; gy: number; w: number; d: number };
+  fill: string;
+}) {
+  return (
+    <polygon
+      points={poly([
+        pt(r.gx, r.gy),
+        pt(r.gx + r.w, r.gy),
+        pt(r.gx + r.w, r.gy + r.d),
+        pt(r.gx, r.gy + r.d),
+      ])}
+      fill={fill}
+      opacity={0.95}
+    />
+  );
+}
+
+function Pond() {
+  const [cx, cy] = pt(19.2, 11.2);
+  return (
+    <g>
+      <ellipse cx={cx} cy={cy + 4} rx={150} ry={78} fill="#a9d36f" />
+      <ellipse cx={cx} cy={cy + 4} rx={140} ry={70} fill="#c8b48a" />
+      <ellipse cx={cx} cy={cy} rx={128} ry={62} fill="url(#water)" />
+      <ellipse
+        cx={cx - 40}
+        cy={cy - 18}
+        rx={26}
+        ry={7}
+        fill="rgba(255,255,255,0.45)"
+      />
+    </g>
+  );
+}
+
+function BuildSign({
+  r,
+  text,
+  onClick,
+}: {
+  r: { gx: number; gy: number; w: number; d: number };
+  text: string;
+  onClick: () => void;
+}) {
+  const [cx, cy] = pt(r.gx + r.w / 2, r.gy + r.d / 2);
+  return (
+    <g
+      className="iso-click iso-sign is-build"
+      transform={`translate(${cx}, ${cy})`}
+      onClick={onClick}
+    >
+      <rect x={-78} y={-15} width={156} height={28} rx={14} />
+      <text y={4} textAnchor="middle">
+        🔨 {text}
+      </text>
+    </g>
+  );
+}

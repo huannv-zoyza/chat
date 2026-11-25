@@ -45,9 +45,10 @@ type farmView struct {
 	} `json:"log"`
 	StealsLeft *int `json:"steals_left"`
 	Gained     *struct {
-		Xu      int64 `json:"xu"`
-		XP      int64 `json:"xp"`
-		LevelUp int   `json:"level_up"`
+		Xu      int64            `json:"xu"`
+		XP      int64            `json:"xp"`
+		LevelUp int              `json:"level_up"`
+		Items   map[string]int64 `json:"items"`
 	} `json:"gained"`
 	Dog   *bool  `json:"dog"`
 	Error string `json:"error"`
@@ -150,14 +151,16 @@ func TestFarmAPI(t *testing.T) {
 		t.Fatalf("self steal: %d %q", code, v.Error)
 	}
 	code, v = e.farm("POST", "/api/farm/steal", bob.Token, map[string]any{"user_id": alice.User.ID, "plot": 0})
-	if code != 200 || v.Dog == nil || *v.Dog || v.Gained == nil || v.Gained.Xu != 2 || v.Plots[0].Stolen != 2 || *v.StealsLeft != 4 {
+	if code != 200 || v.Dog == nil || *v.Dog || v.Gained == nil || v.Gained.Xu != 0 || v.Gained.Items["rau_muong"] != 1 ||
+		v.Plots[0].Stolen != 1 || *v.StealsLeft != 4 {
 		t.Fatalf("steal: %d %+v", code, v)
 	}
 	if ev := wa.waitFor("farm.updated"); ev["log"].(map[string]any)["action"] != "steal" {
 		t.Fatalf("steal event: %v", ev)
 	}
 	code, v = e.farm("POST", "/api/farm/harvest", alice.Token, map[string]any{"all": true})
-	if code != 200 || v.Gained == nil || v.Gained.Xu != 12+14+14 || v.Gained.XP != 6 || v.Plots[0].State != "empty" || v.XP != 6 {
+	if code != 200 || v.Gained == nil || v.Gained.Xu != 0 || v.Gained.Items["rau_muong"] != 2+3+3 || v.Gained.XP != 6 ||
+		v.Plots[0].State != "empty" || v.XP != 6 {
 		t.Fatalf("harvest all: %d %+v", code, v)
 	}
 	if code, v := e.farm("POST", "/api/farm/harvest", alice.Token, map[string]any{"plot": 0}); code != 400 ||
@@ -187,7 +190,7 @@ func TestFarmAPI(t *testing.T) {
 
 	// ô đất, nhiệm vụ
 	if code, v := e.farm("POST", "/api/farm/buy-plot", alice.Token, nil); code != 400 ||
-		v.Error != "Cần đạt cấp 2 mới mua được ô đất thứ 7." {
+		v.Error != "Cần đạt cấp 2 mới mở rộng được nông trại." {
 		t.Fatalf("buy plot at level 1: %d %q", code, v.Error)
 	}
 	if code, v := e.farm("POST", "/api/farm/quests/"+mine.Quests[0].ID+"/claim", alice.Token, nil); code != 400 ||

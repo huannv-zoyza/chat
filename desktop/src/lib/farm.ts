@@ -72,8 +72,60 @@ export type FarmView = {
   chest?: { ready: boolean; claimed: boolean; xu: number; xp: number };
   log?: FarmLog[];
   steals_left?: number;
-  gained?: { xu: number; xp: number; level_up?: number };
+  gained?: { xu: number; xp: number; level_up?: number; items?: Record<string, number> };
   dog?: boolean;
+  // phần 2: kho, chăn nuôi, đơn hàng, mở rộng đất (máy chủ cũ không có: để tuỳ chọn)
+  items?: Item[];
+  storage?: { cap: number; used: number; next_upgrade?: { price: number } | null; stock: Record<string, number> };
+  buildings?: Building[];
+  animal_kinds?: AnimalKind[];
+  animals?: Animal[];
+  orders?: Order[];
+  expansion?: { tier: number; plots: number; next?: { plots: number; price: number; level: number } | null };
+};
+
+export type Item = { id: string; name: string; emoji: string; price: number; kind: "crop" | "product"; level: number };
+
+export type Building = {
+  id: "coop" | "pasture";
+  name: string;
+  built: boolean;
+  cap: number;
+  price: number;
+  level: number;
+  upgrade_price?: number | null;
+};
+
+export type AnimalKind = {
+  id: string;
+  name: string;
+  emoji: string;
+  building: "coop" | "pasture";
+  price: number;
+  level: number;
+  feed: string;
+  feed_qty: number;
+  time_sec: number;
+  product: string;
+  xp: number;
+};
+
+export type Animal = {
+  id: number;
+  kind: string;
+  state: "hungry" | "producing" | "ready";
+  ready_at?: string;
+  can_feed: boolean;
+};
+
+export type Order = {
+  slot: number;
+  id?: number;
+  items?: { item: string; qty: number }[];
+  xu?: number;
+  xp?: number;
+  next_at?: string;
+  can_deliver?: boolean;
 };
 
 export type Neighbor = {

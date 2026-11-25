@@ -15243,3 +15243,62 @@ button.villager:focus-visible .villager-name {
     --p: 3.8rem;
   }
 }
+
+/* Bảng nông trại: không bao giờ cuộn ngang; tên dài tự cắt "…" */
+.farm-panel-body {
+  overflow-x: hidden;
+}
+.farm-top-user b,
+.neighbor-main b,
+.quest-main b {
+  min-width: 0;
+}
+.farm-top li > * {
+  flex-shrink: 0;
+}
+.farm-top li > .farm-top-user {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.farm-top-xp {
+  min-width: 3.4rem;
+}
+/* ô điểm danh đã nhận: dấu ✓ là huy hiệu ở góc, không đẩy số xuống dòng */
+.checkin-days li {
+  position: relative;
+}
+.checkin-days li.is-done b::after {
+  content: none;
+}
+.checkin-days li.is-done::after {
+  content: "✓";
+  position: absolute;
+  top: -0.35rem;
+  right: -0.3rem;
+  display: grid;
+  place-items: center;
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--leaf);
+  color: #fff;
+  font-size: 0.55rem;
+  font-weight: 900;
+}
+.checkin-days {
+  padding-top: 0.3rem;
+}
+.farm-tab > span:last-child {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.farm-top,
+.neighbor-list,
+.farm-log,
+.quest-list,
+.farm-section {
+  grid-template-columns: minmax(0, 1fr);
+}

@@ -34,8 +34,10 @@ export function WatchPartyBanner({ channelId }: { channelId: number }) {
     void loadWatchParty(channelId);
   }, [channelId, loadWatchParty]);
 
-  const hasContent = !!wp && (!!wp.current_item || wp.queue.length > 0 || wp.listener_count > 0);
-  if (!hasContent && !isOpen) return null;
+  // chỉ hiện khi phòng đang sống (có người nghe, đang phát, hoặc mình đang ở trong):
+  // bài cũ nằm đó mà không ai nghe thì không chiếm chỗ đầu kênh; vẫn mở lại được từ menu "+"
+  const live = !!wp && (wp.listener_count > 0 || wp.is_playing || wp.joined);
+  if (!live && !isOpen) return null;
 
   const cur = wp?.current_item;
   const joined = !!wp?.joined;

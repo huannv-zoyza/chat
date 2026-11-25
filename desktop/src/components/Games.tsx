@@ -232,7 +232,11 @@ export function GameCard({ message }: { message: Message }) {
   const [lbOpen, setLbOpen] = useState(false);
   const info = GAME_INFO[game.kind];
   const turn = myTurn(game, meId);
-  const night = game.kind === "werewolf" && (game.state as WerewolfState | undefined)?.phase === "night";
+  // nền đêm chỉ khi ván còn đang chơi: ván kết thúc lúc đêm không giữ khối tiêu đề đen
+  const night =
+    game.kind === "werewolf" &&
+    game.status === "playing" &&
+    (game.state as WerewolfState | undefined)?.phase === "night";
 
   const meta =
     game.status === "lobby"

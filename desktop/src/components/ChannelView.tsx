@@ -241,6 +241,8 @@ export type Row =
   | { kind: "msg"; key: string; msg: Message; grouped: boolean }
   | { kind: "pending"; key: string; p: PendingMessage; grouped: boolean };
 
+const isFunEmbed = (e?: { type: string } | null) => e?.type === "throw" || e?.type === "nickname";
+
 export function buildRows(items: Message[], pending: PendingMessage[], meId: number): Row[] {
   const rows: Row[] = [];
   let prevUser: number | null = null;
@@ -261,8 +263,11 @@ export function buildRows(items: Message[], pending: PendingMessage[], meId: num
     prevTime = t;
   };
 
-  for (const m of items)
+  for (const m of items) {
     push(m.user_id, m.created_at, (grouped) => ({ kind: "msg", key: "m" + m.id, msg: m, grouped }));
+    // dòng trêu nhau (ném đồ, biệt danh) là một dòng gọn có tên riêng: tin kế tiếp không gộp vào nó
+    if (isFunEmbed(m.embed) && !m.deleted_at) prevUser = null;
+  }
   for (const p of pending)
     push(meId, p.createdAt, (grouped) => ({ kind: "pending", key: "p" + p.clientId, p, grouped }));
   return rows;
@@ -589,11 +594,14 @@ export function MessageRow(props: RowProps) {
   useEffect(() => {
     if (highlighted) rowRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [highlighted, hl?.at]);
+  // trêu nhau: một dòng gọn "🌹 Nam ném hoa hồng vào bạn", không avatar, không tiêu đề
+  const funRow = !deleted && !editing && isFunEmbed(embed);
   const failed = pending?.status === "failed";
   const uploading = pending && pending.status === "sending" && pending.files?.length;
   const cls = [
     "msg",
-    grouped && "msg-grouped",
+    (grouped || funRow) && "msg-grouped",
+    funRow && "msg-funrow",
     mine && "msg-mine",
     mentioned && "msg-mentioned",
     pending && "msg-pending",
@@ -610,7 +618,7 @@ export function MessageRow(props: RowProps) {
   return (
     <article className={cls} {...longPress} ref={rowRef} data-msg-id={message?.id}>
       <div className="msg-gutter">
-        {grouped ? (
+        {grouped || funRow ? (
           <time className="msg-gutter-time" dateTime={time} title={formatFull(time)}>
             {formatTime(time)}
           </time>
@@ -619,7 +627,7 @@ export function MessageRow(props: RowProps) {
         )}
       </div>
       <div className="msg-main">
-        {!grouped && (
+        {!grouped && !funRow && (
           <header className="msg-head">
             <span className="msg-user" style={{ color: avatarUser ? `var(--u${(avatarUser.id % 6) + 1})` : undefined }}>
               {name}
@@ -671,7 +679,22 @@ export function MessageRow(props: RowProps) {
         ) : message?.game ? (
           <GameCard message={message} />
         ) : embed ? (
-          <EmbedView embed={embed} channelId={message?.channel_id} userId={message?.user_id} messageId={message?.id} />
+          <EmbedView
+            embed={embed}
+            channelId={message?.channel_id}
+            userId={message?.user_id}
+            messageId={message?.id}
+            actor={
+              funRow ? (
+                <strong
+                  className="msg-fun-actor"
+                  style={{ color: avatarUser ? `var(--u${(avatarUser.id % 6) + 1})` : undefined }}
+                >
+                  {name}
+                </strong>
+              ) : undefined
+            }
+          />
         ) : (
           text &&
           (isAIUser(avatarUser) ? (

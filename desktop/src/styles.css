@@ -12007,3 +12007,27 @@ button.villager:focus-visible .villager-name {
     animation: none;
   }
 }
+
+/* Dòng trêu nhau gọn: không avatar/tiêu đề, tên người làm in đậm đầu dòng */
+.msg-funrow {
+  margin-top: 0.1rem;
+  padding-top: 0.12rem;
+  padding-bottom: 0.12rem;
+}
+.msg-funrow .msg-gutter {
+  padding-top: 0;
+}
+.msg-fun-actor {
+  font-weight: 700;
+}
+/* chữ chảy liền một dòng (xuống dòng tự nhiên khi tên dài) thay vì chia cột flex */
+.msg-funrow .msg-fun {
+  display: inline-block;
+  max-width: 100%;
+  line-height: 1.45;
+}
+.msg-funrow .msg-fun-icon {
+  display: inline-block;
+  margin-right: 0.35rem;
+  vertical-align: -0.15em;
+}

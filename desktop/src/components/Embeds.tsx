@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { ShareCard } from "./Share";
 import type { Embed } from "../lib/api";
 import { findSticker, stickerLabel, type Sticker } from "../lib/stickers";
@@ -47,13 +47,17 @@ export function EmbedView({
   channelId,
   userId,
   messageId,
+  actor,
 }: {
   embed: Embed;
   channelId?: number;
   userId?: number;
   messageId?: number;
+  /** Tên người làm, hiện đầu dòng trêu nhau (dòng đó không có tiêu đề riêng). */
+  actor?: ReactNode;
 }) {
-  if (embed.type === "throw" || embed.type === "nickname") return <FunLine embed={embed} messageId={messageId} />;
+  if (embed.type === "throw" || embed.type === "nickname")
+    return <FunLine embed={embed} messageId={messageId} actor={actor} />;
   if (embed.type === "share" && /^\d+$/.test(embed.id)) return <ShareCard id={Number(embed.id)} embed={embed} />;
   if (embed.type === "call") {
     return (
@@ -93,7 +97,7 @@ export function EmbedView({
 }
 
 /** Dòng trêu nhau: "🩴 ném dép vào Nam", "đặt biệt danh cho Nam là “Thánh Lag”". */
-function FunLine({ embed, messageId }: { embed: Embed; messageId?: number }) {
+function FunLine({ embed, messageId, actor }: { embed: Embed; messageId?: number; actor?: ReactNode }) {
   const { state, dispatch } = useChat();
   const target = embed.target_id ? state.users[embed.target_id] : undefined;
   const isMe = embed.target_id === state.me.id;
@@ -113,7 +117,8 @@ function FunLine({ embed, messageId }: { embed: Embed; messageId?: number }) {
         >
           {item?.icon ?? "🎯"}
         </span>
-        ném {item?.name ?? "đồ"} vào <strong>{name}</strong>
+        {actor}
+        {actor && " "}ném {item?.name ?? "đồ"} vào <strong>{name}</strong>
       </p>
     );
   }
@@ -125,11 +130,13 @@ function FunLine({ embed, messageId }: { embed: Embed; messageId?: number }) {
       </span>
       {nick ? (
         <>
-          đặt biệt danh cho <strong>{name}</strong> là “{nick}”
+          {actor}
+          {actor && " "}đặt biệt danh cho <strong>{name}</strong> là “{nick}”
         </>
       ) : (
         <>
-          xoá biệt danh của <strong>{name}</strong>
+          {actor}
+          {actor && " "}xoá biệt danh của <strong>{name}</strong>
         </>
       )}
     </p>

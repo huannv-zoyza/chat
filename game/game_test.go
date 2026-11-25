@@ -556,3 +556,26 @@ func TestWerewolfCustomCast(t *testing.T) {
 		t.Fatal("setup after start")
 	}
 }
+
+func TestWerewolfWolfChat(t *testing.T) {
+	g, ps := newGame(t, "werewolf", 7, "")
+	act(t, g, ps[0], "start", nil)
+	w := g.r.(*werewolf)
+	wolves := byRole(w, ps, roleWolf)
+	others := byRole(w, ps, roleVillager)
+	if err := tryAct(g, others[0], "wolf_chat", json.RawMessage(`{"text":"hi"}`)); err == nil {
+		t.Fatal("villager must not use wolf chat")
+	}
+	act(t, g, wolves[0], "wolf_chat", json.RawMessage(`{"text":"  cắn ai đây  "}`))
+	if err := tryAct(g, wolves[0], "wolf_chat", json.RawMessage(`{"text":"spam"}`)); err == nil {
+		t.Fatal("rate limit")
+	}
+	_, me := w.view(wolves[1].ID)
+	if lines := me.(wwMe).WolfChat; len(lines) != 1 || lines[0].Text != "cắn ai đây" {
+		t.Fatalf("wolf mate should read chat: %v", lines)
+	}
+	pub, me := w.view(others[0].ID)
+	if me.(wwMe).WolfChat != nil || pub.(wwPublic).WolfChat != nil {
+		t.Fatal("wolf chat leaked to villager")
+	}
+}

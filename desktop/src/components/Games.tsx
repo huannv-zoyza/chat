@@ -28,6 +28,7 @@ import type { StationState } from "../lib/station";
 import { StationSummary } from "./Station";
 import { ShareDialog } from "./Share";
 import { BauCua } from "./BauCuaGame";
+import { autoOpenVillage, village } from "../lib/village";
 import { Avatar, Dialog, FormError, Icon } from "./ui";
 
 /* ---------- Tiện ích ---------- */
@@ -178,11 +179,13 @@ function VoterDots({ ctx, ids }: { ctx: Ctx; ids: number[] }) {
 /** Các game 2 người có tính điểm Elo (xem store/games.go). */
 const RATED_KINDS = new Set<string>(["caro", "chess", "xiangqi", "rps"]);
 
-export function GameCard({ message }: { message: Message }) {
+/** Ctx của một ván (gửi hành động, tên, avatar…) dùng chung cho thẻ trong chat và màn hình riêng của game. */
+export function useGameCtx(message: Message) {
   const { state, gameAction, openThread } = useChat();
   const game = message.game!;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
   const meId = state.me.id;
   const isPlayer = game.players.some((p) => p.id === meId);
 
@@ -191,7 +194,6 @@ export function GameCard({ message }: { message: Message }) {
   const participantIds = threadMeta?.participant_ids ?? [];
   const playerIds = new Set(game.players.map((p) => p.id));
   const viewerIds = participantIds.filter((id) => !playerIds.has(id));
-  const viewerCount = viewerIds.length;
 
   const act = (action: string, data?: unknown) => {
     if (busy) return;
@@ -204,8 +206,6 @@ export function GameCard({ message }: { message: Message }) {
   const nameOf = (id: number) => game.players.find((p) => p.id === id)?.name ?? "?";
   const user = (id: number): PublicUser =>
     state.users[id] ?? { id, username: nameOf(id), display_name: nameOf(id), avatar: null, status_text: "" };
-  const [sharing, setSharing] = useState(false);
-  const [lbOpen, setLbOpen] = useState(false);
   const ctx: Ctx = {
     messageId: message.id,
     channelId: message.channel_id,
@@ -219,8 +219,17 @@ export function GameCard({ message }: { message: Message }) {
     invite: () => setSharing(true),
     openThread: () => openThread(message.id),
     replyCount,
-    viewerCount,
+    viewerCount: viewerIds.length,
   };
+  return { ctx, error, viewerIds, sharing, setSharing };
+}
+
+export function GameCard({ message }: { message: Message }) {
+  const { state, openThread } = useChat();
+  const game = message.game!;
+  const { ctx, error, viewerIds, sharing, setSharing } = useGameCtx(message);
+  const { meId, nameOf, replyCount, viewerCount } = ctx;
+  const [lbOpen, setLbOpen] = useState(false);
   const info = GAME_INFO[game.kind];
   const turn = myTurn(game, meId);
   const night = game.kind === "werewolf" && (game.state as WerewolfState | undefined)?.phase === "night";
@@ -640,7 +649,8 @@ function Lobby({ ctx }: { ctx: Ctx }) {
 
 /* ---------- Ma Sói ---------- */
 
-function Werewolf({ ctx }: { ctx: Ctx }) {
+/** Trạng thái và thao tác Ma Sói dùng chung cho thẻ trong chat và màn hình làng. */
+export function useWerewolf(ctx: Ctx) {
   const { game, meId, busy, act } = ctx;
   const s = game.state as WerewolfState;
   const me = game.me as WerewolfMe | undefined;
@@ -687,7 +697,7 @@ function Werewolf({ ctx }: { ctx: Ctx }) {
   let banner: ReactNode;
   if (!playing) banner = <span>Ván đã kết thúc sau {s.round} đêm</span>;
   else if (s.phase === "night") banner = <span>🌙 Đêm {s.round} · cả làng đi ngủ</span>;
-  else if (s.phase === "day") banner = <span>☀️ Ngày {s.round} · thảo luận trong kênh rồi bỏ phiếu treo cổ</span>;
+  else if (s.phase === "day") banner = <span>☀️ Ngày {s.round} · bàn bạc rồi bỏ phiếu treo cổ</span>;
   else banner = <span>🏹 Thợ săn {ctx.nameOf(s.hunter ?? 0)} đang ngắm bắn</span>;
 
   let hint: ReactNode = null;
@@ -716,8 +726,47 @@ function Werewolf({ ctx }: { ctx: Ctx }) {
             : "Bạn đang ngủ. Chờ trời sáng…";
   }
 
+  return {
+    s,
+    me,
+    step,
+    playing,
+    dead,
+    wolfMates,
+    roleOf,
+    canPick,
+    onPick,
+    pending,
+    setPending,
+    heal,
+    setHeal,
+    poison,
+    setPoison,
+    banner,
+    hint,
+  };
+}
+
+function Werewolf({ ctx }: { ctx: Ctx }) {
+  const { game, meId, busy, act } = ctx;
+  const ww = useWerewolf(ctx);
+  const { s, me, step, playing, dead, wolfMates, roleOf, canPick, onPick, pending } = ww;
+  const { heal, setHeal, poison, setPoison, banner, hint } = ww;
+  // Ván vừa bắt đầu: người chơi được đưa thẳng vào làng (mỗi ván một lần).
+  const fresh = playing && ctx.isPlayer && s.round === 1 && s.phase === "night";
+  useEffect(() => {
+    if (fresh) autoOpenVillage(ctx.messageId);
+  }, [fresh, ctx.messageId]);
+
   return (
     <div className="ww">
+      <button type="button" className="ww-enter" onClick={() => village.open(ctx.messageId)}>
+        <span aria-hidden>🔥</span>
+        <span>
+          <b>{playing ? "Vào làng" : "Xem lại làng"}</b>
+          <small>{playing ? "Ngồi quanh đống lửa, chat bên cạnh" : "Xem vai mọi người và những gì Sói đã bàn"}</small>
+        </span>
+      </button>
       <div className="game-banner">
         {banner}
         {playing && <Countdown deadline={game.deadline} label="Thời gian còn lại" />}
@@ -845,7 +894,7 @@ function Werewolf({ ctx }: { ctx: Ctx }) {
   );
 }
 
-function WitchPanel({
+export function WitchPanel({
   ctx,
   me,
   s,

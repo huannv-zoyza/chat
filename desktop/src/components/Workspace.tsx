@@ -22,6 +22,7 @@ import { RemindersDialog } from "./Reminders";
 import { CallOverlay } from "./CallOverlay";
 import { GroupCallOverlay, UpdateBanner } from "./GroupCall";
 import { StationOverlay } from "./Station";
+import { VillageOverlay } from "./Village";
 import { MessageLinkDialog } from "./Share";
 import { takePendingMessage } from "../lib/platform";
 import { isDM } from "../lib/channel";
@@ -242,6 +243,7 @@ export function Workspace() {
       <CallOverlay />
       <GroupCallOverlay />
       <StationOverlay />
+      <VillageOverlay />
       <MessageLinkDialog />
       {dialog === "reminders" && <RemindersDialog onClose={() => setDialog(null)} onJumped={openRoom} />}
       {dialog === "search" && <SearchDialog onClose={() => setDialog(null)} onJumped={openRoom} />}

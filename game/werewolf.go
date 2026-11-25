@@ -81,7 +81,22 @@ type werewolf struct {
 	// Thợ săn đang chọn người bắn, và pha tiếp theo sau khi bắn (day | night).
 	Hunter      int64  `json:"hunter,omitempty"`
 	HunterAfter string `json:"hunter_after,omitempty"`
+
+	// Kênh chat riêng của bầy Sói: chỉ Sói đọc/viết, hết ván mới lộ cho mọi người.
+	WolfChat []wolfLine `json:"wolf_chat,omitempty"`
 }
+
+type wolfLine struct {
+	From int64     `json:"from"`
+	Text string    `json:"text"`
+	At   time.Time `json:"at"`
+}
+
+const (
+	wolfChatMax  = 200 // giữ chừng này dòng gần nhất
+	wolfLineMax  = 300 // ký tự mỗi dòng
+	wolfChatRate = 600 * time.Millisecond
+)
 
 func (w *werewolf) limits() (int, int) { return 4, 16 }
 func (w *werewolf) autoStart() bool    { return false }
@@ -439,6 +454,9 @@ func (w *werewolf) act(p int64, action string, data json.RawMessage, now time.Ti
 		w.resolveDay(now)
 		return nil
 	}
+	if action == "wolf_chat" {
+		return w.wolfChat(p, data, now)
+	}
 	if w.Dead[p] && action != "shoot" { // Thợ săn bắn sau khi đã chết
 		return Error("Bạn đã chết, chỉ được xem.")
 	}
@@ -542,6 +560,41 @@ func (w *werewolf) act(p int64, action string, data json.RawMessage, now time.Ti
 	return nil
 }
 
+func (w *werewolf) wolfChat(p int64, data json.RawMessage, now time.Time) error {
+	if w.Roles[p] != roleWolf {
+		return Error("Chỉ Sói mới vào được kênh này.")
+	}
+	if w.Dead[p] {
+		return Error("Bạn đã chết, chỉ được đọc.")
+	}
+	var d struct {
+		Text string `json:"text"`
+	}
+	if err := decode(data, &d); err != nil {
+		return err
+	}
+	text := strings.TrimSpace(d.Text)
+	if text == "" {
+		return Error("Tin nhắn trống.")
+	}
+	if r := []rune(text); len(r) > wolfLineMax {
+		text = string(r[:wolfLineMax])
+	}
+	for i := len(w.WolfChat) - 1; i >= 0; i-- {
+		if w.WolfChat[i].From == p {
+			if now.Sub(w.WolfChat[i].At) < wolfChatRate {
+				return Error("Nhắn chậm lại chút.")
+			}
+			break
+		}
+	}
+	w.WolfChat = append(w.WolfChat, wolfLine{From: p, Text: text, At: now})
+	if len(w.WolfChat) > wolfChatMax {
+		w.WolfChat = w.WolfChat[len(w.WolfChat)-wolfChatMax:]
+	}
+	return nil
+}
+
 // Thợ săn đang bắn thì đã được tính là chết; pha hunter vẫn cho người đó hành động.
 func (w *werewolf) aliveCount() int {
 	n := 0
@@ -579,6 +632,7 @@ type wwPublic struct {
 	CastMin     int              `json:"cast_min,omitempty"` // bộ vai tự chọn: cần ít nhất chừng này người
 	Hunter      int64            `json:"hunter,omitempty"`
 	Opts        wwOptions        `json:"opts"`
+	WolfChat    []wolfLine       `json:"wolf_chat,omitempty"` // chỉ có khi hết ván
 }
 
 type wwMe struct {
@@ -593,6 +647,7 @@ type wwMe struct {
 	HealLeft   bool            `json:"heal_left,omitempty"`
 	PoisonLeft bool            `json:"poison_left,omitempty"`
 	Victim     int64           `json:"victim,omitempty"`
+	WolfChat   []wolfLine      `json:"wolf_chat,omitempty"`
 }
 
 func (w *werewolf) view(viewer int64) (any, any) {
@@ -625,6 +680,7 @@ func (w *werewolf) view(viewer int64) (any, any) {
 			maps[id] = r
 		}
 		pub.Roles = maps
+		pub.WolfChat = w.WolfChat
 	}
 	if w.Phase == "day" {
 		pub.Votes = w.DayVotes
@@ -640,6 +696,7 @@ func (w *werewolf) view(viewer int64) (any, any) {
 	switch role {
 	case roleWolf:
 		me.Wolves = w.aliveOrDeadWith(roleWolf)
+		me.WolfChat = w.WolfChat
 		if w.Phase == "night" {
 			me.WolfVotes = w.WolfVotes
 			me.Target = w.WolfVotes[viewer]

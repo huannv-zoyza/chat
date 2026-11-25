@@ -14,7 +14,11 @@ export type WerewolfState = {
   cast_min?: number;
   hunter?: number;
   opts: { day_seconds: number; night_seconds: number; hide_roles: boolean; cast?: WerewolfCast };
+  /** Kênh chat của bầy Sói, chỉ lộ cho mọi người khi hết ván. */
+  wolf_chat?: WolfLine[];
 };
+
+export type WolfLine = { from: number; text: string; at: string };
 
 /** Bộ vai chủ phòng tự chọn (số Sói, có/không các vai đặc biệt); còn lại là Dân làng. */
 export type WerewolfCast = Partial<Record<Exclude<WerewolfRole, "villager">, number>>;
@@ -39,6 +43,7 @@ export type WerewolfMe = {
   heal_left?: boolean;
   poison_left?: boolean;
   victim?: number;
+  wolf_chat?: WolfLine[];
 };
 
 export type SpyState = {

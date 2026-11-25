@@ -14,10 +14,12 @@ type Props = {
   channel: Channel;
   parentId: number;
   onClose: () => void;
+  /** Nằm trong màn hình game (làng Ma Sói): không tay kéo, không lặp lại tin gốc, header gọn. */
+  embedded?: boolean;
 };
 
 /** Panel bên phải: tin gốc, các trả lời và ô trả lời. Trên điện thoại phủ toàn màn hình. */
-export function ThreadPanel({ channel, parentId, onClose }: Props) {
+export function ThreadPanel({ channel, parentId, onClose, embedded }: Props) {
   const { state, api, openThread, retryMessage, discardMessage, sendMessage, spectateGame, unspectateGame } = useChat();
   const thread = state.threads[parentId];
   const [viewing, setViewing] = useState<Attachment | null>(null);
@@ -96,31 +98,33 @@ export function ThreadPanel({ channel, parentId, onClose }: Props) {
   const spectatorNames = spectators.map((s) => s.display_name || s.username).join(", ");
 
   return (
-    <aside className="thread-panel" aria-label="Luồng trả lời">
-      {api && <ThreadResizer onDone={(w) => setPrefs(api, { thread_width: w })} />}
-      <header className="thread-header">
-        <div>
-          <h3>{isGameThread ? `Khán đài: ${game?.title || parent?.embed?.title || "Trò chơi"}` : "Luồng"}</h3>
-          <div className="thread-header-sub">
-            <p className="muted">
-              {isGameThread && game?.players && game.players.length >= 2
-                ? `${game.players[0].name} vs ${game.players[1].name}`
-                : where}
-            </p>
-            {isGameThread && viewerCount > 0 && (
-              <span
-                className="thread-spectator-badge"
-                title={spectatorNames ? `Khán giả: ${spectatorNames}` : `${viewerCount} khán giả đang theo dõi`}
-              >
-                <span className="live-dot" /> 👁️ {viewerCount} người xem
-              </span>
-            )}
+    <aside className={`thread-panel${embedded ? " is-embedded" : ""}`} aria-label="Luồng trả lời">
+      {api && !embedded && <ThreadResizer onDone={(w) => setPrefs(api, { thread_width: w })} />}
+      {!embedded && (
+        <header className="thread-header">
+          <div>
+            <h3>{isGameThread ? `Khán đài: ${game?.title || parent?.embed?.title || "Trò chơi"}` : "Luồng"}</h3>
+            <div className="thread-header-sub">
+              <p className="muted">
+                {isGameThread && game?.players && game.players.length >= 2
+                  ? `${game.players[0].name} vs ${game.players[1].name}`
+                  : where}
+              </p>
+              {isGameThread && viewerCount > 0 && (
+                <span
+                  className="thread-spectator-badge"
+                  title={spectatorNames ? `Khán giả: ${spectatorNames}` : `${viewerCount} khán giả đang theo dõi`}
+                >
+                  <span className="live-dot" /> 👁️ {viewerCount} người xem
+                </span>
+              )}
+            </div>
           </div>
-        </div>
-        <button className="icon-btn" onClick={onClose} aria-label="Đóng luồng">
-          <Icon name="x" />
-        </button>
-      </header>
+          <button className="icon-btn" onClick={onClose} aria-label="Đóng luồng">
+            <Icon name="x" />
+          </button>
+        </header>
+      )}
 
       <div
         className="thread-scroll"
@@ -134,19 +138,21 @@ export function ThreadPanel({ channel, parentId, onClose }: Props) {
           <p className="messages-loading">Đang tải luồng…</p>
         ) : (
           <>
-            <MessageRow
-              mine={parent.user_id === state.me.id}
-              mentioned={!!parent.mentions?.includes(state.me.id)}
-              grouped={false}
-              name={shownName(parentUser, state.nicknames[channel.id])}
-              avatarUser={parentUser}
-              time={parent.created_at}
-              content={parent.content}
-              attachments={parent.attachments}
-              onOpenImage={setViewing}
-              message={parent}
-              roleBadge={isGameThread ? <span className="game-role-badge is-host">🎮 Ván đấu</span> : undefined}
-            />
+            {!embedded && (
+              <MessageRow
+                mine={parent.user_id === state.me.id}
+                mentioned={!!parent.mentions?.includes(state.me.id)}
+                grouped={false}
+                name={shownName(parentUser, state.nicknames[channel.id])}
+                avatarUser={parentUser}
+                time={parent.created_at}
+                content={parent.content}
+                attachments={parent.attachments}
+                onOpenImage={setViewing}
+                message={parent}
+                roleBadge={isGameThread ? <span className="game-role-badge is-host">🎮 Ván đấu</span> : undefined}
+              />
+            )}
             <div className="thread-divider" role="separator">
               <span>{replyCount > 0 ? `${replyCount} bình luận` : "Chưa có bình luận"}</span>
             </div>
@@ -192,7 +198,7 @@ export function ThreadPanel({ channel, parentId, onClose }: Props) {
         )}
       </div>
 
-      {isGameThread && (
+      {isGameThread && !embedded && (
         <div className="game-cheering-bar" role="toolbar" aria-label="Cổ vũ nhanh">
           {["👏 Hay quá!", "🔥 Căng quá!", "🤔 Nước hiểm!"].map((text) => (
             <button

@@ -121,7 +121,9 @@ export type XiangqiMove = {
 };
 
 export type XiangqiState = {
-  opts?: { turn_minutes: number; first: string };
+  opts?: { turn_minutes: number; first: string; bet_amount?: number };
+  bet_amount?: number;
+  pot?: number;
   board: string;
   turn_color: "r" | "b";
   turn_player_id: number;

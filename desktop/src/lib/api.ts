@@ -81,6 +81,18 @@ export type MessageLinkInfo = {
 export type GameKind = "station" | "werewolf" | "spy" | "caro" | "rps" | "chess" | "xiangqi" | "baucua";
 
 export type Wallet = { balance: number; debt: number; can_claim: boolean; can_loan: boolean; in_tables: number };
+export type WalletTransaction = {
+  id: number;
+  user_id: number;
+  kind: string;
+  amount: number;
+  debt_delta: number;
+  game_id?: number;
+  seq: number;
+  peer_user?: PublicUser;
+  note: string;
+  created_at: string;
+};
 export type BoardEntry = { user: PublicUser; balance: number; debt: number };
 export type WalletBoard = { rich: BoardEntry[]; debtors: BoardEntry[] };
 export type GamePlayer = { id: number; name: string };
@@ -101,6 +113,7 @@ export type GameMemberStats = {
   win_rate: number;
   current_streak?: number;
   best_streak?: number;
+  net_profit?: number;
 };
 
 export type GameLeaderboard = {
@@ -491,6 +504,19 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     takeLoan: () => request<Wallet>("POST", "/api/wallet/loan"),
     repayDebt: () => request<Wallet>("POST", "/api/wallet/repay"),
     walletBoard: (channelId: number) => request<WalletBoard>("GET", `/api/channels/${channelId}/wallet-board`),
+    walletTransactions: (opts?: { limit?: number; before_id?: number; kind?: string }) => {
+      const qs = new URLSearchParams();
+      if (opts?.limit) qs.set("limit", String(opts.limit));
+      if (opts?.before_id) qs.set("before_id", String(opts.before_id));
+      if (opts?.kind && opts.kind !== "all") qs.set("kind", opts.kind);
+      const q = qs.toString();
+      return request<{ items: WalletTransaction[]; has_more: boolean }>(
+        "GET",
+        `/api/wallet/transactions${q ? `?${q}` : ""}`,
+      );
+    },
+    walletTransfer: (b: { to_user_id: number; amount: number; note?: string }) =>
+      request<{ wallet: Wallet; transaction: WalletTransaction }>("POST", "/api/wallet/transfer", b),
     kickMember: (channelId: number, userId: number) =>
       request<void>("DELETE", `/api/channels/${channelId}/members/${userId}`),
     joinChannel: (id: number) => request<Channel>("POST", `/api/channels/${id}/join`),

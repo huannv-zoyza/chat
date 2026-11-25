@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"chat/database"
@@ -115,5 +116,109 @@ func TestWalletFlow(t *testing.T) {
 	rich, debtors, err := st.WalletBoard(ctx, ch.ID)
 	if err != nil || len(rich) != 1 || len(debtors) != 1 || debtors[0].Debt != 500 {
 		t.Fatalf("board: %v %v %v", err, rich, debtors)
+	}
+}
+
+func TestWalletTransferHistoryAndXiangqiEscrow(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+
+	u1, _ := st.CreateUser(ctx, "red", "red@x.vn", "h", "Red")
+	u2, _ := st.CreateUser(ctx, "black", "black@x.vn", "h", "Black")
+	ch, _ := st.CreateChannel(ctx, u1.ID, "co-tuong", "", false)
+
+	// Transfer P2P + concurrent overdraft protection
+	if _, _, _, err := st.TransferCoins(ctx, u1.ID, u1.ID, 50, ""); !errors.Is(err, store.ErrSelfTransfer) {
+		t.Fatalf("expected ErrSelfTransfer, got %v", err)
+	}
+	if _, _, _, err := st.TransferCoins(ctx, u1.ID, u2.ID, 0, ""); !errors.Is(err, store.ErrInvalidAmount) {
+		t.Fatalf("expected ErrInvalidAmount, got %v", err)
+	}
+	if _, _, _, err := st.TransferCoins(ctx, u1.ID, 99999, 50, ""); !errors.Is(err, store.ErrRecipientNotFound) {
+		t.Fatalf("expected ErrRecipientNotFound, got %v", err)
+	}
+
+	// Concurrent transfers of 300 from 1000 balance -> max 3 succeed
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	okCount := 0
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, _, _, err := st.TransferCoins(ctx, u1.ID, u2.ID, 300, "chuyển"); err == nil {
+				mu.Lock()
+				okCount++
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	if okCount != 3 {
+		t.Fatalf("expected 3 concurrent transfers, got %d", okCount)
+	}
+	w1, _ := st.GetWallet(ctx, u1.ID)
+	w2, _ := st.GetWallet(ctx, u2.ID)
+	if w1.Balance != 100 || w2.Balance != 1900 {
+		t.Fatalf("unexpected balances after concurrent transfer: w1=%d w2=%d", w1.Balance, w2.Balance)
+	}
+
+	// Xiangqi bet escrow: create fails if insufficient
+	if _, _, err := st.CreateGameWithBet(ctx, ch.ID, u1.ID, model.Embed{Type: "game", ID: "xiangqi", Title: "Cờ tướng"}, "lobby", []byte(`{}`), 500); !errors.Is(err, store.ErrInsufficientBalance) {
+		t.Fatalf("expected ErrInsufficientBalance, got %v", err)
+	}
+
+	// Transfer back 900 so u1=1000, u2=1000
+	if _, _, _, err := st.TransferCoins(ctx, u2.ID, u1.ID, 900, "hoàn"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Match 1: stake 400 -> u1 wins
+	m1, wu1, err := st.CreateGameWithBet(ctx, ch.ID, u1.ID, model.Embed{Type: "game", ID: "xiangqi", Title: "Cờ tướng"}, "lobby", []byte(`{}`), 400)
+	if err != nil || wu1 == nil || wu1.Balance != 600 {
+		t.Fatalf("create bet: err=%v w=%+v", err, wu1)
+	}
+	if locked, _ := st.LockedXiangqiBets(ctx, u1.ID); locked != 400 {
+		t.Fatalf("expected locked=400, got %d", locked)
+	}
+	wu2, err := st.LockGameBet(ctx, u2.ID, m1.ID, 400)
+	if err != nil || wu2.Balance != 600 {
+		t.Fatalf("lock bet u2: err=%v w=%+v", err, wu2)
+	}
+	if _, err := st.LockGameBet(ctx, u2.ID, m1.ID, 400); !errors.Is(err, store.ErrBetAlreadyLocked) {
+		t.Fatalf("expected ErrBetAlreadyLocked, got %v", err)
+	}
+	ws, err := st.SettleGameBets(ctx, m1.ID, []int64{u1.ID})
+	if err != nil || len(ws) != 2 {
+		t.Fatalf("settle win: err=%v len=%d", err, len(ws))
+	}
+	// Idempotent double settle
+	ws2, err := st.SettleGameBets(ctx, m1.ID, []int64{u1.ID})
+	if err != nil || len(ws2) != 0 {
+		t.Fatalf("double settle should be noop: err=%v len=%d", err, len(ws2))
+	}
+	w1, _ = st.GetWallet(ctx, u1.ID)
+	w2, _ = st.GetWallet(ctx, u2.ID)
+	if w1.Balance != 1400 || w2.Balance != 600 {
+		t.Fatalf("post-win balances: w1=%d w2=%d", w1.Balance, w2.Balance)
+	}
+
+	// Match 2: DeleteMessage refunds locked bet
+	m2, _, err := st.CreateGameWithBet(ctx, ch.ID, u1.ID, model.Embed{Type: "game", ID: "xiangqi", Title: "Cờ tướng"}, "lobby", []byte(`{}`), 500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.DeleteMessage(ctx, m2.ID); err != nil {
+		t.Fatal(err)
+	}
+	w1, _ = st.GetWallet(ctx, u1.ID)
+	if w1.Balance != 1400 {
+		t.Fatalf("expected refund on DeleteMessage, got %d", w1.Balance)
+	}
+
+	// History pagination check
+	items, hasMore, err := st.ListWalletTransactions(ctx, u1.ID, "", 0, 3)
+	if err != nil || len(items) != 3 || !hasMore {
+		t.Fatalf("list transactions: err=%v len=%d hasMore=%v", err, len(items), hasMore)
 	}
 }

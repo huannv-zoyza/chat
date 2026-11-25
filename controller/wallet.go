@@ -5,9 +5,13 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"chat/game"
+	"chat/model"
 	"chat/store"
 )
 
@@ -110,7 +114,81 @@ func (a *API) chipsOnTables(userID int64) int64 {
 		}
 		s.mu.Unlock()
 	}
+	if locked, err := a.store.LockedXiangqiBets(context.Background(), userID); err == nil {
+		sum += locked
+	}
 	return sum
+}
+
+type walletTxListResp struct {
+	Items   []model.WalletTransaction `json:"items"`
+	HasMore bool                      `json:"has_more"`
+}
+
+func (a *API) listWalletTransactions(w http.ResponseWriter, r *http.Request) {
+	me := currentUser(r)
+	q := r.URL.Query()
+	limit := 30
+	if raw := q.Get("limit"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 100 {
+			limit = n
+		}
+	}
+	var beforeID int64
+	if raw := q.Get("before_id"); raw != "" {
+		if n, err := strconv.ParseInt(raw, 10, 64); err == nil && n > 0 {
+			beforeID = n
+		}
+	}
+	kind := strings.TrimSpace(q.Get("kind"))
+	items, hasMore, err := a.store.ListWalletTransactions(r.Context(), me.ID, kind, beforeID, limit)
+	if err != nil {
+		internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, walletTxListResp{Items: items, HasMore: hasMore})
+}
+
+type transferRequest struct {
+	ToUserID int64  `json:"to_user_id"`
+	Amount   int64  `json:"amount"`
+	Note     string `json:"note"`
+}
+
+func (a *API) transferCoins(w http.ResponseWriter, r *http.Request) {
+	var req transferRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	me := currentUser(r)
+	note := strings.TrimSpace(req.Note)
+	if utf8.RuneCountInString(note) > 120 {
+		note = string([]rune(note)[:120])
+	}
+	senderW, recvW, tx, err := a.store.TransferCoins(r.Context(), me.ID, req.ToUserID, req.Amount, note)
+	switch {
+	case errors.Is(err, store.ErrInvalidAmount):
+		writeError(w, http.StatusBadRequest, "Số xu chuyển phải lớn hơn 0.")
+		return
+	case errors.Is(err, store.ErrSelfTransfer):
+		writeError(w, http.StatusBadRequest, "Không thể tự chuyển xu cho chính mình.")
+		return
+	case errors.Is(err, store.ErrRecipientNotFound):
+		writeError(w, http.StatusNotFound, "Không tìm thấy người nhận hợp lệ.")
+		return
+	case errors.Is(err, store.ErrInsufficientBalance):
+		writeError(w, http.StatusBadRequest, "Số dư xu không đủ để thực hiện giao dịch.")
+		return
+	case err != nil:
+		internalError(w, r, err)
+		return
+	}
+	a.pushWallet(senderW)
+	a.pushWallet(recvW)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"wallet":      a.walletResponse(senderW),
+		"transaction": tx,
+	})
 }
 
 /* ---------- Ván dùng chip: mua chip / trả chip (gọi khi đang giữ s.mu) ---------- */
@@ -197,6 +275,14 @@ func (a *API) settleChannelGames(ctx context.Context, channelID int64) error {
 			err = a.payOutLocked(ctx, s, "cashout", 0, s.g.Settle())
 			if err == nil {
 				s.paid = true
+			}
+		} else if s.g.BetAmount() > 0 {
+			if ws, rErr := a.store.RefundGameBets(ctx, s.messageID, "Kênh đã bị xoá"); rErr == nil {
+				for _, w := range ws {
+					a.pushWallet(w)
+				}
+			} else {
+				err = rErr
 			}
 		}
 		s.mu.Unlock()

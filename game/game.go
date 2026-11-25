@@ -162,6 +162,11 @@ func New(kind string, host Player, opts json.RawMessage, now time.Time) (*Game, 
 			return nil, Error("Tuỳ chọn không hợp lệ.")
 		}
 	}
+	if v, ok := r.(interface{ validate() error }); ok {
+		if err := v.validate(); err != nil {
+			return nil, err
+		}
+	}
 	r.normalize()
 	b := r.base()
 	*b = Base{Kind: kind, HostID: host.ID, Players: []Player{host}, Status: Lobby, Log: []string{}, Version: 1}
@@ -194,9 +199,17 @@ func (g *Game) Limits() (min, max int) { return g.r.limits() }
 func (g *Game) Result() string         { return g.r.base().Result }
 func (g *Game) Winners() []int64       { return append([]int64(nil), g.r.base().Winners...) }
 func (g *Game) HostID() int64          { return g.r.base().HostID }
-func (g *Game) touch()                 { g.r.base().Version++ }
-func shuffle[T any](s []T)             { rand.Shuffle(len(s), func(i, j int) { s[i], s[j] = s[j], s[i] }) }
-func pick[T any](s []T) T              { return s[rand.IntN(len(s))] }
+
+// BetAmount trả về mức cược mỗi người chơi của ván (0 nếu là ván giao hữu).
+func (g *Game) BetAmount() int64 {
+	if bt, ok := g.r.(interface{ betAmount() int64 }); ok {
+		return bt.betAmount()
+	}
+	return 0
+}
+func (g *Game) touch()     { g.r.base().Version++ }
+func shuffle[T any](s []T) { rand.Shuffle(len(s), func(i, j int) { s[i], s[j] = s[j], s[i] }) }
+func pick[T any](s []T) T  { return s[rand.IntN(len(s))] }
 
 // Act: p bấm một hành động. Hành động chung: join, leave, start, cancel; còn lại do từng trò xử lý.
 // Lỗi kiểu Error là câu báo cho người chơi.
@@ -265,6 +278,9 @@ func (g *Game) Act(p Player, action string, data json.RawMessage, now time.Time)
 	case "cancel":
 		if p.ID != b.HostID {
 			return Error("Chỉ chủ phòng mới huỷ được.")
+		}
+		if b.Status != Lobby && (g.BetAmount() > 0 || b.Kind == "xiangqi") {
+			return Error("Ván đã bắt đầu, không thể huỷ. Bạn chỉ có thể xin đầu hàng hoặc đề nghị hoà.")
 		}
 		b.logf("Chủ phòng đã huỷ ván.")
 		b.end("Ván đã bị huỷ.", nil)

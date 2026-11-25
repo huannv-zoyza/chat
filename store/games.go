@@ -135,6 +135,7 @@ type MemberGameStats struct {
 	WinRate       float64 `json:"win_rate"`
 	CurrentStreak int     `json:"current_streak"`
 	BestStreak    int     `json:"best_streak"`
+	NetProfit     int64   `json:"net_profit"`
 }
 
 type LeaderboardResponse struct {
@@ -285,6 +286,29 @@ func (s *Store) GetGameLeaderboard(ctx context.Context, kind string) (Leaderboar
 		}
 	}
 
+	profitMap := make(map[int64]int64)
+	profitQuery := `
+		SELECT gb.user_id, COALESCE(SUM(gb.payout - gb.amount), 0)
+		FROM game_bets gb
+		JOIN games g ON g.message_id = gb.message_id
+		JOIN messages m ON m.id = g.message_id
+		WHERE gb.status IN ('won', 'lost') AND m.deleted_at IS NULL`
+	var profitArgs []any
+	if kind != "" && kind != "all" {
+		profitQuery += " AND g.kind = ?"
+		profitArgs = append(profitArgs, kind)
+	}
+	profitQuery += " GROUP BY gb.user_id"
+	if pRows, err := s.db.QueryContext(ctx, profitQuery, profitArgs...); err == nil {
+		defer pRows.Close()
+		for pRows.Next() {
+			var uid, profit int64
+			if err := pRows.Scan(&uid, &profit); err == nil {
+				profitMap[uid] = profit
+			}
+		}
+	}
+
 	members := make([]MemberGameStats, 0, len(statsMap))
 	for id, st := range statsMap {
 		dn := st.fallback
@@ -332,6 +356,7 @@ func (s *Store) GetGameLeaderboard(ctx context.Context, kind string) (Leaderboar
 			WinRate:       wr,
 			CurrentStreak: curS,
 			BestStreak:    bestS,
+			NetProfit:     profitMap[id],
 		})
 	}
 

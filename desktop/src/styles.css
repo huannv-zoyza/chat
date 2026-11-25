@@ -10562,3 +10562,213 @@ button.villager:focus-visible .villager-name {
     display: none;
   }
 }
+/* =========================================================
+   Ví Xu: Chuyển xu, Lịch sử giao dịch & Đặt cược Cờ tướng
+   ========================================================= */
+
+.wallet-notice {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #86efac;
+  border-radius: 8px;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+  margin: 0.35rem 0 0;
+}
+
+.wallet-transfer-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-top: 0.45rem;
+}
+
+.wallet-user-picker {
+  display: flex;
+  flex-direction: column;
+  max-height: 150px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--raised);
+  margin-top: 0.3rem;
+}
+
+.wallet-user-option {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.6rem;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.wallet-user-option:hover {
+  background: var(--line-soft);
+}
+
+.wallet-recipient-picked {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--raised);
+}
+
+.wallet-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+
+.wallet-chip {
+  padding: 0.22rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--raised);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.wallet-chip.is-active {
+  background: var(--signal-soft);
+  border-color: var(--signal);
+  color: var(--signal-ink);
+}
+
+.wallet-history {
+  margin-top: 0.45rem;
+}
+
+.wallet-history-filter {
+  margin-bottom: 0.5rem;
+}
+
+.wallet-tx-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.wallet-tx-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--line-soft);
+  background: var(--raised);
+}
+
+.wallet-tx-icon {
+  font-size: 1.05rem;
+  flex-shrink: 0;
+}
+
+.wallet-tx-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.wallet-tx-title {
+  font-size: 0.83rem;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wallet-tx-sub {
+  font-size: 0.72rem;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.wallet-tx-amount {
+  font-size: 0.84rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.wallet-tx-amount.is-plus {
+  color: var(--ok);
+}
+
+.wallet-tx-amount.is-minus {
+  color: var(--warn);
+}
+
+.xq-bet-pill {
+  margin-top: 0.35rem;
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.xq-bet-pill.is-paid {
+  background: #fef3c7;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+.xq-bet-warn {
+  font-size: 0.8rem;
+  color: var(--warn);
+  font-weight: 600;
+  align-self: center;
+}
+
+.xq-bet-bar {
+  max-width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 6px;
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+  font-size: 0.8rem;
+  font-weight: 600;
+  box-sizing: border-box;
+}
+
+.lb-c-profit {
+  text-align: right;
+  font-weight: 700;
+  font-size: 0.84rem;
+  white-space: nowrap;
+}
+
+.lb-c-profit.is-win {
+  color: var(--ok);
+}
+
+.lb-c-profit.is-loss {
+  color: var(--warn);
+}
+

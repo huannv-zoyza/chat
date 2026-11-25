@@ -99,6 +99,8 @@ func (a *API) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("POST /api/wallet/repay", a.requireAuth(a.walletAction(func(r *http.Request, id int64) (store.Wallet, error) {
 		return a.store.RepayDebt(r.Context(), id)
 	})))
+	mux.HandleFunc("GET /api/wallet/transactions", a.requireAuth(a.listWalletTransactions))
+	mux.HandleFunc("POST /api/wallet/transfer", a.requireAuth(a.transferCoins))
 	mux.HandleFunc("POST /api/channels/{id}/invite", a.requireAuth(a.regenerateInvite))
 	mux.HandleFunc("GET /api/invites/{code}", a.requireAuth(a.previewInvite))
 	mux.HandleFunc("POST /api/invites/{code}/join", a.requireAuth(a.joinByInvite))

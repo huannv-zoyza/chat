@@ -696,6 +696,9 @@ func (s *Store) DeleteMessage(ctx context.Context, id int64) (model.Message, []s
 		keys = append(keys, k)
 	}
 	rows.Close()
+	if _, err := refundGameBetsTx(ctx, tx, id, "Tin nhắn ván cờ đã bị xoá"); err != nil {
+		return model.Message{}, nil, err
+	}
 	for _, q := range []string{
 		`DELETE FROM attachments WHERE message_id = ?`,
 		`DELETE FROM message_mentions WHERE message_id = ?`,

@@ -498,6 +498,7 @@ function CastPicker({
 }
 
 function Lobby({ ctx }: { ctx: Ctx }) {
+  const { state } = useChat();
   const { game, meId, isPlayer, busy, act } = ctx;
   const isHost = game.host_id === meId;
   const full = game.players.length >= game.max_players;
@@ -505,6 +506,10 @@ function Lobby({ ctx }: { ctx: Ctx }) {
   const minPlayers = Math.max(game.min_players, (game.kind === "werewolf" && (game.state as WerewolfState)?.cast_min) || 0);
   const enough = game.players.length >= minPlayers;
   const auto = game.min_players === game.max_players; // trò 2 người: đủ người là vào luôn
+  const myBalance = state.wallet?.balance ?? 0;
+  const xqState = game.kind === "xiangqi" ? (game.state as XiangqiState | undefined) : undefined;
+  const xqBet = xqState?.bet_amount ?? xqState?.opts?.bet_amount ?? 0;
+  const notEnoughForBet = !isPlayer && xqBet > 0 && myBalance < xqBet;
 
   let setup: ReactNode = null;
   if (game.kind === "station") {
@@ -570,9 +575,16 @@ function Lobby({ ctx }: { ctx: Ctx }) {
         ? "khách cầm Đỏ"
         : "ngẫu nhiên màu quân";
     setup = (
-      <p className="game-setup">
-        Bàn cờ 9×10 chuẩn · Luật WXF · {mins} phút/nước · {firstStr}
-      </p>
+      <div className="game-setup">
+        <p style={{ margin: 0 }}>
+          Bàn cờ 9×10 chuẩn · Luật WXF · {mins} phút/nước · {firstStr}
+        </p>
+        <div className={`xq-bet-pill${xqBet > 0 ? " is-paid" : ""}`}>
+          {xqBet > 0
+            ? `🪙 Mức cược: ${xqBet.toLocaleString("vi-VN")} xu / người · Thắng nhận ${(xqBet * 2).toLocaleString("vi-VN")} xu`
+            : "🤝 Giao hữu miễn phí (0 xu)"}
+        </div>
+      </div>
     );
   } else if (game.kind === "baucua") {
     const rolls = (game.state as BauCuaState | undefined)?.rolls_per_dealer || 3;
@@ -610,9 +622,24 @@ function Lobby({ ctx }: { ctx: Ctx }) {
       </details>
       <div className="game-actions">
         {!isPlayer && !full && (
-          <button type="button" className="btn btn-primary" disabled={busy} onClick={() => act("join")}>
-            {auto ? "Nhận lời thách đấu" : "Vào chơi"}
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={busy || notEnoughForBet}
+            onClick={() => act("join")}
+            title={notEnoughForBet ? `Cần ít nhất ${xqBet.toLocaleString("vi-VN")} xu để tham gia` : undefined}
+          >
+            {xqBet > 0
+              ? `Nhận thách đấu (Cược ${xqBet.toLocaleString("vi-VN")} xu)`
+              : auto
+                ? "Nhận lời thách đấu"
+                : "Vào chơi"}
           </button>
+        )}
+        {notEnoughForBet && (
+          <span className="xq-bet-warn">
+            Số dư không đủ ({myBalance.toLocaleString("vi-VN")} / {xqBet.toLocaleString("vi-VN")} xu)
+          </span>
         )}
         {isPlayer && !isHost && (
           <button type="button" className="btn" disabled={busy} onClick={() => act("leave")}>
@@ -1764,7 +1791,7 @@ const PICKER_GROUPS = [
 ] as const;
 
 export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number; dm: boolean; onClose: () => void }) {
-  const { createGame } = useChat();
+  const { state, createGame } = useChat();
   const kinds = (Object.keys(GAME_INFO) as GameKind[]).filter((k) => !dm || DUEL_KINDS.has(k) || k === "baucua");
   const [kind, setKind] = useState<GameKind>(kinds[0]);
   const [group, setGroup] = useState<(typeof PICKER_GROUPS)[number]["id"]>("all");
@@ -1779,8 +1806,12 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
   const [chessFirst, setChessFirst] = useState<"random" | "host" | "guest">("random");
   const [xiangqiMinutes, setXiangqiMinutes] = useState(3);
   const [xiangqiFirst, setXiangqiFirst] = useState<"random" | "host" | "guest">("random");
+  const [xiangqiBet, setXiangqiBet] = useState(0);
   const [bestOf, setBestOf] = useState(3);
   const [rollsPerDealer, setRollsPerDealer] = useState(3);
+  const myBalance = state.wallet?.balance ?? 0;
+  const xiangqiInsufficient = kind === "xiangqi" && xiangqiBet > myBalance;
+  const xiangqiBetInvalid = kind === "xiangqi" && (xiangqiBet < 0 || xiangqiBet > 1_000_000 || xiangqiInsufficient);
   const [st, setSt] = useState({
     traitors: 0,
     kill_cooldown: 25,
@@ -1805,7 +1836,7 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
       spy: { spies },
       caro: { free_style: !blockRule },
       chess: { turn_minutes: chessMinutes, first: chessFirst },
-      xiangqi: { turn_minutes: xiangqiMinutes, first: xiangqiFirst },
+      xiangqi: { turn_minutes: xiangqiMinutes, first: xiangqiFirst, bet_amount: Math.max(0, Math.floor(xiangqiBet)) },
       rps: { best_of: bestOf },
       baucua: { rolls_per_dealer: rollsPerDealer },
     };
@@ -2028,6 +2059,35 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
                   <option value="guest">Khách cầm Đỏ</option>
                 </select>
               </label>
+              <div className="field">
+                <span>Mức cược bàn (xu) · Số dư: {myBalance.toLocaleString("vi-VN")} xu</span>
+                <div className="wallet-chips">
+                  {[0, 50, 100, 200, 500, 1000].map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      className={`wallet-chip${xiangqiBet === v ? " is-active" : ""}`}
+                      onClick={() => setXiangqiBet(v)}
+                    >
+                      {v === 0 ? "Miễn phí" : v.toLocaleString("vi-VN")}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="number"
+                  min={0}
+                  max={1000000}
+                  step={10}
+                  value={xiangqiBet}
+                  onChange={(e) => setXiangqiBet(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+                  placeholder="Nhập mức cược (0 - 1.000.000 xu)"
+                />
+                {xiangqiInsufficient && (
+                  <small style={{ color: "var(--warn)", fontWeight: 600 }}>
+                    Số dư không đủ để mở bàn cược {xiangqiBet.toLocaleString("vi-VN")} xu.
+                  </small>
+                )}
+              </div>
             </>
           )}
           {kind === "baucua" && (
@@ -2065,7 +2125,7 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
           <button type="button" className="btn" onClick={onClose} disabled={busy}>
             Huỷ
           </button>
-          <button className="btn btn-primary" disabled={busy}>
+          <button className="btn btn-primary" disabled={busy || xiangqiBetInvalid}>
             {busy ? "Đang mở…" : "Mở phòng"}
           </button>
         </div>
@@ -2206,6 +2266,9 @@ export function GameLeaderboardDialog({
                 {rated && <span role="columnheader" className="lb-c-elo">Elo</span>}
                 <span role="columnheader" className="lb-c-record" title="Thắng – Thua – Hoà">T–B–H</span>
                 <span role="columnheader" className="lb-c-rate">Tỉ lệ thắng</span>
+                {(kind === "xiangqi" || kind === "all") && (
+                  <span role="columnheader" className="lb-c-profit">Lãi/Lỗ</span>
+                )}
               </div>
               {members.map((m, i) => (
                 <div key={m.user_id} role="row" className={`lb-row${m.user_id === state.me.id ? " is-me" : ""}`}>
@@ -2232,6 +2295,17 @@ export function GameLeaderboardDialog({
                     </span>
                     {Math.round(m.win_rate)}%
                   </span>
+                  {(kind === "xiangqi" || kind === "all") && (
+                    <span
+                      role="cell"
+                      className={`lb-c-profit${(m.net_profit ?? 0) > 0 ? " is-win" : (m.net_profit ?? 0) < 0 ? " is-loss" : ""}`}
+                    >
+                      {(m.net_profit ?? 0) > 0
+                        ? `+${(m.net_profit ?? 0).toLocaleString("vi-VN")}`
+                        : (m.net_profit ?? 0).toLocaleString("vi-VN")}{" "}
+                      xu
+                    </span>
+                  )}
                 </div>
               ))}
             </div>

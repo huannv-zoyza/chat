@@ -18,10 +18,11 @@ import (
 // - Chiếu bí, xin hàng, đề nghị hoà, xử thua khi hết giờ.
 
 const (
-	xiangqiBoardFiles = 9
-	xiangqiBoardRanks = 10
-	xiangqiBoardSize  = 90
-	xiangqiTurnTime   = 3 * time.Minute
+	xiangqiBoardFiles       = 9
+	xiangqiBoardRanks       = 10
+	xiangqiBoardSize        = 90
+	xiangqiTurnTime         = 3 * time.Minute
+	MaxXiangqiBet     int64 = 1_000_000
 )
 
 type xiangqiOptions struct {
@@ -29,6 +30,8 @@ type xiangqiOptions struct {
 	TurnMinutes int `json:"turn_minutes"`
 	// Người đi trước (cầm Đỏ): "random" (mặc định), "host", "guest".
 	First string `json:"first"`
+	// Mức cược Xu cho mỗi người chơi (0 = giao hữu miễn phí).
+	BetAmount int64 `json:"bet_amount"`
 }
 
 type xiangqiMove struct {
@@ -55,6 +58,14 @@ type xiangqi struct {
 func (x *xiangqi) limits() (int, int) { return 2, 2 }
 func (x *xiangqi) autoStart() bool    { return true }
 func (x *xiangqi) options() any       { return &x.Opts }
+func (x *xiangqi) betAmount() int64   { return x.Opts.BetAmount }
+
+func (x *xiangqi) validate() error {
+	if x.Opts.BetAmount < 0 || x.Opts.BetAmount > MaxXiangqiBet {
+		return Error(fmt.Sprintf("Mức cược phải từ 0 đến %d Xu.", MaxXiangqiBet))
+	}
+	return nil
+}
 
 func (x *xiangqi) normalize() {
 	if x.Opts.TurnMinutes <= 0 {
@@ -62,6 +73,12 @@ func (x *xiangqi) normalize() {
 	}
 	if x.Opts.First != "host" && x.Opts.First != "guest" {
 		x.Opts.First = "random"
+	}
+	if x.Opts.BetAmount < 0 {
+		x.Opts.BetAmount = 0
+	}
+	if x.Opts.BetAmount > MaxXiangqiBet {
+		x.Opts.BetAmount = MaxXiangqiBet
 	}
 }
 
@@ -803,6 +820,8 @@ func (x *xiangqi) tick(now time.Time) bool {
 
 type xiangqiPublic struct {
 	Opts          xiangqiOptions      `json:"opts"`
+	BetAmount     int64               `json:"bet_amount"`
+	Pot           int64               `json:"pot"`
 	Board         string              `json:"board"`
 	TurnColor     string              `json:"turn_color"`
 	TurnPlayerID  int64               `json:"turn_player_id"`
@@ -859,6 +878,8 @@ func (x *xiangqi) view(viewer int64) (any, any) {
 
 	pub := xiangqiPublic{
 		Opts:          x.Opts,
+		BetAmount:     x.Opts.BetAmount,
+		Pot:           x.Opts.BetAmount * int64(len(x.Players)),
 		Board:         string(x.Board[:]),
 		TurnColor:     string(x.TurnColor),
 		InCheck:       inCheck,

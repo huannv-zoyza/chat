@@ -399,7 +399,7 @@ func (a *API) startGame(ctx context.Context, ch model.Channel, host model.User, 
 	if title == "" {
 		return model.Message{}, game.Error("Không có trò chơi này.")
 	}
-	if ch.IsDM() && kind != "caro" && kind != "rps" && kind != "chess" && kind != "baucua" {
+	if ch.IsDM() && kind != "caro" && kind != "rps" && kind != "chess" && kind != "baucua" && kind != "xiangqi" {
 		return model.Message{}, game.Error("Trò này cần nhiều người, hãy mở trong kênh.")
 	}
 	now := time.Now()
@@ -411,9 +411,15 @@ func (a *API) startGame(ctx context.Context, ch model.Channel, host model.User, 
 	if err != nil {
 		return model.Message{}, err
 	}
-	m, err := a.store.CreateGame(ctx, ch.ID, host.ID, model.Embed{Type: "game", ID: kind, Title: title}, string(g.Status()), state)
+	m, walletUpd, err := a.store.CreateGameWithBet(ctx, ch.ID, host.ID, model.Embed{Type: "game", ID: kind, Title: title}, string(g.Status()), state, g.BetAmount())
 	if err != nil {
+		if errors.Is(err, store.ErrInsufficientBalance) {
+			return model.Message{}, game.Error("Số dư xu không đủ để mở bàn cược này.")
+		}
 		return model.Message{}, err
+	}
+	if walletUpd != nil {
+		a.pushWallet(*walletUpd)
 	}
 	s := a.games.put(&gameSession{messageID: m.ID, channelID: ch.ID, g: g})
 	if g.Staked() {
@@ -476,10 +482,41 @@ func (a *API) gameAction(w http.ResponseWriter, r *http.Request) {
 	}
 	wasPlaying := s.g.Status() == game.Playing
 	staked := s.g.Staked()
+	betAmount := s.g.BetAmount()
 	leaveStake, leaveSeq := s.g.StakeOf(me.ID), s.g.BuyInCount(me.ID)
+	var joinedBetLocked bool
+	if req.Action == "join" && betAmount > 0 {
+		_, maxP := s.g.Limits()
+		if s.g.Status() == game.Lobby && !s.g.IsPlayer(me.ID) && len(s.g.Players()) < maxP {
+			wUpd, err := a.store.LockGameBet(r.Context(), me.ID, msg.ID, betAmount)
+			if err != nil {
+				if errors.Is(err, store.ErrInsufficientBalance) {
+					writeError(w, http.StatusBadRequest, "Số dư xu không đủ để tham gia bàn cược này.")
+					return
+				}
+				internalError(w, r, err)
+				return
+			}
+			joinedBetLocked = true
+			a.pushWallet(wUpd)
+		}
+	}
 	if err := s.g.Act(asPlayer(me), req.Action, req.Data, time.Now()); err != nil {
+		if joinedBetLocked {
+			if wUpd, rErr := a.store.RefundUserBet(r.Context(), me.ID, msg.ID, "Hoàn tiền do tham gia phòng thất bại"); rErr == nil && wUpd != nil {
+				a.pushWallet(*wUpd)
+			}
+		}
 		writeGameError(w, r, err)
 		return
+	}
+	if req.Action == "leave" && betAmount > 0 {
+		if wUpd, rErr := a.store.RefundUserBet(r.Context(), me.ID, msg.ID, "Hoàn tiền do rời phòng chơi"); rErr == nil && wUpd != nil {
+			a.pushWallet(*wUpd)
+		}
+	}
+	if s.g.Status() == game.Ended {
+		a.settleEndedBetGame(r.Context(), s)
 	}
 	if staked {
 		var err error
@@ -504,6 +541,20 @@ func (a *API) gameAction(w http.ResponseWriter, r *http.Request) {
 	}
 	a.ensureLoop(s)
 	writeJSON(w, http.StatusOK, json.RawMessage(viewJSON(s.g, me.ID)))
+}
+
+func (a *API) settleEndedBetGame(ctx context.Context, s *gameSession) {
+	if s.g.BetAmount() <= 0 {
+		return
+	}
+	ws, err := a.store.SettleGameBets(context.WithoutCancel(ctx), s.messageID, s.g.Winners())
+	if err != nil {
+		log.Printf("settle game bets %d: %v", s.messageID, err)
+		return
+	}
+	for _, w := range ws {
+		a.pushWallet(w)
+	}
 }
 
 func (a *API) gameLeaderboard(w http.ResponseWriter, r *http.Request) {
@@ -594,6 +645,9 @@ func (a *API) tickGames(ctx context.Context, now time.Time) {
 	for _, s := range list {
 		s.mu.Lock()
 		if !s.deleted && s.g.Tick(now) {
+			if s.g.Status() == game.Ended {
+				a.settleEndedBetGame(ctx, s)
+			}
 			a.saveAndBroadcast(ctx, s)
 		}
 		ended := s.g.Status() == game.Ended

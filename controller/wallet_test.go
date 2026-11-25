@@ -195,3 +195,116 @@ func TestBauCuaChipsSurviveChannelDeleteAndCancelledRequest(t *testing.T) {
 		t.Fatalf("after cancelled-context cancel: alice %+v bob %+v", a, b)
 	}
 }
+
+func TestWalletTransferHistoryAndXiangqiBetting(t *testing.T) {
+	e := newEnv(t)
+	alice := e.register("alice", "Alice")
+	bob := e.register("bob", "Bob")
+	carol := e.register("carol", "Carol")
+
+	var ch channel
+	e.do("POST", "/api/channels", alice.Token, map[string]any{"name": "co-tuong-cuoc"}, &ch)
+	e.do("POST", "/api/channels/"+itoa(ch.ID)+"/join", bob.Token, nil, nil)
+	e.do("POST", "/api/channels/"+itoa(ch.ID)+"/join", carol.Token, nil, nil)
+
+	wb := e.dial(bob.Token)
+	wb.waitFor("ready")
+
+	// Transfer 600 xu from Carol to Bob (Carol left with 400, Bob 1600)
+	if code := e.do("POST", "/api/wallet/transfer", carol.Token, map[string]any{
+		"to_user_id": bob.User.ID,
+		"amount":     600,
+		"note":       "trả kèo",
+	}, nil); code != 200 {
+		t.Fatalf("transfer: %d", code)
+	}
+	if ev := wb.waitFor("wallet.updated"); ev["balance"] != float64(1600) {
+		t.Fatalf("expected bob WS balance 1600, got %v", ev)
+	}
+
+	// Self transfer & overdraft rejected
+	if code := e.do("POST", "/api/wallet/transfer", carol.Token, map[string]any{
+		"to_user_id": carol.User.ID,
+		"amount":     100,
+	}, nil); code != 400 {
+		t.Fatalf("expected 400 self transfer, got %d", code)
+	}
+	if code := e.do("POST", "/api/wallet/transfer", carol.Token, map[string]any{
+		"to_user_id": bob.User.ID,
+		"amount":     5000,
+	}, nil); code != 400 {
+		t.Fatalf("expected 400 overdraft transfer, got %d", code)
+	}
+
+	// 1. Create Xiangqi exceeding balance fails
+	if code := e.do("POST", "/api/channels/"+itoa(ch.ID)+"/games", alice.Token, map[string]any{
+		"kind":    "xiangqi",
+		"options": map[string]any{"bet_amount": 5000},
+	}, nil); code != 400 {
+		t.Fatalf("expected 400 creating bet exceeding balance, got %d", code)
+	}
+
+	// 2. Alice opens Xiangqi with 500 xu bet
+	var m gameMsg
+	if code := e.do("POST", "/api/channels/"+itoa(ch.ID)+"/games", alice.Token, map[string]any{
+		"kind":    "xiangqi",
+		"options": map[string]any{"bet_amount": 500, "first": "host"},
+	}, &m); code != 201 {
+		t.Fatalf("create bet xiangqi: %d %s", code, m.Error)
+	}
+	if w := e.wallet(alice.Token); w.Balance != 500 || w.InTables != 500 {
+		t.Fatalf("alice locked mismatch: %+v", w)
+	}
+
+	// 3. Carol (400 xu) cannot join 500 xu table
+	if code := e.do("POST", "/api/messages/"+itoa(m.ID)+"/game", carol.Token, map[string]any{"action": "join"}, nil); code != 400 {
+		t.Fatalf("expected 400 for broke carol joining 500 bet, got %d", code)
+	}
+
+	// 4. Bob joins -> Playing, cancel during Playing rejected
+	var g gameResp
+	if code := e.do("POST", "/api/messages/"+itoa(m.ID)+"/game", bob.Token, map[string]any{"action": "join"}, &g); code != 200 || g.Status != "playing" {
+		t.Fatalf("bob join: %d %+v", code, g)
+	}
+	if code := e.do("POST", "/api/messages/"+itoa(m.ID)+"/game", alice.Token, map[string]any{"action": "cancel"}, nil); code != 400 {
+		t.Fatalf("cancel while playing must be 400, got %d", code)
+	}
+
+	// 5. Bob resigns -> Alice +1000 (1500 total), Bob 1100
+	if code := e.do("POST", "/api/messages/"+itoa(m.ID)+"/game", bob.Token, map[string]any{"action": "resign"}, &g); code != 200 {
+		t.Fatalf("bob resign: %d", code)
+	}
+	if wa := e.wallet(alice.Token); wa.Balance != 1500 || wa.InTables != 0 {
+		t.Fatalf("alice post-win: %+v", wa)
+	}
+	if wbView := e.wallet(bob.Token); wbView.Balance != 1100 || wbView.InTables != 0 {
+		t.Fatalf("bob post-loss: %+v", wbView)
+	}
+
+	// 6. Transaction history & Leaderboard net_profit
+	var txList struct {
+		Items []struct {
+			Kind   string `json:"kind"`
+			Amount int64  `json:"amount"`
+		} `json:"items"`
+	}
+	if code := e.do("GET", "/api/wallet/transactions?limit=10", alice.Token, nil, &txList); code != 200 || len(txList.Items) < 2 {
+		t.Fatalf("transactions: %d %+v", code, txList)
+	}
+	var lb struct {
+		Members []struct {
+			UserID    int64 `json:"user_id"`
+			NetProfit int64 `json:"net_profit"`
+		} `json:"members"`
+	}
+	if code := e.do("GET", "/api/games/leaderboard?kind=xiangqi", alice.Token, nil, &lb); code != 200 {
+		t.Fatalf("leaderboard: %d", code)
+	}
+	profit := map[int64]int64{}
+	for _, mem := range lb.Members {
+		profit[mem.UserID] = mem.NetProfit
+	}
+	if profit[alice.User.ID] != 500 || profit[bob.User.ID] != -500 {
+		t.Fatalf("unexpected net_profit: %+v", profit)
+	}
+}

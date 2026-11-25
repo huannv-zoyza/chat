@@ -130,6 +130,8 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
 
   const winnerId = game.winners && game.winners.length > 0 ? game.winners[0] : null;
   const winnerPlayer = winnerId ? game.players.find((p) => p.id === winnerId) : null;
+  const betAmount = s.bet_amount ?? s.opts?.bet_amount ?? 0;
+  const potAmount = s.pot ?? betAmount * game.players.length;
 
   // Tự động xoay bàn cờ nếu mình cầm Đen (để phe mình luôn ở phía dưới)
   const flipped = manualFlip !== null ? manualFlip : isBlack;
@@ -257,6 +259,24 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
 
   return (
     <div className="xiangqi-container" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem" }}>
+      {/* Thanh mức cược & Quỹ thưởng */}
+      {betAmount > 0 && (
+        <div className="xq-bet-bar" style={{ width: BOARD_WIDTH }}>
+          <span>🪙 Cược: {betAmount.toLocaleString("vi-VN")} xu / người</span>
+          <span>
+            {game.status === "ended"
+              ? winnerPlayer
+                ? winnerPlayer.id === meId
+                  ? `🏆 +${potAmount.toLocaleString("vi-VN")} xu (Lời +${betAmount.toLocaleString("vi-VN")})`
+                  : isPlayer
+                    ? `💸 -${betAmount.toLocaleString("vi-VN")} xu`
+                    : `🏆 Thưởng: ${potAmount.toLocaleString("vi-VN")} xu`
+                : `↩️ Hoà · Hoàn ${betAmount.toLocaleString("vi-VN")} xu`
+              : `🏆 Quỹ thưởng: ${potAmount.toLocaleString("vi-VN")} xu`}
+          </span>
+        </div>
+      )}
+
       {/* Banner cảnh báo Chiếu tướng */}
       {game.status === "playing" && s.in_check && (
         <div className="xq-banner is-check" role="status">

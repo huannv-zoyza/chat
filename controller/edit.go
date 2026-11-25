@@ -141,6 +141,11 @@ func (a *API) deleteMessage(w http.ResponseWriter, r *http.Request) {
 			}
 			s.mu.Unlock()
 		}
+		if ws, rErr := a.store.RefundGameBets(r.Context(), msg.ID, "Tin nhắn ván cờ đã bị xoá"); rErr == nil {
+			for _, w := range ws {
+				a.pushWallet(w)
+			}
+		}
 	}
 	deleted, keys, err := a.store.DeleteMessage(r.Context(), msg.ID)
 	if err != nil {

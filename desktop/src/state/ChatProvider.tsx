@@ -32,7 +32,7 @@ import { ChatSocket } from "../lib/socket";
 import { ServerUrlContext } from "../components/ui";
 import { displayName, newClientId } from "../lib/format";
 import { showNotification } from "../lib/notify";
-import { playMentionSound, playMessageSound } from "../lib/sound";
+import { playCoinSound, playMentionSound, playMessageSound } from "../lib/sound";
 import { channelLabel, dmPeerId, isDM } from "../lib/channel";
 import { e2ee } from "../lib/e2ee";
 import { load, save } from "../lib/storage";
@@ -590,7 +590,13 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       sock.on("channel.deleted", (ev) => dispatch({ type: "channel.removed", channelId: ev.channel_id })),
       sock.on("member.joined", (ev) => dispatch({ type: "member.joined", channelId: ev.channel_id, user: ev.user })),
       sock.on("member.left", (ev) => dispatch({ type: "member.left", channelId: ev.channel_id, userId: ev.user_id })),
-      sock.on("wallet.updated", (ev) => dispatch({ type: "wallet.set", balance: ev.balance, debt: ev.debt })),
+      sock.on("wallet.updated", (ev) => {
+        const prevBal = stateRef.current.wallet?.balance;
+        dispatch({ type: "wallet.set", balance: ev.balance, debt: ev.debt });
+        if (prevBal !== undefined && ev.balance > prevBal) {
+          playCoinSound();
+        }
+      }),
       sock.on("nickname.updated", (ev) =>
         dispatch({ type: "nickname.set", channelId: ev.channel_id, userId: ev.user_id, nickname: ev.nickname }),
       ),

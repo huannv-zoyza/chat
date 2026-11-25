@@ -10772,3 +10772,566 @@ button.villager:focus-visible .villager-name {
   color: var(--warn);
 }
 
+
+
+/* =========================================================
+   Watch Party & Music Queue
+   ========================================================= */
+
+.btn-xs {
+  min-height: 1.75rem;
+  padding: 0.25rem 0.6rem;
+  font-size: var(--step--2);
+}
+
+.btn-secondary {
+  background: var(--raised);
+  color: var(--text);
+  border-color: var(--line);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: var(--line-soft);
+  border-color: var(--muted);
+}
+
+.wp-link-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+.wp-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  background: var(--raised);
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.wp-banner.is-joined {
+  background: var(--signal-soft);
+  border-bottom-color: var(--signal);
+}
+
+.wp-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.wp-banner-thumb {
+  width: 2.5rem;
+  height: 1.875rem;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--ink-2);
+}
+
+.wp-banner-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.wp-banner-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.wp-banner-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: var(--step--1);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wp-banner-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wp-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+.wp-dot.is-live {
+  background: var(--ok);
+}
+
+.wp-banner-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: var(--step--2);
+  color: var(--muted);
+}
+
+.wp-join-hint {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.wp-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-shrink: 0;
+}
+
+.wp-panel {
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  padding: 0.75rem 1rem 0.9rem;
+  max-height: 28rem;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.wp-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.wp-panel-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  font-weight: 600;
+  font-size: var(--step--1);
+}
+
+.wp-listener-pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: var(--raised);
+  border: 1px solid var(--line-soft);
+  font-weight: 400;
+  color: var(--muted);
+}
+.wp-listener-pills small {
+  margin-left: 0.2rem;
+  font-size: var(--step--2);
+}
+
+.wp-panel-grid {
+  display: grid;
+  grid-template-columns: minmax(15rem, 1fr) minmax(18rem, 1.35fr);
+  gap: 0.85rem;
+  align-items: start;
+}
+
+.wp-now-card,
+.wp-queue-card {
+  background: var(--raised);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  min-width: 0;
+}
+
+.wp-now-head {
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+}
+
+.wp-now-thumb {
+  width: 4.75rem;
+  height: 3.5rem;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--ink-2);
+}
+
+.wp-now-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.wp-now-badge {
+  font-size: var(--step--2);
+  font-weight: 600;
+  color: var(--ok);
+  margin-bottom: 0.15rem;
+}
+
+.wp-now-title {
+  font-size: var(--step--1);
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wp-now-sub {
+  font-size: var(--step--2);
+  color: var(--muted);
+  margin-top: 0.15rem;
+}
+
+.wp-join-gate {
+  margin-top: 0.7rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px dashed var(--signal);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: var(--step--2);
+}
+
+.wp-controls-box {
+  margin-top: 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.wp-seek-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--step--2);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.wp-seek-row input[type="range"] {
+  flex: 1;
+  min-width: 0;
+}
+
+.wp-ctrl-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.wp-now-edit-row {
+  margin-top: 0.65rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--line-soft);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: var(--step--2);
+}
+
+.wp-edit-inline {
+  margin-top: 0.45rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.wp-edit-inline input {
+  width: 100%;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--step--2);
+}
+
+.wp-edit-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.wp-empty-now {
+  font-size: var(--step--1);
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  align-items: flex-start;
+}
+
+.wp-add-form {
+  display: flex;
+  gap: 0.45rem;
+}
+.wp-add-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.38rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--step--2);
+}
+
+.wp-queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0.55rem 0 0.45rem;
+  font-size: var(--step--2);
+  color: var(--muted);
+}
+
+.wp-queue-empty {
+  font-size: var(--step--2);
+  color: var(--muted);
+  padding: 0.35rem 0;
+}
+
+.wp-queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 15rem;
+  overflow-y: auto;
+}
+
+.wp-queue-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.38rem 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+  min-width: 0;
+}
+.wp-queue-item.is-dragging {
+  opacity: 0.55;
+  border-color: var(--focus);
+}
+
+.wp-drag-handle {
+  cursor: grab;
+  color: var(--muted);
+  -webkit-user-select: none;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.wp-q-idx {
+  font-size: var(--step--2);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  width: 1.5rem;
+  flex-shrink: 0;
+}
+
+.wp-q-thumb {
+  width: 2.5rem;
+  height: 1.875rem;
+  border-radius: 3px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--ink-2);
+}
+
+.wp-q-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.wp-q-title {
+  font-size: var(--step--2);
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wp-q-sub {
+  font-size: 0.7rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wp-q-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex-shrink: 0;
+}
+
+.wp-history {
+  margin-top: 0.55rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--line-soft);
+  font-size: var(--step--2);
+}
+
+.wp-history-list {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-height: 7.5rem;
+  overflow-y: auto;
+}
+.wp-history-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: var(--muted);
+}
+
+.wp-h-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Persistent Mini / PiP Dock */
+.wp-dock {
+  position: fixed;
+  right: 1rem;
+  bottom: 5.5rem;
+  z-index: 40;
+  width: min(22.5rem, calc(100vw - 2rem));
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.wp-dock-video {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+}
+.wp-dock-video.is-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.wp-dock-iframe-wrap,
+.wp-dock-iframe-wrap iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+.wp-dock-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem;
+  text-align: center;
+  background: rgb(15 21 27 / 0.9);
+  color: #fff;
+  font-size: var(--step--2);
+}
+
+.wp-dock-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  padding: 0.45rem 0.6rem;
+  background: var(--raised);
+}
+
+.wp-dock-title-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  flex: 1;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.wp-dock-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.wp-dock-text strong {
+  font-size: var(--step--2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wp-dock-text small {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.wp-dock-ctrls {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  flex-shrink: 0;
+}
+
+.wp-dock-vol {
+  width: 3.75rem;
+}
+
+@media (max-width: 780px) {
+  .wp-banner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .wp-panel-grid {
+    grid-template-columns: 1fr;
+  }
+  .wp-dock {
+    right: 0.5rem;
+    bottom: 4.5rem;
+    width: calc(100vw - 1rem);
+  }
+}

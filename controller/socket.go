@@ -49,6 +49,9 @@ type clientRequest struct {
 	Video  bool            `json:"video"`
 	Data   json.RawMessage `json:"data"` // SDP / ICE (máy chủ chuyển nguyên văn)
 	To     string          `json:"to"`   // gọi nhóm: id kết nối nhận tín hiệu
+	// Phòng nghe chung
+	ItemID      int64 `json:"item_id"`
+	DurationSec int   `json:"duration_sec"`
 }
 
 // serveSocket: GET /ws?token=<token>
@@ -102,6 +105,7 @@ func (a *API) serveSocket(w http.ResponseWriter, r *http.Request) {
 	a.hub.ToClient(client, mustJSON(readyEvent{
 		Type: "ready", User: user, OnlineUserIDs: a.hub.OnlineUserIDs(), UIBuild: a.uiBuild,
 		GroupCalls: a.groups.statesFor(channelIDs), AI: a.aiInfo(),
+		WatchParties: a.activeWatchPartiesFor(ctx, channelIDs, user.ID),
 	}))
 	if firstConn {
 		a.hub.ToAll(mustJSON(presenceEvent{Type: "presence", UserID: user.ID, Online: true}))
@@ -111,6 +115,7 @@ func (a *API) serveSocket(w http.ResponseWriter, r *http.Request) {
 		a.calls.clientGone(a, client) // kết thúc cuộc gọi đang dùng kết nối này
 		a.leaveGroup(0, client)
 		a.spectatorClientGone(client)
+		a.watchPartyClientGone(client)
 		if lastConn := a.hub.Remove(client); lastConn {
 			a.hub.ToAll(mustJSON(presenceEvent{Type: "presence", UserID: user.ID, Online: false}))
 		}
@@ -253,6 +258,9 @@ func (a *API) handleRequest(ctx context.Context, client *socket.Client, user mod
 
 	case "game.watch", "game.unwatch", "game.pos", "game.spectate", "game.unspectate":
 		a.handleGameSocket(ctx, client, user, req)
+
+	case "watchparty.join", "watchparty.leave", "watchparty.ended", "watchparty.sync_duration":
+		a.handleWatchPartySocket(ctx, client, user, req)
 
 	case "typing":
 		if a.hub.IsSubscribed(client, req.ChannelID) {

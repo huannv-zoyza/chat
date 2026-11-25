@@ -38,6 +38,7 @@ type API struct {
 	calls          callRegistry
 	groups         groupRegistry
 	games          gameRegistry
+	watchParties   watchPartyRegistry
 	ai             *aiService // nil: tắt trợ lý AI
 	iceServers     []ICEServer
 	uiBuild        string
@@ -121,6 +122,13 @@ func (a *API) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("POST /api/messages/{id}/votes", a.requireAuth(a.vote))
 	mux.HandleFunc("GET /api/channels/{id}/live-games", a.requireAuth(a.listLiveGames))
 	mux.HandleFunc("POST /api/channels/{id}/games", a.requireAuth(a.createGame))
+	mux.HandleFunc("GET /api/channels/{id}/watch-party", a.requireAuth(a.getWatchParty))
+	mux.HandleFunc("POST /api/channels/{id}/watch-party/items", a.requireAuth(a.addWatchPartyItem))
+	mux.HandleFunc("PATCH /api/channels/{id}/watch-party/items/{itemId}", a.requireAuth(a.updateWatchPartyItem))
+	mux.HandleFunc("DELETE /api/channels/{id}/watch-party/items/{itemId}", a.requireAuth(a.deleteWatchPartyItem))
+	mux.HandleFunc("PUT /api/channels/{id}/watch-party/queue/reorder", a.requireAuth(a.reorderWatchPartyQueue))
+	mux.HandleFunc("DELETE /api/channels/{id}/watch-party/queue", a.requireAuth(a.clearWatchPartyQueue))
+	mux.HandleFunc("POST /api/channels/{id}/watch-party/control", a.requireAuth(a.controlWatchParty))
 	mux.HandleFunc("GET /api/games/leaderboard", a.requireAuth(a.gameLeaderboard))
 	mux.HandleFunc("POST /api/messages/{id}/game", a.requireAuth(a.gameAction))
 	mux.HandleFunc("POST /api/messages/{id}/poll/close", a.requireAuth(a.closePoll))

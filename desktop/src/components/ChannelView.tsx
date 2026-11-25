@@ -27,6 +27,7 @@ import { AIText, isAIUser } from "./AI";
 import { CallButtons } from "./CallOverlay";
 import { GroupCallBanner, GroupCallButtons } from "./GroupCall";
 import { LiveGamesBar } from "./LiveGamesBar";
+import { WatchPartyBanner, WatchPartyPanel } from "./WatchParty";
 import { PinsDialog, QuoteBlock, previewText } from "./MessageExtras";
 import { ShareDialog } from "./Share";
 import { findMessage, typingKey } from "../state/chat";
@@ -208,6 +209,8 @@ export function ChannelView({ channel, membersOpen, onToggleMembers, onOpenSetti
       )}
 
       {!direct && <GroupCallBanner channel={channel} />}
+      {!direct && <WatchPartyBanner channelId={channel.id} />}
+      {!direct && <WatchPartyPanel channelId={channel.id} />}
       <LiveGamesBar channelId={channel.id} />
       <MessageList channel={channel} />
       <TypingIndicator channelId={channel.id} />

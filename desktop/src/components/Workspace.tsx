@@ -24,6 +24,7 @@ import { GroupCallOverlay, UpdateBanner } from "./GroupCall";
 import { StationOverlay } from "./Station";
 import { VillageOverlay } from "./Village";
 import { MessageLinkDialog } from "./Share";
+import { WatchPartyPlayerDock } from "./WatchParty";
 import { takePendingMessage } from "../lib/platform";
 import { isDM } from "../lib/channel";
 import { load, save } from "../lib/storage";
@@ -244,6 +245,7 @@ export function Workspace() {
       <GroupCallOverlay />
       <StationOverlay />
       <VillageOverlay />
+      <WatchPartyPlayerDock />
       <MessageLinkDialog />
       {dialog === "reminders" && <RemindersDialog onClose={() => setDialog(null)} onJumped={openRoom} />}
       {dialog === "search" && <SearchDialog onClose={() => setDialog(null)} onJumped={openRoom} />}

@@ -15939,3 +15939,61 @@ button.villager:focus-visible .villager-name {
     animation: none;
   }
 }
+
+/* ---- Nông trại liền một mảng theo giờ trong ngày ----
+   Trời sau HUD, nền quanh bảng và chính bảng đổi theo bình minh / ngày / hoàng hôn / đêm, để
+   không còn dải trời xanh ban ngày trên cánh đồng đã tối hay khung sáng trắng cạnh cảnh đêm.
+   --farm-ground: màu cỏ sau khi đã phủ ánh sáng (.farm-tint) để nền nối liền với cánh đồng. */
+.farm {
+  --farm-sky: rgb(93 184 245);
+  --farm-ground: #6fae3f;
+  --farm-panel-light: transparent;
+  background: var(--farm-ground);
+}
+.farm.tod-dawn {
+  --farm-sky: rgb(255 176 130);
+  --farm-ground: #6f9c31;
+  --farm-panel-light: rgb(255 244 232);
+}
+.farm.tod-dusk {
+  --farm-sky: rgb(122 84 165);
+  --farm-ground: #6f932f;
+  --farm-panel-light: rgb(246 236 242);
+}
+.farm.tod-night {
+  --farm-sky: rgb(16 26 66);
+  --farm-ground: #32592f;
+  --farm-panel-light: rgb(232 230 242);
+}
+/* bảng vật phẩm "dưới trăng": tối nhẹ cùng tông với cảnh, chữ vẫn rõ */
+.farm-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: var(--farm-panel-light);
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+@media (max-width: 960px) {
+  /* cánh đồng chạy lên dưới HUD (HUD chỉ còn là dải trời mờ dần), không còn vết cắt */
+  .farm {
+    --farm-hud-h: calc(max(0.6rem, env(safe-area-inset-top)) + 4.4rem);
+  }
+  .farm-hud {
+    margin-bottom: calc(-1 * var(--farm-hud-h));
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--farm-sky) 92%, transparent),
+      color-mix(in srgb, var(--farm-sky) 45%, transparent) 55%,
+      transparent
+    );
+  }
+  .farm-field {
+    height: calc(72vh + var(--farm-hud-h));
+    min-height: calc(30rem + var(--farm-hud-h));
+  }
+  .farm-banner {
+    top: calc(5rem + var(--farm-hud-h));
+  }
+}

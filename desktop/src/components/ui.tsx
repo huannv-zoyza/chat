@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { useSheetDrag } from "../lib/sheet";
 import type { PublicUser } from "../lib/api";
 import { displayName, initials, userHue } from "../lib/format";
 
@@ -66,6 +67,7 @@ type DialogProps = {
 /** Dùng <dialog> gốc: có sẵn khoá focus, đóng bằng Esc, nền mờ. */
 export function Dialog({ title, onClose, children, wide, className }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
+  useSheetDrag(ref, onClose);
 
   useEffect(() => {
     const d = ref.current;

@@ -6,6 +6,7 @@ import { findMessage } from "../state/chat";
 import { useChat } from "../state/ChatProvider";
 import { EmojiPicker, rememberEmoji } from "./EmojiPicker";
 import { Avatar, Dialog, Icon } from "./ui";
+import { useSheetDrag } from "../lib/sheet";
 
 /** Cảm xúc hay dùng, hiện sẵn khi rê chuột/nhấn giữ tin nhắn. */
 export const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🎉"];
@@ -432,6 +433,7 @@ export function MessageActionSheet({
   const { toggleReaction, state } = useChat();
   const [picking, setPicking] = useState(false);
   const ref = useRef<HTMLDialogElement>(null);
+  useSheetDrag(ref, onClose);
 
   useEffect(() => {
     const d = ref.current;

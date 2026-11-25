@@ -377,7 +377,7 @@ function MessageList({ channel }: { channel: Channel }) {
       >
         <div ref={topRef} />
         {!cm.loaded ? (
-          <p className="messages-loading">Đang tải tin nhắn…</p>
+          <MessagesSkeleton />
         ) : (
           <>
             {cm.hasMore ? (
@@ -838,6 +838,31 @@ export function TypingIndicator({ channelId, parentId }: { channelId: number; pa
           {text}
         </>
       )}
+    </div>
+  );
+}
+
+/** Khung xương lúc đang tải tin của kênh: giữ đúng dáng một khung chat thay cho dòng chữ trơn. */
+const SKELETON_ROWS = [
+  [62, 38],
+  [44, 0],
+  [78, 55],
+  [35, 0],
+  [58, 30],
+];
+function MessagesSkeleton() {
+  return (
+    <div className="msg-skeleton" role="status" aria-label="Đang tải tin nhắn">
+      {SKELETON_ROWS.map(([a, b], i) => (
+        <div key={i} className="msg-skeleton-row" style={{ animationDelay: `${i * 0.08}s` }}>
+          <span className="sk sk-avatar" />
+          <span className="msg-skeleton-lines">
+            <span className="sk sk-name" />
+            <span className="sk" style={{ width: `${a}%` }} />
+            {b > 0 && <span className="sk" style={{ width: `${b}%` }} />}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

@@ -12210,3 +12210,207 @@ button.villager:focus-visible .villager-name {
     animation: none;
   }
 }
+
+/* Khung xương khi đang tải tin */
+.msg-skeleton {
+  display: grid;
+  gap: 1.1rem;
+  padding: 1rem 1.75rem;
+}
+.msg-skeleton-row {
+  display: flex;
+  gap: 0.75rem;
+  animation: sk-in 0.3s var(--ease) both;
+}
+.msg-skeleton-lines {
+  display: grid;
+  flex: 1;
+  gap: 0.45rem;
+  padding-top: 0.15rem;
+}
+.sk {
+  display: block;
+  height: 0.7rem;
+  border-radius: 999px;
+  background: linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in srgb, var(--text) 6%, transparent) 50%,
+      transparent 100%
+    )
+    0 0 / 200% 100%,
+    var(--line-soft);
+  animation: sk-shimmer 1.3s linear infinite;
+}
+.sk-avatar {
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+}
+.sk-name {
+  width: 7rem;
+  height: 0.65rem;
+  opacity: 0.8;
+}
+@keyframes sk-shimmer {
+  from {
+    background-position:
+      100% 0,
+      0 0;
+  }
+  to {
+    background-position:
+      -100% 0,
+      0 0;
+  }
+}
+@keyframes sk-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sk,
+  .msg-skeleton-row {
+    animation: none;
+  }
+}
+
+/* Bảng trượt từ dưới (điện thoại): thanh nắm để vuốt xuống đóng */
+@media (max-width: 720px) {
+  .dialog::before {
+    content: "";
+    position: absolute;
+    top: 0.45rem;
+    left: 50%;
+    width: 2.25rem;
+    height: 0.28rem;
+    margin-left: -1.125rem;
+    border-radius: 999px;
+    background: var(--line);
+    z-index: 1;
+  }
+  .dialog > .dialog-body {
+    padding-top: 1.35rem;
+  }
+  .dialog {
+    touch-action: pan-y;
+  }
+}
+
+/* Đăng nhập trên điện thoại: phần bên trái bị ẩn, nên có một dòng nhận diện ở trên form */
+.auth-mobile-brand {
+  display: none;
+}
+@media (max-width: 860px) {
+  .auth-panel {
+    align-content: start;
+    gap: 2rem;
+    padding-top: max(3rem, env(safe-area-inset-top));
+    background:
+      radial-gradient(120% 40% at 50% 0%, color-mix(in srgb, var(--signal) 14%, transparent), transparent 70%),
+      var(--canvas);
+  }
+  .auth-mobile-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    width: min(380px, 100%);
+  }
+  .auth-mobile-mark {
+    display: grid;
+    place-items: center;
+    width: 3rem;
+    height: 3rem;
+    border-radius: 14px;
+    background: var(--ink);
+    color: var(--signal);
+    font-size: 1.9rem;
+    font-weight: 700;
+    line-height: 1;
+    box-shadow: var(--shadow-sm);
+  }
+  .auth-mobile-brand b {
+    display: block;
+    font-size: var(--step-2);
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+  }
+  .auth-mobile-brand small {
+    color: var(--muted);
+    font-size: var(--step--1);
+  }
+  .auth-title {
+    font-size: var(--step-2);
+  }
+}
+
+/* Thanh công cụ khi rê vào tin: nổi mềm, hiện ra nhẹ, emoji nảy khi rê */
+.msg-toolbar {
+  gap: 2px;
+  padding: 3px;
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+}
+.msg:hover .msg-toolbar,
+.msg:focus-within .msg-toolbar {
+  animation: toolbar-in 0.12s var(--ease);
+}
+.toolbar-btn {
+  border-radius: 9px;
+  transition:
+    background-color 0.12s var(--ease),
+    color 0.12s var(--ease),
+    transform 0.12s var(--ease);
+}
+.toolbar-btn:hover {
+  background: var(--line-soft);
+}
+.toolbar-emoji:hover {
+  transform: scale(1.18);
+}
+@keyframes toolbar-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .msg:hover .msg-toolbar,
+  .msg:focus-within .msg-toolbar {
+    animation: none;
+  }
+  .toolbar-emoji:hover {
+    transform: none;
+  }
+}
+
+/* Cài đặt: mục đang chọn là một thẻ vàng nhạt rõ ràng, đổi mục mượt */
+.tab {
+  transition:
+    background-color 0.15s var(--ease),
+    color 0.15s var(--ease);
+}
+.tab[aria-selected="true"] {
+  background: var(--signal-soft);
+  box-shadow: none;
+  font-weight: 600;
+}
+.tab-panel {
+  animation: tab-panel-in 0.18s var(--ease);
+}
+.profile-preview {
+  border-radius: 14px;
+}
+@keyframes tab-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tab-panel {
+    animation: none;
+  }
+}

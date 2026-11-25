@@ -89,6 +89,13 @@ export function AuthScreen({ initialServer, fixedServer, notice, onAuthenticated
         </div>
       </section>
       <section className="auth-panel">
+        <div className="auth-mobile-brand" aria-hidden>
+          <span className="auth-mobile-mark">#</span>
+          <span>
+            <b>Go Chat</b>
+            <small>Chat theo kênh, chơi game cùng cả nhóm</small>
+          </span>
+        </div>
         <form className="auth-form" onSubmit={submit} noValidate>
           <h1 className="auth-title">{mode === "login" ? "Đăng nhập Go Chat" : "Tạo tài khoản"}</h1>
 

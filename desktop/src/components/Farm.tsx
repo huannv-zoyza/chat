@@ -740,12 +740,17 @@ function fieldTip(view: FarmView, now: number): ReactNode {
   if (growing.length > 0)
     return (
       <>
-        Vụ tới chín sau <b>{formatLeft(growing[0].left)}</b>
-        {empty > 0 && <> · còn {empty} ô trống</>}
+        <Emo e="⏱️" /> Chín sau <b>{formatLeft(growing[0].left)}</b>
+        {empty > 0 && <> · {empty} ô trống</>}
       </>
     );
-  if (empty > 0) return <>Chạm vào ô đất để gieo hạt <Emo e="🌱" /></>;
-  return "Ruộng đầy rồi, chờ cây lớn nhé.";
+  if (empty > 0)
+    return (
+      <>
+        <Emo e="🌱" /> Chạm ô đất để gieo hạt
+      </>
+    );
+  return "Ruộng đầy, chờ cây lớn nhé";
 }
 
 /* =========================================================

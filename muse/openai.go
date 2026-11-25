@@ -327,9 +327,14 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			call = &tc
 		}
 	}
+	// Link nguồn Muse để riêng ngoài chữ: nối vào cuối câu trả lời (chỉ thêm, nên stream vẫn đúng).
+	sources := ""
+	if call == nil {
+		sources = SourcesSuffix(ans.Text, ans.Citations)
+	}
 
 	if !req.Stream {
-		msg := map[string]any{"role": "assistant", "content": ans.Text}
+		msg := map[string]any{"role": "assistant", "content": ans.Text + sources}
 		finish := "stop"
 		if call != nil {
 			msg["content"] = nil
@@ -362,6 +367,9 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	default:
 		if !streamText && ans.Text != "" {
 			sendChunk(map[string]any{"content": ans.Text}, nil, nil)
+		}
+		if sources != "" {
+			sendChunk(map[string]any{"content": sources}, nil, nil)
 		}
 		// Muse vừa viết vừa vẽ được: ảnh sinh ra trong lượt này đi kèm khung cuối, dưới trường
 		// mở rộng "muse" (client nào không biết thì bỏ qua, đúng tinh thần SSE của OpenAI).

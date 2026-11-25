@@ -28,10 +28,18 @@ type File struct {
 
 // Answer là kết quả một lượt hỏi.
 type Answer struct {
-	SessionID string `json:"session_id"`
-	Text      string `json:"text"`
-	Files     []File `json:"files,omitempty"`
-	Status    string `json:"status,omitempty"`
+	SessionID string     `json:"session_id"`
+	Text      string     `json:"text"`
+	Files     []File     `json:"files,omitempty"`
+	Status    string     `json:"status,omitempty"`
+	Citations []Citation `json:"citations,omitempty"`
+}
+
+// Citation: nguồn web Muse trích dẫn trong câu trả lời. Muse không viết link vào display_text mà để
+// riêng ở "resources" (kind "citation"); giao diện Muse tự vẽ phần này.
+type Citation struct {
+	Label string `json:"label"`
+	URI   string `json:"uri"`
 }
 
 // Client giữ phiên muse.ai và một kênh gateway dùng lại được.
@@ -204,19 +212,20 @@ func (c *Client) Ask(ctx context.Context, items []map[string]any, opt AskOptions
 			sentText = turn.Text // Muse viết lại đoạn trả lời: lần sau phát tiếp từ đây
 		}
 		if done || turnLooksDone(turn) {
-			return &Answer{SessionID: sessionID, Text: turn.Text, Files: turn.Files, Status: turn.Status}, nil
+			return &Answer{SessionID: sessionID, Text: turn.Text, Files: turn.Files, Status: turn.Status, Citations: turn.Citations}, nil
 		}
 	}
 }
 
 // Turn là một lượt trong lịch sử hội thoại.
 type Turn struct {
-	UserText string
-	Text     string
-	Ready    bool
-	Final    bool
-	Status   string
-	Files    []File
+	UserText  string
+	Text      string
+	Ready     bool
+	Final     bool
+	Status    string
+	Files     []File
+	Citations []Citation
 }
 
 func turnLooksDone(t *Turn) bool {

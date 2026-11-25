@@ -193,6 +193,7 @@ func parseHistory(body []byte) ([]*Turn, error) {
 				}
 				cur.Ready = ready
 				cur.Final = ready && status != "" && terminalStatus[status]
+				cur.Citations = appendCitations(cur.Citations, raw["resources"])
 			}
 		case "task.status":
 			st := str(obj(raw, "payload"), "status")
@@ -206,4 +207,30 @@ func parseHistory(body []byte) ([]*Turn, error) {
 		findFiles(raw, &cur.Files, seen, 0)
 	}
 	return turns, nil
+}
+
+// appendCitations thêm các nguồn web (resources kind "citation") vào list, bỏ link trùng.
+func appendCitations(list []Citation, resources any) []Citation {
+	items, _ := resources.([]any)
+	for _, it := range items {
+		r, _ := it.(map[string]any)
+		if r == nil || str(r, "kind") != "citation" {
+			continue
+		}
+		uri := str(r, "uri")
+		if !strings.HasPrefix(uri, "http://") && !strings.HasPrefix(uri, "https://") {
+			continue
+		}
+		dup := false
+		for _, c := range list {
+			if c.URI == uri {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			list = append(list, Citation{Label: str(r, "label"), URI: uri})
+		}
+	}
+	return list
 }

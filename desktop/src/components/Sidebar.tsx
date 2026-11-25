@@ -135,25 +135,16 @@ export function Sidebar({
           </ul>
         )}
 
-        <button className="sidebar-action" onClick={onBrowseChannels}>
-          <Icon name="compass" size={16} />
-          Khám phá kênh
-        </button>
-        <button className="sidebar-action" onClick={onJoinByLink}>
-          <Icon name="link" size={16} />
-          Tham gia bằng link mời
-        </button>
-        <button className="sidebar-action" onClick={onReminders}>
-          <Icon name="clock" size={16} />
-          Nhắc việc
-          {dueCount > 0 ? (
-            <span className="badge badge-mention" aria-label={`${dueCount} nhắc việc đến giờ`}>
-              {dueCount}
-            </span>
-          ) : (
-            upcomingCount > 0 && <span className="sidebar-action-count">{upcomingCount}</span>
-          )}
-        </button>
+        <div className="sidebar-quick">
+          <button className="sidebar-quick-btn" onClick={onBrowseChannels} title="Xem và tham gia các kênh công khai">
+            <Icon name="compass" size={15} />
+            Khám phá kênh
+          </button>
+          <button className="sidebar-quick-btn" onClick={onJoinByLink} title="Tham gia bằng link mời">
+            <Icon name="link" size={15} />
+            Link mời
+          </button>
+        </div>
 
         <div className="sidebar-heading sidebar-heading-dm">
           <h3>Tin nhắn riêng</h3>
@@ -202,7 +193,29 @@ export function Sidebar({
         )}
       </div>
 
-      <WalletButton onOpen={onOpenWallet} />
+      <div className="sidebar-tools">
+        <WalletButton onOpen={onOpenWallet} />
+        <button
+          className={`sidebar-reminders${dueCount > 0 ? " is-due" : ""}`}
+          onClick={onReminders}
+          title="Nhắc việc"
+          aria-label={
+            dueCount > 0
+              ? `Nhắc việc: ${dueCount} việc đến giờ`
+              : upcomingCount > 0
+                ? `Nhắc việc: ${upcomingCount} việc sắp tới`
+                : "Nhắc việc"
+          }
+        >
+          <Icon name="clock" size={16} />
+          <span>Nhắc việc</span>
+          {dueCount > 0 ? (
+            <span className="badge badge-mention">{dueCount}</span>
+          ) : (
+            upcomingCount > 0 && <span className="sidebar-action-count">{upcomingCount}</span>
+          )}
+        </button>
+      </div>
       <button className="me-card" onClick={onOpenSettings} title="Cài đặt tài khoản">
         <Avatar user={me} size={34} online={state.status === "open"} />
         <span className="me-text">

@@ -6,7 +6,15 @@ import { displayName } from "../lib/format";
 import { NICKNAME_MAX, THROW_ITEMS } from "../lib/fun";
 import { Avatar, Icon } from "./ui";
 
-export function MembersPanel({ channel, onClose }: { channel: Channel; onClose: () => void }) {
+export function MembersPanel({
+  channel,
+  onClose,
+  onInvite,
+}: {
+  channel: Channel;
+  onClose: () => void;
+  onInvite?: () => void;
+}) {
   const { state, api, loadMembers, openDM } = useChat();
   const [error, setError] = useState<string | null>(null);
   const ids = state.members[channel.id];
@@ -80,6 +88,12 @@ export function MembersPanel({ channel, onClose }: { channel: Channel; onClose: 
     <aside className="members" aria-label="Thành viên kênh">
       <header className="members-header">
         <h3>Thành viên</h3>
+        {onInvite && !isDM(channel) && (
+          <button type="button" className="chip members-invite" onClick={onInvite} title="Mời người vào kênh">
+            <Icon name="userPlus" size={16} />
+            Mời
+          </button>
+        )}
         <button className="icon-btn" onClick={onClose} aria-label="Đóng danh sách thành viên">
           <Icon name="x" />
         </button>

@@ -226,7 +226,7 @@ export function Workspace() {
       {showThread && channel && threadId !== null ? (
         <ThreadPanel channel={channel} parentId={threadId} onClose={closeThread} />
       ) : (
-        channel && showMembers && <MembersPanel channel={channel} onClose={toggleMembers} />
+        channel && showMembers && <MembersPanel channel={channel} onClose={toggleMembers} onInvite={() => setDialog("invite")} />
       )}
 
       {dialog === "create" && <CreateChannelDialog onClose={() => setDialog(null)} />}

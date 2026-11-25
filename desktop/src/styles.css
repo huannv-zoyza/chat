@@ -11645,3 +11645,169 @@ button.villager:focus-visible .villager-name {
     width: calc(100vw - 1rem);
   }
 }
+
+/* =========================================================
+   Tinh chỉnh UX toàn app
+   ========================================================= */
+
+/* Thành viên: nút "Mời" cạnh tiêu đề */
+.members-header {
+  gap: 0.4rem;
+}
+.members-header h3 {
+  flex: 1;
+}
+.members-invite {
+  gap: 0.3rem;
+  height: 2rem;
+  font-size: var(--step--1);
+}
+
+/* Máy tính: nút nhắn riêng / trêu / mời ra chỉ chiếm chỗ khi rê chuột vào dòng,
+   để tên dài không bị cắt sớm */
+@media (hover: hover) {
+  .member:not(:hover):not(:focus-within) :is(.member-dm, .member-fun:not(.is-open), .member-kick) {
+    display: none;
+  }
+}
+/* Cảm ứng: các nút luôn hiện nhưng dịu lại, không giành mắt với tên */
+@media (hover: none) {
+  .member-dm,
+  .member-kick {
+    opacity: 0.55;
+  }
+  .member-fun:not(.is-open) {
+    opacity: 0.6;
+    filter: grayscale(0.7);
+  }
+}
+
+/* Ô soạn tin: dòng hướng dẫn phím tắt chỉ hiện khi đang gõ (vẫn giữ chỗ để không giật khung) */
+.composer-hint:not(.is-error) {
+  transition: opacity 0.15s;
+}
+.composer:not(:focus-within) .composer-hint:not(.is-error) {
+  opacity: 0;
+}
+
+/* Menu "+": mục dài không xuống dòng */
+.attach-menu button,
+.attach-menu [role="menuitem"] {
+  white-space: nowrap;
+}
+
+/* Nghe chung: bỏ câu nhắc thừa (nút "Vào nghe" đã đủ rõ) */
+.wp-join-hint,
+.wp-banner-meta span:has(+ .wp-join-hint) {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  /* Đầu kênh: "Mời" chuyển vào khung Thành viên để tên kênh đủ chỗ */
+  .room-actions .room-invite {
+    display: none;
+  }
+
+  /* Nghe chung: gọn một hàng thay vì ba */
+  .wp-banner {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.75rem;
+  }
+  .wp-banner-thumb,
+  .wp-banner-icon {
+    width: 2rem;
+    height: 2rem;
+  }
+  .wp-banner-actions {
+    gap: 0.3rem;
+  }
+  .wp-banner-actions .btn {
+    padding-inline: 0.55rem;
+  }
+
+  /* Thẻ game: tên xuống được hai dòng, huy hiệu vai nằm ở góc để nhường chỗ cho tên */
+  .game-player:has(> .game-player-badge, > .ww-badge) {
+    padding-right: 1.05rem;
+  }
+  .wp-banner-meta {
+    flex-wrap: nowrap;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .game-player-name {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.25;
+  }
+  .game-player-badge,
+  .game-player > .ww-badge {
+    position: absolute;
+    top: -0.4rem;
+    right: -0.3rem;
+    transform: scale(0.85);
+  }
+}
+
+/* Thanh bên: lối tắt kênh gọn một hàng, nhắc việc nằm cạnh ví ở đáy */
+.sidebar-quick {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+  padding: 0 0.1rem;
+}
+.sidebar-quick-btn {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-width: 0;
+  min-height: 2rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px dashed var(--ink-2);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+  white-space: nowrap;
+}
+.sidebar-quick-btn:hover {
+  border-style: solid;
+  background: var(--ink-2);
+  color: var(--ink-text);
+}
+.sidebar-tools {
+  display: flex;
+  align-items: stretch;
+  border-top: 1px solid var(--ink-2);
+}
+.sidebar-tools .wallet-btn {
+  flex: 1;
+  min-width: 0;
+  border-top: 0;
+}
+.sidebar-reminders {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem 1rem 0.5rem 0.75rem;
+  border: 0;
+  border-left: 1px solid var(--ink-2);
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sidebar-reminders:hover {
+  background: var(--ink-2);
+  color: var(--ink-text);
+}
+.sidebar-reminders.is-due {
+  color: var(--ink-text);
+}

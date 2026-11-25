@@ -182,7 +182,7 @@ export function ChannelView({ channel, membersOpen, onToggleMembers, onOpenSetti
               <Icon name="users" size={16} />
               {channel.member_count}
             </button>
-            <button className="chip" onClick={onInvite} title="Mời người vào kênh" aria-label="Mời người vào kênh">
+            <button className="chip room-invite" onClick={onInvite} title="Mời người vào kênh" aria-label="Mời người vào kênh">
               <Icon name="userPlus" size={16} />
               <span className="btn-label">Mời</span>
             </button>

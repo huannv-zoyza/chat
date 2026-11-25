@@ -130,6 +130,18 @@ function Farm() {
   const [newLogs, setNewLogs] = useState(0);
   const view = visit ?? mine;
   const now = useServerNow(view?.now);
+  // đang thăm vườn người khác: Esc là về nhà (Esc ở nhà mới đóng nông trại, xem FarmOverlay)
+  useEffect(() => {
+    if (!visit) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !document.querySelector("dialog[open]")) {
+        e.stopImmediatePropagation();
+        setVisit(null);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [visit]);
 
   const showToast = useCallback(
     (text: string, tone: "good" | "bad" | "level" = "good") => {
@@ -393,13 +405,26 @@ function Farm() {
                       <span className="farm-tip">{fieldTip(view, now)}</span>
                     )
                   ) : (
-                    <span className="farm-tip">
-                      {view.steals_left !== undefined && (
-                        <>Còn {view.steals_left} lượt trộm hôm nay · </>
-                      )}
-                      Chạm ô chín để <b>trộm</b>, ô đang lớn để <b>tưới giúp</b>
-                      .
-                    </span>
+                    <div className="farm-visiting">
+                      <span>
+                        <span className="farm-visiting-title">
+                          👀 Đang thăm vườn của <b>{displayName(view.user)}</b>
+                        </span>
+                        <small>
+                          {view.steals_left !== undefined && (
+                            <>Còn {view.steals_left} lượt trộm · </>
+                          )}
+                          Chạm ô chín để trộm, ô đang lớn để tưới giúp
+                        </small>
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => setVisit(null)}
+                      >
+                        🏠 Về vườn của tôi
+                      </button>
+                    </div>
                   )}
                 </div>
                 <div className="farm-iso">
@@ -528,6 +553,9 @@ function Farm() {
               {tab === "neighbors" && (
                 <NeighborsPanel
                   onVisit={goVisit}
+                  onHome={() => setVisit(null)}
+                  me={mine?.user ?? null}
+                  myLevel={mine?.level ?? 1}
                   visiting={visit?.user.id ?? null}
                 />
               )}
@@ -556,7 +584,12 @@ function Farm() {
                 <LogPanel farm={mine} now={now} onVisit={goVisit} />
               )}
               {tab === "top" && (
-                <LeaderPanel meId={state.me.id} onVisit={goVisit} />
+                <LeaderPanel
+                  meId={state.me.id}
+                  onVisit={(id) =>
+                    id === state.me.id ? setVisit(null) : void goVisit(id)
+                  }
+                />
               )}
               {!mine && tab !== "neighbors" && tab !== "top" && (
                 <p className="muted">Đang tải…</p>
@@ -1327,9 +1360,15 @@ function DailyCheckin() {
 
 function NeighborsPanel({
   onVisit,
+  onHome,
+  me,
+  myLevel,
   visiting,
 }: {
   onVisit: (id: number) => void;
+  onHome: () => void;
+  me: FarmView["user"] | null;
+  myLevel: number;
   visiting: number | null;
 }) {
   const { api } = useChat();
@@ -1365,6 +1404,21 @@ function NeighborsPanel({
         🫣
       </p>
       <ul className="neighbor-list">
+        {me && (
+          <li>
+            <button
+              type="button"
+              className={`neighbor is-home${visiting === null ? " is-on" : ""}`}
+              onClick={onHome}
+            >
+              <Avatar user={me} size={36} />
+              <span className="neighbor-main">
+                <b>🏠 Vườn của tôi</b>
+                <small>Cấp {myLevel}</small>
+              </span>
+            </button>
+          </li>
+        )}
         {list.map((n) => (
           <li key={n.user.id}>
             <button
@@ -1599,7 +1653,7 @@ function LeaderPanel({
           <button
             type="button"
             className="farm-top-user"
-            onClick={() => r.user.id !== meId && onVisit(r.user.id)}
+            onClick={() => onVisit(r.user.id)}
           >
             <Avatar user={r.user} size={30} />
             <b>{displayName(r.user)}</b>

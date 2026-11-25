@@ -268,3 +268,115 @@ export function playCoinSound() {
     // ignore
   }
 }
+
+/* ---------- Ném đồ: tiếng va chạm riêng cho từng món ---------- */
+
+let noiseBuf: AudioBuffer | null = null;
+function noise(ctx: AudioContext): AudioBuffer {
+  if (noiseBuf && noiseBuf.sampleRate === ctx.sampleRate) return noiseBuf;
+  const len = Math.floor(ctx.sampleRate * 0.6);
+  noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = noiseBuf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  return noiseBuf;
+}
+
+/** Một cú tiếng ồn đã lọc: type/freq của bộ lọc, có thể quét tần số tới freqTo. */
+function burst(
+  ctx: AudioContext,
+  at: number,
+  o: { type: BiquadFilterType; freq: number; freqTo?: number; q?: number; gain: number; dur: number },
+) {
+  const src = ctx.createBufferSource();
+  src.buffer = noise(ctx);
+  const f = ctx.createBiquadFilter();
+  f.type = o.type;
+  f.frequency.setValueAtTime(o.freq, at);
+  if (o.freqTo) f.frequency.exponentialRampToValueAtTime(o.freqTo, at + o.dur);
+  f.Q.value = o.q ?? 1;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.exponentialRampToValueAtTime(o.gain, at + 0.004);
+  g.gain.exponentialRampToValueAtTime(0.0001, at + o.dur);
+  src.connect(f).connect(g).connect(ctx.destination);
+  src.start(at, Math.random() * 0.2);
+  src.stop(at + o.dur + 0.02);
+}
+
+/** Tiếng trầm "thịch" kèm theo cú va. */
+function thump(ctx: AudioContext, at: number, from: number, to: number, gain: number, dur: number) {
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(from, at);
+  osc.frequency.exponentialRampToValueAtTime(to, at + dur);
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.exponentialRampToValueAtTime(gain, at + 0.005);
+  g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  osc.connect(g).connect(ctx.destination);
+  osc.start(at);
+  osc.stop(at + dur + 0.02);
+}
+
+/**
+ * Tiếng món đồ ném trúng. delay (giây): chờ tới lúc món đồ chạm đích trong hoạt ảnh.
+ * dép: hai tiếng "bốp"; cà chua/bánh kem: tiếng "bẹp" ướt; trứng: vỏ vỡ rồi bẹp; hoa: tiếng chuông.
+ */
+export function playThrowSound(item: string, delay = 0, volume = 1) {
+  if (!getSoundMentionsPref()) return;
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  try {
+    const t = ctx.currentTime + delay;
+    const v = volume;
+    switch (item) {
+      case "dep":
+        for (const at of [t, t + 0.34]) {
+          burst(ctx, at, { type: "bandpass", freq: 1500, q: 0.8, gain: 0.9 * v, dur: 0.09 });
+          burst(ctx, at, { type: "highpass", freq: 3000, gain: 0.35 * v, dur: 0.04 });
+          thump(ctx, at, 180, 55, 0.5 * v, 0.12);
+        }
+        break;
+      case "cachua":
+        thump(ctx, t, 140, 45, 0.45 * v, 0.16);
+        burst(ctx, t, { type: "lowpass", freq: 2200, freqTo: 260, q: 4, gain: 0.8 * v, dur: 0.32 });
+        burst(ctx, t + 0.05, { type: "bandpass", freq: 700, freqTo: 300, q: 6, gain: 0.35 * v, dur: 0.25 });
+        break;
+      case "trung":
+        for (const [dt, g] of [
+          [0, 0.7],
+          [0.025, 0.45],
+          [0.05, 0.3],
+        ] as const)
+          burst(ctx, t + dt, { type: "highpass", freq: 2500, gain: g * v, dur: 0.03 });
+        burst(ctx, t + 0.07, { type: "lowpass", freq: 1500, freqTo: 250, q: 5, gain: 0.55 * v, dur: 0.28 });
+        break;
+      case "banhkem":
+        thump(ctx, t, 110, 40, 0.5 * v, 0.2);
+        burst(ctx, t, { type: "lowpass", freq: 1200, freqTo: 180, q: 2, gain: 0.85 * v, dur: 0.45 });
+        break;
+      case "hoa": {
+        const notes = [1046.5, 1318.5, 1568, 2093];
+        notes.forEach((f, i) => {
+          const osc = ctx.createOscillator();
+          const g = ctx.createGain();
+          const at = t + i * 0.09;
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(f, at);
+          g.gain.setValueAtTime(0.0001, at);
+          g.gain.exponentialRampToValueAtTime(0.13 * v, at + 0.01);
+          g.gain.exponentialRampToValueAtTime(0.0001, at + 0.6);
+          osc.connect(g).connect(ctx.destination);
+          osc.start(at);
+          osc.stop(at + 0.62);
+        });
+        break;
+      }
+      default:
+        thump(ctx, t, 160, 50, 0.5 * v, 0.14);
+        burst(ctx, t, { type: "bandpass", freq: 1000, gain: 0.6 * v, dur: 0.1 });
+    }
+  } catch {
+    // ignore
+  }
+}

@@ -32,7 +32,7 @@ import { ChatSocket } from "../lib/socket";
 import { ServerUrlContext } from "../components/ui";
 import { displayName, newClientId } from "../lib/format";
 import { showNotification } from "../lib/notify";
-import { playCoinSound, playMentionSound, playMessageSound } from "../lib/sound";
+import { playCoinSound, playMentionSound, playMessageSound, playThrowSound } from "../lib/sound";
 import { channelLabel, dmPeerId, isDM } from "../lib/channel";
 import { e2ee } from "../lib/e2ee";
 import { load, save } from "../lib/storage";
@@ -480,7 +480,11 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
         if (e?.type === "throw") {
           // người bị ném: hiệu ứng toàn màn hình; người khác (kể cả người ném): bay vào dòng trong chat
           if (e.target_id === stateRef.current.me.id) dispatch({ type: "hit", item: e.id, fromId: ev.message.user_id });
-          else dispatch({ type: "throw.fresh", messageId: ev.message.id });
+          else {
+            dispatch({ type: "throw.fresh", messageId: ev.message.id });
+            // người ném nghe tiếng trúng, nhỏ hơn, lúc món đồ chạm dòng chat
+            if (ev.message.user_id === stateRef.current.me.id) playThrowSound(e.id, 0.6, 0.5);
+          }
         }
       }),
 

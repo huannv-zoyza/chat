@@ -9447,22 +9447,120 @@ button.game-player:disabled {
   display: grid;
   place-items: center;
   align-content: center;
-  gap: 1rem;
+  gap: 1.25rem;
+  overflow: hidden;
   pointer-events: none;
-  animation: throw-fade 2.8s ease-in forwards;
+  animation: throw-fade 3.4s linear forwards;
+}
+.throw-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(86vw, 30rem);
+  aspect-ratio: 1;
+}
+.throw-stage > * {
+  grid-area: 1 / 1;
 }
 .throw-item {
-  font-size: min(38vw, 12rem);
+  font-size: min(42vw, 13rem);
   line-height: 1;
-  filter: drop-shadow(0 12px 18px rgb(0 0 0 / 0.35));
-  animation: throw-fly 0.55s cubic-bezier(0.3, 0.1, 0.4, 1.3) both, throw-splat 0.35s 0.55s ease-out forwards;
+  filter: drop-shadow(0 14px 20px rgb(0 0 0 / 0.45));
+  animation: throw-fly 0.45s cubic-bezier(0.35, 0.05, 0.6, 1) both;
 }
+/* đồ mềm: chạm là vỡ, món đồ biến mất nhường chỗ cho vết toé */
+.throw-overlay.is-splat .throw-item {
+  animation:
+    throw-fly 0.45s cubic-bezier(0.35, 0.05, 0.6, 1) both,
+    throw-burst 0.09s 0.45s ease-out forwards;
+}
+.throw-splat {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  filter: drop-shadow(0 6px 10px rgb(0 0 0 / 0.35));
+  opacity: 0;
+  animation: splat-in 0.22s 0.45s cubic-bezier(0.2, 1.6, 0.4, 1) forwards;
+}
+.splat-egg .splat-body,
+.splat-cake .splat-body {
+  opacity: 0.96;
+}
+.splat-drips rect {
+  transform-box: fill-box;
+  transform-origin: 50% 0;
+  transform: scaleY(0);
+  animation: splat-drip 2.2s ease-in forwards;
+}
+/* dép: đập hai phát */
+.throw-dep .throw-item {
+  animation: throw-slap 1.1s cubic-bezier(0.3, 0, 0.5, 1) both;
+}
+.throw-bop {
+  width: min(52vw, 15rem);
+  height: auto;
+  overflow: visible;
+  opacity: 0;
+  transform: scale(0);
+  animation: bop-pop 0.5s cubic-bezier(0.2, 1.8, 0.4, 1) forwards;
+}
+.throw-bop.is-first {
+  translate: -38% -42%;
+  rotate: -12deg;
+  animation-delay: 0.45s;
+}
+.throw-bop.is-second {
+  translate: 40% 36%;
+  rotate: 10deg;
+  animation-delay: 0.79s;
+}
+.throw-bop-text {
+  font: 900 64px/1 system-ui, sans-serif;
+  fill: #e8231a;
+  stroke: #5c0b07;
+  stroke-width: 4px;
+  paint-order: stroke;
+  letter-spacing: -1px;
+}
+/* chớp sáng lúc trúng */
+.throw-flash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgb(255 255 255 / 0.55), rgb(255 255 255 / 0) 60%);
+  opacity: 0;
+  animation: throw-flash 0.35s 0.45s ease-out;
+}
+.throw-cachua .throw-flash {
+  background: radial-gradient(circle at center, rgb(255 60 40 / 0.4), rgb(255 60 40 / 0) 65%);
+}
+.throw-dep .throw-flash {
+  background: radial-gradient(circle at center, rgb(255 210 0 / 0.45), rgb(255 210 0 / 0) 60%);
+  animation:
+    throw-flash 0.3s 0.45s ease-out,
+    throw-flash 0.3s 0.79s ease-out;
+}
+/* hoa: bay vào nhẹ nhàng, cánh hoa rơi */
 .throw-hoa .throw-item {
-  animation: throw-fly 0.7s ease-out both, throw-float 1.4s 0.7s ease-in-out;
+  animation:
+    throw-fly 0.7s ease-out both,
+    throw-float 1.4s 0.7s ease-in-out 2;
+}
+.throw-hoa {
+  background: radial-gradient(circle at center, rgb(255 120 170 / 0.18), transparent 70%);
+}
+.throw-petals {
+  position: absolute;
+  inset: 0;
+}
+.throw-petals span {
+  position: absolute;
+  top: -3rem;
+  line-height: 1;
+  animation: petal-fall linear both;
 }
 .throw-text {
   margin: 0;
-  padding: 0.5rem 1rem;
+  padding: 0.55rem 1.1rem;
   border-radius: 999px;
   background: var(--surface);
   box-shadow: var(--shadow);
@@ -9470,34 +9568,121 @@ button.game-player:disabled {
   font-weight: 700;
   text-align: center;
   max-width: calc(100vw - 2rem);
+  animation: throw-text-in 0.3s 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+/* cả ứng dụng rung khi trúng */
+.is-hit-shake .app {
+  animation: hit-shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97);
 }
 @keyframes throw-fly {
   from {
-    transform: translate(-70vw, 45vh) rotate(-540deg) scale(0.3);
+    transform: translate(calc(var(--side, 1) * -70vw), 55vh) rotate(calc(var(--side, 1) * -540deg)) scale(0.25);
   }
   to {
     transform: translate(0, 0) rotate(0) scale(1);
   }
 }
-@keyframes throw-splat {
-  0% {
+@keyframes throw-burst {
+  to {
+    opacity: 0;
+    transform: scale(1.6, 0.3);
+  }
+}
+@keyframes splat-in {
+  from {
+    opacity: 1;
+    transform: scale(0.2, 0.15);
+  }
+  to {
+    opacity: 1;
     transform: scale(1);
   }
-  40% {
-    transform: scale(1.35, 0.55);
+}
+@keyframes splat-drip {
+  to {
+    transform: scaleY(1);
+  }
+}
+@keyframes throw-slap {
+  0% {
+    transform: translate(calc(var(--side, 1) * -70vw), 50vh) rotate(-420deg) scale(0.3);
+  }
+  41% {
+    transform: translate(0, 0) rotate(-18deg) scale(1.1);
+  }
+  46% {
+    transform: translate(0, 0) rotate(-8deg) scale(1.3, 0.75);
+  }
+  60% {
+    transform: translate(9vw, -8vh) rotate(38deg) scale(1);
+  }
+  72% {
+    transform: translate(0, 0) rotate(-24deg) scale(1.12);
+  }
+  77% {
+    transform: translate(0, 0) rotate(-14deg) scale(1.32, 0.72);
   }
   100% {
-    transform: scale(1.15, 0.8);
+    transform: translate(0, 0) rotate(-14deg) scale(1);
+  }
+}
+@keyframes bop-pop {
+  0% {
+    opacity: 1;
+    transform: scale(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes throw-flash {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
   }
 }
 @keyframes throw-float {
   50% {
-    transform: translateY(-12px) scale(1.05);
+    transform: translateY(-14px) scale(1.06);
+  }
+}
+@keyframes petal-fall {
+  from {
+    transform: translate(0, 0) rotate(0);
+  }
+  to {
+    transform: translate(var(--drift), 110vh) rotate(540deg);
+  }
+}
+@keyframes throw-text-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.9);
+  }
+}
+@keyframes hit-shake {
+  15% {
+    transform: translate(-9px, 4px) rotate(-0.6deg);
+  }
+  30% {
+    transform: translate(8px, -5px) rotate(0.5deg);
+  }
+  45% {
+    transform: translate(-6px, 3px);
+  }
+  60% {
+    transform: translate(5px, -2px);
+  }
+  80% {
+    transform: translate(-2px, 1px);
   }
 }
 @keyframes throw-fade {
   0%,
-  75% {
+  82% {
     opacity: 1;
   }
   100% {
@@ -9506,8 +9691,26 @@ button.game-player:disabled {
 }
 @media (prefers-reduced-motion: reduce) {
   .throw-item,
-  .throw-hoa .throw-item {
+  .throw-overlay .throw-item,
+  .throw-flash,
+  .throw-petals {
     animation: none;
+  }
+  .throw-overlay.is-splat .throw-item {
+    display: none;
+  }
+  .throw-splat,
+  .throw-bop {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .splat-drips rect {
+    animation: none;
+    transform: none;
+  }
+  .throw-petals {
+    display: none;
   }
 }
 
@@ -9524,6 +9727,71 @@ button.game-player:disabled {
 }
 .msg-fun.is-fresh.throw-hoa .msg-fun-icon {
   animation: fun-fly 0.75s ease-out both, fun-splat 0.35s 0.75s ease-out;
+}
+/* chữ tượng thanh bật ra cạnh dòng lúc món đồ trúng */
+.msg-fun.is-fresh {
+  position: relative;
+}
+.msg-fun.is-fresh::after {
+  position: absolute;
+  left: 0.2rem;
+  top: -0.9rem;
+  z-index: 6;
+  padding: 0.05rem 0.45rem;
+  border-radius: 6px;
+  background: #ffd400;
+  color: #c4150c;
+  font-weight: 900;
+  font-size: var(--step-0);
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  box-shadow: 0 2px 0 #9b1007;
+  opacity: 0;
+  transform: rotate(-8deg) scale(0);
+  animation: fun-onomato 1.4s 0.6s cubic-bezier(0.2, 1.8, 0.4, 1) forwards;
+  pointer-events: none;
+}
+.msg-fun.is-fresh.throw-dep::after {
+  content: "BỐP BỐP!";
+}
+.msg-fun.is-fresh.throw-cachua::after {
+  content: "BẸP!";
+  background: #e0301f;
+  color: #fff;
+  box-shadow: 0 2px 0 #8d0f08;
+}
+.msg-fun.is-fresh.throw-trung::after {
+  content: "TÁCH!";
+  background: #ffc928;
+  color: #6b3d00;
+  box-shadow: 0 2px 0 #a86a00;
+}
+.msg-fun.is-fresh.throw-banhkem::after {
+  content: "BỆT!";
+  background: #ffd6e4;
+  color: #b0124f;
+  box-shadow: 0 2px 0 #d27597;
+}
+.msg-fun.is-fresh.throw-hoa::after {
+  content: "💕";
+  background: none;
+  box-shadow: none;
+  animation-delay: 0.75s;
+}
+@keyframes fun-onomato {
+  0% {
+    opacity: 1;
+    transform: rotate(-8deg) scale(0);
+  }
+  18%,
+  75% {
+    opacity: 1;
+    transform: rotate(-8deg) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(-8deg) translateY(-6px) scale(1);
+  }
 }
 @keyframes fun-fly {
   from {
@@ -9554,6 +9822,9 @@ button.game-player:disabled {
   .msg-fun.is-fresh,
   .msg-fun.is-fresh .msg-fun-icon {
     animation: none;
+  }
+  .msg-fun.is-fresh::after {
+    display: none;
   }
 }
 

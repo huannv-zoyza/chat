@@ -4946,6 +4946,11 @@ body.is-col-resizing video {
   padding: 0;
   list-style: none;
 }
+/* thẻ người chơi giãn hết ô lưới: các thẻ cùng hàng cao bằng nhau dù có dòng phụ ("chủ phòng"…) hay không */
+.game-roster > li:not(.game-seat),
+.game-grid > li:not(.game-seat) {
+  display: flex;
+}
 .game-seat {
   display: grid;
   place-items: center;

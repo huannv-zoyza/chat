@@ -10143,6 +10143,7 @@ button.game-player:disabled {
 }
 .village.is-day .village-firelight {
   opacity: 0;
+  animation: none;
 }
 
 /* lửa trại */
@@ -10317,8 +10318,11 @@ button.villager:disabled {
   transition: opacity 2.5s ease;
   animation: vl-firelight 1.3s ease-in-out infinite alternate;
 }
+/* ban ngày tắt cả hiệu ứng lửa bập bùng: animation đặt opacity 0.86→1 sẽ đè opacity: 0
+   khiến cả làng vẫn tối như đêm */
 .village.is-day .village-dark {
   opacity: 0;
+  animation: none;
 }
 .village.is-day .villager-figure {
   filter: brightness(calc(0.92 + 0.08 * var(--depth, 1)));

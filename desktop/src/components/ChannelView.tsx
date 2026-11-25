@@ -668,7 +668,7 @@ export function MessageRow(props: RowProps) {
         ) : message?.game ? (
           <GameCard message={message} />
         ) : embed ? (
-          <EmbedView embed={embed} channelId={message?.channel_id} userId={message?.user_id} />
+          <EmbedView embed={embed} channelId={message?.channel_id} userId={message?.user_id} messageId={message?.id} />
         ) : (
           text &&
           (isAIUser(avatarUser) ? (

@@ -103,6 +103,8 @@ export type ChatState = {
   wallet: { balance: number; debt: number } | null;
   /** channelId -> userId -> biệt danh trong kênh. */
   nicknames: Record<number, Record<number, string>>;
+  /** Lượt ném vừa tới khi đang mở app: dòng "ném … vào …" có hiệu ứng bay vào (id tin). */
+  freshThrows: Record<number, true>;
   /** Vừa bị ném đồ: hiện hiệu ứng toàn màn hình (key đổi mỗi lần ném). */
   hit: { item: string; fromId: number; key: number } | null;
 };
@@ -136,6 +138,7 @@ export function initialState(me: User): ChatState {
     notice: null,
     wallet: null,
     nicknames: {},
+    freshThrows: {},
     hit: null,
   };
 }
@@ -155,6 +158,8 @@ export type Action =
   | { type: "nickname.set"; channelId: number; userId: number; nickname: string }
   | { type: "hit"; item: string; fromId: number }
   | { type: "hit.clear" }
+  | { type: "throw.fresh"; messageId: number }
+  | { type: "throw.done"; messageId: number }
   | { type: "channel.select"; channelId: number | null; auto?: boolean }
   | { type: "channel.read"; channelId: number }
   | { type: "messages.loaded"; channelId: number; messages: Message[]; hasMore: boolean; older: boolean }
@@ -644,6 +649,15 @@ export function reducer(s: ChatState, a: Action): ChatState {
 
     case "hit.clear":
       return { ...s, hit: null };
+
+    case "throw.fresh":
+      return { ...s, freshThrows: { ...s.freshThrows, [a.messageId]: true } };
+
+    case "throw.done": {
+      if (!s.freshThrows[a.messageId]) return s;
+      const { [a.messageId]: _done, ...rest } = s.freshThrows;
+      return { ...s, freshThrows: rest };
+    }
 
     case "member.left": {
       const c = s.channels[a.channelId];

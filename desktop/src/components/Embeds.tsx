@@ -42,8 +42,18 @@ const GIF_MAX_W = 320;
 const GIF_MAX_H = 240;
 
 /** Sticker hoặc GIF trong tin nhắn. */
-export function EmbedView({ embed, channelId, userId }: { embed: Embed; channelId?: number; userId?: number }) {
-  if (embed.type === "throw" || embed.type === "nickname") return <FunLine embed={embed} />;
+export function EmbedView({
+  embed,
+  channelId,
+  userId,
+  messageId,
+}: {
+  embed: Embed;
+  channelId?: number;
+  userId?: number;
+  messageId?: number;
+}) {
+  if (embed.type === "throw" || embed.type === "nickname") return <FunLine embed={embed} messageId={messageId} />;
   if (embed.type === "share" && /^\d+$/.test(embed.id)) return <ShareCard id={Number(embed.id)} embed={embed} />;
   if (embed.type === "call") {
     return (
@@ -83,16 +93,24 @@ export function EmbedView({ embed, channelId, userId }: { embed: Embed; channelI
 }
 
 /** Dòng trêu nhau: "🩴 ném dép vào Nam", "đặt biệt danh cho Nam là “Thánh Lag”". */
-function FunLine({ embed }: { embed: Embed }) {
-  const { state } = useChat();
+function FunLine({ embed, messageId }: { embed: Embed; messageId?: number }) {
+  const { state, dispatch } = useChat();
   const target = embed.target_id ? state.users[embed.target_id] : undefined;
   const isMe = embed.target_id === state.me.id;
   const name = isMe ? "bạn" : target ? displayName(target) : embed.author || "ai đó";
   if (embed.type === "throw") {
     const item = throwItem(embed.id);
+    // lượt ném vừa xảy ra khi đang mở kênh: món đồ bay vào dòng này rồi bẹp dí
+    const fresh = messageId !== undefined && !!state.freshThrows[messageId];
     return (
-      <p className="msg-fun">
-        <span className="msg-fun-icon" aria-hidden>
+      <p className={`msg-fun${fresh ? ` is-fresh throw-${embed.id}` : ""}`}>
+        <span
+          className="msg-fun-icon"
+          aria-hidden
+          onAnimationEnd={(ev) => {
+            if (fresh && ev.animationName === "fun-splat") dispatch({ type: "throw.done", messageId: messageId! });
+          }}
+        >
           {item?.icon ?? "🎯"}
         </span>
         ném {item?.name ?? "đồ"} vào <strong>{name}</strong>

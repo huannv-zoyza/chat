@@ -466,8 +466,10 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
         notifyIfMentioned(ev.message, viewing);
         playSoundForMessage(ev.message);
         const e = ev.message.embed;
-        if (e?.type === "throw" && e.target_id === stateRef.current.me.id) {
-          dispatch({ type: "hit", item: e.id, fromId: ev.message.user_id });
+        if (e?.type === "throw") {
+          // người bị ném: hiệu ứng toàn màn hình; người khác (kể cả người ném): bay vào dòng trong chat
+          if (e.target_id === stateRef.current.me.id) dispatch({ type: "hit", item: e.id, fromId: ev.message.user_id });
+          else dispatch({ type: "throw.fresh", messageId: ev.message.id });
         }
       }),
 

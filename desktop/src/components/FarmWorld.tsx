@@ -508,7 +508,9 @@ function PlotTile({
   me,
   busy,
   onClick,
+  part = "body",
 }: {
+  part?: "body" | "hud";
   plot: Plot;
   x: number;
   y: number;
@@ -558,13 +560,36 @@ function PlotTile({
   ]
     .filter(Boolean)
     .join(" ");
-  const [lx, ly] = pt(x + s, y + s, 0);
+  const [lx, ly] = pt(x + s / 2, y + s / 2, 7);
   const label =
     st === "growing"
       ? formatLeft(live.left)
       : !me && st === "ripe" && plot.can_steal
         ? "Trộm!"
         : null;
+  if (part === "hud") {
+    // lớp nhãn vẽ sau cùng (trên mọi ô), nổi phía trên khóm cây giữa ô
+    if (!label) return null;
+    return (
+      <g
+        transform={`translate(${lx}, ${ly - 40})`}
+        className="iso-tag iso-click"
+        onClick={onClick}
+      >
+        <rect
+          x={-26}
+          y={-11}
+          width={52}
+          height={18}
+          rx={9}
+          className={!me && st === "ripe" ? "is-steal" : undefined}
+        />
+        <text x={0} y={3} textAnchor="middle">
+          {label}
+        </text>
+      </g>
+    );
+  }
   return (
     <g className={cls} onClick={onClick}>
       <Box
@@ -638,21 +663,6 @@ function PlotTile({
           💧
         </Sprite>
       )}
-      {label && (
-        <g transform={`translate(${lx}, ${ly - 2})`} className="iso-tag">
-          <rect
-            x={-26}
-            y={-11}
-            width={52}
-            height={18}
-            rx={9}
-            className={!me && st === "ripe" ? "is-steal" : undefined}
-          />
-          <text x={0} y={3} textAnchor="middle">
-            {label}
-          </text>
-        </g>
-      )}
     </g>
   );
 }
@@ -668,7 +678,9 @@ function AnimalSprite({
   now,
   me,
   onClick,
+  part = "body",
 }: {
+  part?: "body" | "hud";
   a: Animal;
   x: number;
   y: number;
@@ -685,19 +697,24 @@ function AnimalSprite({
       a.ready_at &&
       new Date(a.ready_at).getTime() <= now);
   const left = a.ready_at ? new Date(a.ready_at).getTime() - now : 0;
+  if (part === "body")
+    return (
+      <g className={`iso-animal${me ? " iso-click" : ""}`} onClick={onClick}>
+        <Shadow x={x} y={y} r={0.3} o={0.25} />
+        <text
+          x={cx}
+          y={cy + 4}
+          fontSize={34}
+          textAnchor="middle"
+          className="iso-graze"
+          style={{ transformOrigin: `${cx}px ${cy}px` }}
+        >
+          {emoji}
+        </text>
+      </g>
+    );
   return (
     <g className={`iso-animal${me ? " iso-click" : ""}`} onClick={onClick}>
-      <Shadow x={x} y={y} r={0.3} o={0.25} />
-      <text
-        x={cx}
-        y={cy + 4}
-        fontSize={34}
-        textAnchor="middle"
-        className="iso-graze"
-        style={{ transformOrigin: `${cx}px ${cy}px` }}
-      >
-        {emoji}
-      </text>
       {ready ? (
         <g
           transform={`translate(${cx}, ${cy - 52})`}
@@ -821,12 +838,19 @@ export function FarmWorld({
     const usable = el.clientWidth - panel;
     if (wide) {
       const c = pt(8, 7.6);
-      const z = Math.max(0.5, Math.min(1.3, Math.min(usable / 1300, el.clientHeight / 760)));
+      const z = Math.max(
+        0.5,
+        Math.min(1.3, Math.min(usable / 1300, el.clientHeight / 760)),
+      );
       setCam({ x: c[0] + panel / 2 / z, y: c[1], z });
     } else {
       // điện thoại: căn vào ruộng, kéo để xem chuồng
       const c = pt(FIELD.gx + 1.6, FIELD.gy + 1.4);
-      setCam({ x: c[0], y: c[1], z: Math.max(0.55, Math.min(1, usable / 620)) });
+      setCam({
+        x: c[0],
+        y: c[1],
+        z: Math.max(0.55, Math.min(1, usable / 620)),
+      });
     }
   }, []);
   useEffect(() => {
@@ -1122,6 +1146,45 @@ export function FarmWorld({
 
   things.sort((a, b) => a.depth - b.depth);
 
+  // nhãn đồng hồ / "Trộm!" và bong bóng vật nuôi: vẽ sau cùng để không vật nào che
+  const hud: ReactNode[] = [];
+  view.plots.forEach((p, i) => {
+    const [x, y] = plotXY(i);
+    hud.push(
+      <PlotTile
+        key={`ph${p.index}`}
+        part="hud"
+        plot={p}
+        x={x}
+        y={y}
+        crop={crop(p.crop)}
+        live={live(p)}
+        me={me}
+        busy={busy}
+        onClick={() => h.onPlot(p)}
+      />,
+    );
+  });
+  [
+    ...coopAnimals.map((a, i) => [a, spotIn(COOP, i, 2)] as const),
+    ...pastureAnimals.map((a, i) => [a, spotIn(PASTURE, i)] as const),
+  ].forEach(([a, [x, y]]) =>
+    hud.push(
+      <AnimalSprite
+        key={`ah${a.id}`}
+        part="hud"
+        a={a}
+        x={x}
+        y={y}
+        emoji={emojiOf(a.kind)}
+        product={productOf(a.kind)}
+        now={now}
+        me={me}
+        onClick={() => h.onAnimal(a)}
+      />,
+    ),
+  );
+
   /* ---- mặt đất ---- */
   const ground: ReactNode[] = [];
   for (let gx = -1; gx < GW; gx++)
@@ -1226,6 +1289,7 @@ export function FarmWorld({
         />
         {expandArea}
         {things.map((t) => t.node)}
+        <g>{hud}</g>
         {/* biển chuồng chưa xây */}
         {me && !coopOn && (
           <BuildSign

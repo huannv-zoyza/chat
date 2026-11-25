@@ -16009,3 +16009,33 @@ button.villager:focus-visible .villager-name {
   -webkit-user-select: none;
   user-select: none;
 }
+
+/* Bác nông dân: nhún nhẹ như đang làm việc */
+.iso-farmer {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: iso-farmer 2.8s ease-in-out infinite;
+}
+@keyframes iso-farmer {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  30% {
+    transform: translateY(-1.5px) rotate(-1.5deg);
+  }
+  60% {
+    transform: translateY(0) rotate(1deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .iso-farmer {
+    animation: none;
+  }
+}
+@media (max-width: 960px) {
+  /* toast nằm dưới thanh HUD (cánh đồng giờ chạy lên dưới HUD) */
+  .farm-toast {
+    top: calc(var(--farm-hud-h) + 0.5rem);
+  }
+}

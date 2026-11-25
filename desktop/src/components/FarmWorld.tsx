@@ -163,7 +163,16 @@ function Sprite({
   const [cx, cy] = pt(x, y, z);
   const style = { transformOrigin: `${cx}px ${cy}px` };
   if (typeof children === "string")
-    return <SvgEmo e={children} x={cx} y={cy + size * 0.12} size={size} className={className} style={style} />;
+    return (
+      <SvgEmo
+        e={children}
+        x={cx}
+        y={cy + size * 0.12}
+        size={size}
+        className={className}
+        style={style}
+      />
+    );
   return (
     <text
       x={cx}
@@ -175,6 +184,111 @@ function Sprite({
     >
       {children}
     </text>
+  );
+}
+
+/**
+ * Bác nông dân đủ thân (emoji 🧑‍🌾 chỉ có nửa người): mũ rơm, áo kẻ đỏ, quần yếm xanh, ủng,
+ * tay cầm chĩa. (x, y) là chỗ chân đứng; cao ~60px.
+ */
+function Farmer({ x, y }: { x: number; y: number }) {
+  const [cx, cy] = pt(x, y);
+  const skin = "#f2c29b";
+  const skinDk = "#d99d74";
+  const shirt = "#d9453a";
+  const shirtDk = "#b5332a";
+  const denim = "#3f6fb5";
+  const denimDk = "#2f558f";
+  const boot = "#5a3a1e";
+  return (
+    <g>
+      <Shadow x={x} y={y} r={0.32} o={0.25} />
+      <g transform={`translate(${cx}, ${cy})`}>
+        <g className="iso-farmer">
+          {/* chĩa (sau người) */}
+          <line
+            x1={15}
+            y1={-2}
+            x2={15}
+            y2={-56}
+            stroke="#8a5a2c"
+            strokeWidth={2.6}
+            strokeLinecap="round"
+          />
+          <path
+            d="M10 -56 V-64 M15 -56 V-66 M20 -56 V-64 M10 -56 H20"
+            stroke="#9aa3ad"
+            strokeWidth={1.8}
+            strokeLinecap="round"
+            fill="none"
+          />
+          {/* chân + ủng */}
+          <rect x={-8} y={-20} width={7} height={15} rx={2.5} fill={denimDk} />
+          <rect x={1} y={-20} width={7} height={15} rx={2.5} fill={denim} />
+          <rect x={-10.5} y={-7} width={10} height={6.5} rx={3} fill={boot} />
+          <rect x={0.5} y={-7} width={10} height={6.5} rx={3} fill={boot} />
+          {/* thân: áo + yếm */}
+          <path d="M-11 -40 q11 -5 22 0 l1 21 q-12 4 -24 0 z" fill={shirt} />
+          <path
+            d="M-11 -40 q5 -2.5 11 -2.6 v25.2 q-6 -0.2 -12 -1.8 z"
+            fill={shirtDk}
+            opacity={0.35}
+          />
+          <path d="M-8 -31 h16 v12 q-8 3 -16 0 z" fill={denim} />
+          <rect x={-8} y={-38} width={3} height={8} fill={denim} />
+          <rect x={5} y={-38} width={3} height={8} fill={denim} />
+          <circle cx={-6.5} cy={-30} r={1.3} fill="#f3d36b" />
+          <circle cx={6.5} cy={-30} r={1.3} fill="#f3d36b" />
+          <rect x={-3.5} y={-27} width={7} height={5} rx={1} fill={denimDk} />
+          {/* tay trái buông, tay phải nắm cán chĩa */}
+          <path
+            d="M-11 -39 q-6 6 -6 16"
+            stroke={shirt}
+            strokeWidth={6}
+            strokeLinecap="round"
+            fill="none"
+          />
+          <circle cx={-17} cy={-22} r={3.2} fill={skin} />
+          <path
+            d="M11 -39 q5 5 4 12"
+            stroke={shirt}
+            strokeWidth={6}
+            strokeLinecap="round"
+            fill="none"
+          />
+          <circle cx={15} cy={-27} r={3.2} fill={skin} />
+          {/* cổ + đầu */}
+          <rect x={-2.5} y={-44} width={5} height={5} fill={skinDk} />
+          <circle cx={0} cy={-50} r={8.5} fill={skin} />
+          <circle cx={-8.2} cy={-49} r={2} fill={skinDk} />
+          <circle cx={8.2} cy={-49} r={2} fill={skinDk} />
+          <circle cx={-3} cy={-50} r={1.2} fill="#3a2414" />
+          <circle cx={3} cy={-50} r={1.2} fill="#3a2414" />
+          <path
+            d="M-3 -46 q3 2.5 6 0"
+            stroke="#7a3a22"
+            strokeWidth={1.2}
+            strokeLinecap="round"
+            fill="none"
+          />
+          <circle cx={-5} cy={-47} r={1.5} fill="#f08a7a" opacity={0.6} />
+          <circle cx={5} cy={-47} r={1.5} fill="#f08a7a" opacity={0.6} />
+          {/* mũ rơm */}
+          <ellipse cx={0} cy={-56} rx={15} ry={4.2} fill="#e3b04b" />
+          <path d="M-8 -56 q0 -9 8 -9 q8 0 8 9 z" fill="#efc35e" />
+          <path d="M-8 -57.5 q8 2.5 16 0 v-2 q-8 2.5 -16 0 z" fill="#c0392b" />
+          <ellipse
+            cx={0}
+            cy={-56}
+            rx={15}
+            ry={4.2}
+            fill="none"
+            stroke="#b9852c"
+            strokeWidth={0.8}
+          />
+        </g>
+      </g>
+    </g>
   );
 }
 
@@ -421,7 +535,13 @@ function Barn({
             stroke="#7a4b22"
             strokeWidth={2.5}
           />
-          <SvgLabel text={label} y={3} fontSize={12} fontWeight={800} fill="#4a2f14" />
+          <SvgLabel
+            text={label}
+            y={3}
+            fontSize={12}
+            fontWeight={800}
+            fill="#4a2f14"
+          />
         </g>
       )}
     </g>
@@ -1012,13 +1132,7 @@ export function FarmWorld({
     </Sprite>,
   );
   // nông dân, chó, đống rơm, hoa
-  add(
-    8.9,
-    11.3,
-    <Sprite key="farmer" x={8.9} y={11.3} size={40} className="iso-idle">
-      🧑‍🌾
-    </Sprite>,
-  );
+  add(8.9, 11.3, <Farmer key="farmer" x={8.9} y={11.3} />);
   if (dog)
     add(
       15,
@@ -1297,7 +1411,10 @@ export function FarmWorld({
             onClick={h.onExpand}
           >
             <rect x={-62} y={-14} width={124} height={26} rx={13} />
-            <SvgLabel text={`🪧 Mở rộng · ${view.expansion.next.price}🪙`} y={4} />
+            <SvgLabel
+              text={`🪧 Mở rộng · ${view.expansion.next.price}🪙`}
+              y={4}
+            />
           </g>
         )}
       </svg>

@@ -1649,7 +1649,7 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
   };
 
   return (
-    <Dialog title="Chơi game" onClose={onClose} className="dialog-games">
+    <Dialog title="Chơi game" onClose={onClose} className="dialog-games dialog-top">
       <form className="dialog-form game-dialog" onSubmit={submit}>
         <div className="game-dialog-pick">
           {!dm && (

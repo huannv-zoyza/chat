@@ -1614,6 +1614,15 @@ button {
 .dialog-wide {
   width: min(600px, calc(100vw - 2rem));
 }
+/* Neo phía trên thay vì canh giữa: hộp thoại đổi chiều cao theo nội dung (vd. tuỳ chọn từng game)
+   thì chỉ dài/ngắn ở phía dưới, phần đầu không nhảy lên xuống. */
+@media (min-width: 721px) {
+  .dialog.dialog-top {
+    margin-top: max(1.5rem, 8vh);
+    margin-bottom: auto;
+    max-height: calc(100vh - max(1.5rem, 8vh) - 1.5rem);
+  }
+}
 .dialog::backdrop {
   background: rgb(15 21 27 / 0.55);
 }
@@ -6046,8 +6055,16 @@ button.game-player:disabled {
 }
 
 /* Hộp thoại "Chơi game": ngang, trái chọn trò, phải mô tả + tuỳ chọn; hẹp thì xếp một cột. */
-.dialog.dialog-games {
-  width: min(960px, calc(100vw - 2rem));
+@media (min-width: 721px) {
+  .dialog.dialog-games {
+    width: min(960px, calc(100vw - 2rem));
+  }
+}
+/* Điện thoại: tấm trượt cao cố định để đổi game không làm mép trên nhảy; nội dung cuộn bên trong. */
+@media (max-width: 720px) {
+  .dialog.dialog-games {
+    height: 92dvh;
+  }
 }
 .game-dialog {
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);

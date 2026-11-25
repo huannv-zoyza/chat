@@ -4744,6 +4744,26 @@ body.is-col-resizing video {
 .gc-overlay.is-min .call-btn .icon {
   padding: 0.55rem;
 }
+/* Đang ở làng Ma Sói: chỉ còn các nút, nằm dưới hàng nút của làng, trong phần sân làng
+   (không đè khung chat bên phải) */
+.gc-overlay.is-min.in-village {
+  inset: calc(max(12px, env(safe-area-inset-top)) + 3rem) 1rem auto auto;
+  padding: 0.3rem;
+}
+.gc-overlay.is-min.in-village .gc-head {
+  display: none;
+}
+@media (max-width: 760px) {
+  /* dưới dòng dẫn truyện của làng (.village-narrator) */
+  .gc-overlay.is-min.in-village {
+    top: calc(max(12px, env(safe-area-inset-top)) + 6.6rem);
+  }
+}
+@media (min-width: 761px) {
+  body:has(.village.has-chat) .gc-overlay.is-min.in-village {
+    right: calc(min(380px, 36vw) + 1rem);
+  }
+}
 .gc-toast {
   position: fixed;
   top: calc(1rem + env(safe-area-inset-top));

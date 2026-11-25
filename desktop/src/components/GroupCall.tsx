@@ -5,6 +5,7 @@ import { channelLabel } from "../lib/channel";
 import { displayName } from "../lib/format";
 import { useGroupCall } from "../lib/groupcall";
 import { canShareScreen } from "../lib/screenshare";
+import { useVillageId } from "../lib/village";
 import { fullscreenElement, toggleFullscreen } from "../lib/fullscreen";
 import { useChat } from "../state/ChatProvider";
 import { Avatar, Icon, Linkified } from "./ui";
@@ -165,6 +166,12 @@ export function GroupCallOverlay() {
   useEffect(() => setUserPin(null), [a?.channelId]);
   // có người mới chia sẻ màn hình: lại cho tự ghim người đó (trừ khi đang ghim tay một người)
   useEffect(() => setUserPin((v) => (v === "grid" ? null : v)), [sharing]);
+  // Làng Ma Sói vừa mở (ván bắt đầu / bấm "Vào làng"): thu nhỏ cuộc gọi để không che làng.
+  const inVillage = useVillageId() !== null;
+  const active = !!a;
+  useEffect(() => {
+    if (inVillage && active) g?.minimize(true);
+  }, [inVillage, active, g]);
   if (!g) return null;
 
   const invite = gs.invite;
@@ -217,7 +224,7 @@ export function GroupCallOverlay() {
       )}
 
       {a && (
-        <div className={`gc-overlay${a.minimized ? " is-min" : ""}`} role="dialog" aria-label={`Gọi nhóm ${label}`}>
+        <div className={`gc-overlay${a.minimized ? " is-min" : ""}${inVillage ? " in-village" : ""}`} role="dialog" aria-label={`Gọi nhóm ${label}`}>
           <div className="gc-head">
             <strong>{label}</strong>
             <span>

@@ -23,7 +23,7 @@ function expectedPlaybackSec(wp: WatchPartyState, clockOffsetMs: number): number
   return Math.max(0, wp.anchor_pos_sec + elapsed);
 }
 
-/* ---------- Banner trong ChannelView (Opt-in Join bắt buộc) ---------- */
+/* ---------- Banner trong ChannelView (phải bấm "Vào nghe" mới phát) ---------- */
 
 export function WatchPartyBanner({ channelId }: { channelId: number }) {
   const { state, dispatch, loadWatchParty, joinWatchParty, leaveWatchParty } = useChat();
@@ -47,7 +47,7 @@ export function WatchPartyBanner({ channelId }: { channelId: number }) {
           <img src={cur.thumbnail_url} alt="" className="wp-banner-thumb" />
         ) : (
           <span className="wp-banner-icon" aria-hidden>
-            🎵
+            <Icon name="music" size={18} />
           </span>
         )}
         <div className="wp-banner-text">
@@ -62,13 +62,13 @@ export function WatchPartyBanner({ channelId }: { channelId: number }) {
             )}
           </div>
           <div className="wp-banner-meta">
-            <span>🎧 {wp?.listener_count ?? 0} đang nghe chung</span>
+            <span>{wp?.listener_count ?? 0} đang nghe</span>
             <span>·</span>
-            <span>📋 {wp?.queue.length ?? 0} bài chờ</span>
+            <span>{wp?.queue.length ?? 0} bài chờ</span>
             {!joined && cur && (
               <>
                 <span>·</span>
-                <span className="wp-join-hint">Nhấn Join để nghe &amp; xem đồng bộ</span>
+                <span className="wp-join-hint">Bấm "Vào nghe" để nghe và xem cùng mọi người</span>
               </>
             )}
           </div>
@@ -82,10 +82,12 @@ export function WatchPartyBanner({ channelId }: { channelId: number }) {
             className="btn btn-primary btn-sm"
             onClick={() => {
               joinWatchParty(channelId);
-              dispatch({ type: "watchParty.open", channelId });
+              // điện thoại: không bung bảng hàng đợi đè lên khung chat, thanh phát nhỏ là đủ
+              if (window.innerWidth > 720) dispatch({ type: "watchParty.open", channelId });
             }}
           >
-            🎧 Join nghe chung
+            <Icon name="play" size={14} />
+            Vào nghe
           </button>
         ) : (
           <button
@@ -94,7 +96,8 @@ export function WatchPartyBanner({ channelId }: { channelId: number }) {
             onClick={() => leaveWatchParty(channelId)}
             title="Rời phòng nghe chung"
           >
-            🚪 Rời
+            <Icon name="logOut" size={14} />
+            Rời
           </button>
         )}
         <button
@@ -102,7 +105,7 @@ export function WatchPartyBanner({ channelId }: { channelId: number }) {
           className="btn btn-sm btn-secondary"
           onClick={() => dispatch({ type: "watchParty.open", channelId: isOpen ? null : channelId })}
         >
-          {isOpen ? "Thu gọn" : "📋 Hàng đợi"}
+          {isOpen ? "Thu gọn" : "Hàng đợi"}
         </button>
       </div>
     </div>
@@ -112,7 +115,7 @@ export function WatchPartyBanner({ channelId }: { channelId: number }) {
 /* ---------- Panel Hàng đợi & Điều khiển cộng tác ---------- */
 
 export function WatchPartyPanel({ channelId }: { channelId: number }) {
-  const { api, state, dispatch, joinWatchParty, leaveWatchParty } = useChat();
+  const { api, state, dispatch, joinWatchParty } = useChat();
   const wp = state.watchParties[channelId];
   const [urlInput, setUrlInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -244,13 +247,16 @@ export function WatchPartyPanel({ channelId }: { channelId: number }) {
   };
 
   const nextLoop = wp.loop_mode === "off" ? "queue" : wp.loop_mode === "queue" ? "single" : "off";
-  const loopLabel = wp.loop_mode === "single" ? "🔂 Lặp 1 bài" : wp.loop_mode === "queue" ? "🔁 Lặp danh sách" : "➡️ Không lặp";
+  const loopLabel = wp.loop_mode === "single" ? "Lặp 1 bài" : wp.loop_mode === "queue" ? "Lặp danh sách" : "Không lặp";
 
   return (
     <section className="wp-panel" aria-label="Bảng điều khiển Nghe nhạc và Hàng đợi">
       <div className="wp-panel-head">
         <div className="wp-panel-title">
-          <span>🎵 Nghe nhạc &amp; Xem chung</span>
+          <span className="wp-panel-name">
+            <Icon name="music" size={16} />
+            Nghe nhạc &amp; xem chung
+          </span>
           <span className="wp-listener-pills">
             {wp.listeners.slice(0, 6).map((u) => (
               <span key={u.id} title={displayName(state.users[u.id] ?? u)}>
@@ -279,7 +285,7 @@ export function WatchPartyPanel({ channelId }: { channelId: number }) {
               <div className="wp-now-head">
                 <img src={cur.thumbnail_url} alt="" className="wp-now-thumb" />
                 <div className="wp-now-info">
-                  <div className="wp-now-badge">{wp.is_playing ? "▶ Đang phát" : "⏸ Đang tạm dừng"}</div>
+                  <div className="wp-now-badge">{wp.is_playing ? "Đang phát" : "Đang tạm dừng"}</div>
                   <div className="wp-now-title">{cur.title}</div>
                   <div className="wp-now-sub">
                     {cur.author ? `${cur.author} · ` : ""}
@@ -290,9 +296,10 @@ export function WatchPartyPanel({ channelId }: { channelId: number }) {
 
               {!joined ? (
                 <div className="wp-join-gate">
-                  <p>Bạn chưa tham gia phòng. Nhấn <strong>Join</strong> để xem video và nghe đồng bộ.</p>
+                  <p>Bạn chưa vào phòng. Vào để xem video và nghe cùng lúc với mọi người.</p>
                   <button type="button" className="btn btn-primary" onClick={() => joinWatchParty(channelId)}>
-                    🎧 Join nghe chung ngay
+                    <Icon name="play" size={14} />
+                    Vào nghe
                   </button>
                 </div>
               ) : (
@@ -311,18 +318,26 @@ export function WatchPartyPanel({ channelId }: { channelId: number }) {
                   </div>
 
                   <div className="wp-ctrl-buttons">
-                    <button type="button" className="btn btn-sm" onClick={() => void control("prev")} title="Bài trước">
-                      ⏮️
+                    <button
+                      type="button"
+                      className="btn btn-sm wp-icon-btn"
+                      onClick={() => void control("prev")}
+                      title="Bài trước"
+                      aria-label="Bài trước"
+                    >
+                      <Icon name="skipPrev" size={16} />
                     </button>
                     <button
                       type="button"
                       className="btn btn-sm btn-primary"
                       onClick={() => void control(wp.is_playing ? "pause" : "play")}
                     >
-                      {wp.is_playing ? "⏸ Tạm dừng" : "▶ Phát"}
+                      <Icon name={wp.is_playing ? "pause" : "play"} size={14} />
+                      {wp.is_playing ? "Tạm dừng" : "Phát"}
                     </button>
                     <button type="button" className="btn btn-sm" onClick={() => void control("next")} title="Bài tiếp theo">
-                      ⏭️ Qua bài
+                      <Icon name="skipNext" size={14} />
+                      Qua bài
                     </button>
                     <button
                       type="button"
@@ -330,15 +345,8 @@ export function WatchPartyPanel({ channelId }: { channelId: number }) {
                       onClick={() => void control("loop", { loop_mode: nextLoop })}
                       title="Đổi chế độ lặp"
                     >
+                      <Icon name="repeat" size={14} />
                       {loopLabel}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={() => leaveWatchParty(channelId)}
-                      title="Rời phòng nghe chung"
-                    >
-                      🚪 Rời phòng
                     </button>
                   </div>
                 </div>
@@ -346,10 +354,10 @@ export function WatchPartyPanel({ channelId }: { channelId: number }) {
 
               <div className="wp-now-edit-row">
                 <button type="button" className="link-btn" onClick={() => startEdit(cur)}>
-                  ✏️ Sửa bài đang phát
+                  Sửa bài đang phát
                 </button>
                 <button type="button" className="link-btn" onClick={() => void removeItem(cur.id)}>
-                  🗑️ Xoá khỏi phòng
+                  Xoá khỏi hàng đợi
                 </button>
               </div>
               {editingId === cur.id && (
@@ -372,7 +380,7 @@ export function WatchPartyPanel({ channelId }: { channelId: number }) {
               <p>Chưa có bài hát nào. Hãy dán link YouTube ở bên cạnh để bắt đầu hàng đợi!</p>
               {!joined && (
                 <button type="button" className="btn btn-sm btn-primary" onClick={() => joinWatchParty(channelId)}>
-                  🎧 Join sẵn vào phòng
+                  Vào nghe luôn
                 </button>
               )}
             </div>
@@ -396,7 +404,7 @@ export function WatchPartyPanel({ channelId }: { channelId: number }) {
           <FormError>{error}</FormError>
 
           <div className="wp-queue-head">
-            <span>Hàng đợi ({wp.queue.length}) · Kéo thả hoặc bấm ▲▼ để xếp thứ tự</span>
+            <span>Hàng đợi ({wp.queue.length}) · kéo thả hoặc bấm mũi tên để đổi thứ tự</span>
             {wp.queue.length > 0 && (
               <button
                 type="button"
@@ -465,7 +473,7 @@ export function WatchPartyPanel({ channelId }: { channelId: number }) {
                         title="Đưa lên"
                         aria-label="Đưa lên"
                       >
-                        ▲
+                        <Icon name="arrowUp" size={15} />
                       </button>
                       <button
                         type="button"
@@ -475,7 +483,7 @@ export function WatchPartyPanel({ channelId }: { channelId: number }) {
                         title="Đưa xuống"
                         aria-label="Đưa xuống"
                       >
-                        ▼
+                        <Icon name="arrowDown" size={15} />
                       </button>
                       <button
                         type="button"
@@ -484,7 +492,7 @@ export function WatchPartyPanel({ channelId }: { channelId: number }) {
                         title="Sửa bài"
                         aria-label="Sửa bài"
                       >
-                        ✏️
+                        <Icon name="pencil" size={15} />
                       </button>
                       <button
                         type="button"
@@ -493,7 +501,7 @@ export function WatchPartyPanel({ channelId }: { channelId: number }) {
                         title="Xoá bài"
                         aria-label="Xoá bài"
                       >
-                        🗑️
+                        <Icon name="trash" size={15} />
                       </button>
                     </div>
                   )}
@@ -505,7 +513,7 @@ export function WatchPartyPanel({ channelId }: { channelId: number }) {
           {wp.history.length > 0 && (
             <div className="wp-history">
               <button type="button" className="link-btn" onClick={() => setShowHistory((v) => !v)}>
-                {showHistory ? "▼ Ẩn bài đã phát" : `▶ Đã phát gần đây (${wp.history.length})`}
+                {showHistory ? "Ẩn bài đã phát" : `Đã phát gần đây (${wp.history.length})`}
               </button>
               {showHistory && (
                 <ul className="wp-history-list">
@@ -560,7 +568,7 @@ export function AddWatchPartyDialog({ channelId, onClose }: { channelId: number;
       if (autoJoin && !res.state.joined) {
         joinWatchParty(channelId);
       }
-      dispatch({ type: "watchParty.open", channelId });
+      if (window.innerWidth > 720) dispatch({ type: "watchParty.open", channelId });
       onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Không thêm được link YouTube.");
@@ -569,7 +577,7 @@ export function AddWatchPartyDialog({ channelId, onClose }: { channelId: number;
   };
 
   return (
-    <Dialog title="🎵 Nghe nhạc & Xem chung YouTube" onClose={onClose}>
+    <Dialog title="Nghe nhạc & xem YouTube chung" onClose={onClose}>
       <form className="dialog-form" onSubmit={(e) => void submit(e)}>
         <label className="field">
           <span>Link bài hát hoặc video YouTube</span>
@@ -596,14 +604,14 @@ export function AddWatchPartyDialog({ channelId, onClose }: { channelId: number;
           <input type="checkbox" checked={announce} onChange={(e) => setAnnounce(e.target.checked)} />
           <span>
             Gửi thẻ mời vào kênh chat
-            <small>Thông báo để mọi người thấy và nhấn Join nghe chung.</small>
+            <small>Để mọi người thấy và bấm vào nghe cùng.</small>
           </span>
         </label>
         <label className="check-field">
           <input type="checkbox" checked={autoJoin} onChange={(e) => setAutoJoin(e.target.checked)} />
           <span>
-            Tham gia nghe chung ngay (Join)
-            <small>Người khác vẫn phải tự nhấn Join mới nghe/xem.</small>
+            Vào nghe luôn
+            <small>Người khác tự bấm "Vào nghe" khi muốn nghe cùng.</small>
           </span>
         </label>
         <FormError>{error}</FormError>
@@ -628,7 +636,8 @@ export function WatchPartyPlayerDock() {
     () => Object.values(state.watchParties).find((wp) => wp.joined),
     [state.watchParties],
   );
-  const [showVideo, setShowVideo] = useState(() => load("wpShowVideo", true));
+  // điện thoại: mặc định chỉ nghe, video to sẽ che hết khung chat
+  const [showVideo, setShowVideo] = useState(() => load("wpShowVideo", window.innerWidth > 720));
   const [volume, setVolume] = useState(() => load("wpVolume", 80));
   const [playerErr, setPlayerErr] = useState<string | null>(null);
   const mountRef = useRef<HTMLDivElement>(null);
@@ -812,7 +821,7 @@ export function WatchPartyPlayerDock() {
                   className="btn btn-xs btn-primary"
                   onClick={() => void api.controlWatchParty(joinedParty.channel_id, { action: "next" })}
                 >
-                  ⏭️ Qua bài
+                  Qua bài
                 </button>
               </div>
             )}
@@ -830,11 +839,11 @@ export function WatchPartyPlayerDock() {
           }}
           title={`Mở phòng nghe chung tại #${chName}`}
         >
-          <span aria-hidden>🎵</span>
+          <Icon name="music" size={16} />
           <span className="wp-dock-text">
             <strong>{cur ? cur.title : "Đang chờ bài mới"}</strong>
             <small>
-              #{chName} · 🎧 {joinedParty.listener_count}
+              #{chName} · {joinedParty.listener_count} đang nghe
             </small>
           </span>
         </button>
@@ -853,7 +862,7 @@ export function WatchPartyPlayerDock() {
                 title={joinedParty.is_playing ? "Tạm dừng" : "Phát"}
                 aria-label={joinedParty.is_playing ? "Tạm dừng" : "Phát"}
               >
-                {joinedParty.is_playing ? "⏸" : "▶"}
+                <Icon name={joinedParty.is_playing ? "pause" : "play"} size={16} />
               </button>
               <button
                 type="button"
@@ -866,7 +875,7 @@ export function WatchPartyPlayerDock() {
                 title="Qua bài"
                 aria-label="Qua bài"
               >
-                ⏭️
+                <Icon name="skipNext" size={16} />
               </button>
               <button
                 type="button"
@@ -875,7 +884,7 @@ export function WatchPartyPlayerDock() {
                 title={showVideo ? "Thu gọn video (chỉ nghe)" : "Hiện video"}
                 aria-label={showVideo ? "Thu gọn video" : "Hiện video"}
               >
-                {showVideo ? "🔽" : "📺"}
+                <Icon name={showVideo ? "shrink" : "video"} size={16} />
               </button>
             </>
           )}

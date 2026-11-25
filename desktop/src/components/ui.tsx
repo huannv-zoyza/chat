@@ -135,6 +135,28 @@ const paths: Record<string, ReactNode> = {
   arrowUp: <path d="M12 19V5M6 11l6-6 6 6" />,
   arrowLeft: <path d="M19 12H5M11 6l-6 6 6 6" />,
   play: <path d="M8 5.5v13l11-6.5-11-6.5Z" fill="currentColor" />,
+  pause: <path d="M7 5h3.2v14H7zM13.8 5H17v14h-3.2z" fill="currentColor" stroke="none" />,
+  skipNext: (
+    <>
+      <path d="M5 5.5v13l10-6.5-10-6.5Z" fill="currentColor" />
+      <path d="M18.5 5v14" />
+    </>
+  ),
+  skipPrev: (
+    <>
+      <path d="M19 5.5v13L9 12l10-6.5Z" fill="currentColor" />
+      <path d="M5.5 5v14" />
+    </>
+  ),
+  repeat: <path d="M17 3l3 3-3 3M4 12v-2a4 4 0 0 1 4-4h12M7 21l-3-3 3-3M20 12v2a4 4 0 0 1-4 4H4" />,
+  logOut: <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11" />,
+  music: (
+    <>
+      <path d="M9 18V5l11-2v13" />
+      <circle cx="6.5" cy="18" r="2.5" />
+      <circle cx="17.5" cy="16" r="2.5" />
+    </>
+  ),
   smilePlus: (
     <>
       <path d="M20.5 11.5A8.5 8.5 0 1 1 12.5 3.5" />

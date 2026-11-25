@@ -197,7 +197,7 @@ export function WalletDialog({ channelId, onClose }: { channelId: number | null;
             onClick={() => run(api.takeLoan)}
             title={wallet?.can_loan ? undefined : "Chỉ vay khi còn dưới 100 xu"}
           >
-            Vay ngân hàng 500
+            Vay 500 xu
           </button>
           <button type="button" className="btn" disabled={busy || debt === 0 || balance === 0} onClick={() => run(api.repayDebt)}>
             Trả nợ
@@ -211,18 +211,18 @@ export function WalletDialog({ channelId, onClose }: { channelId: number | null;
             {channel && (
               <>
                 <button type="button" role="tab" aria-selected={tab === "rich"} onClick={() => setTab("rich")}>
-                  💰 Đại gia
+                  Đại gia
                 </button>
                 <button type="button" role="tab" aria-selected={tab === "debtors"} onClick={() => setTab("debtors")}>
-                  💸 Con nợ
+                  Con nợ
                 </button>
               </>
             )}
             <button type="button" role="tab" aria-selected={tab === "transfer"} onClick={() => setTab("transfer")}>
-              🤝 Chuyển xu
+              Chuyển xu
             </button>
             <button type="button" role="tab" aria-selected={tab === "history"} onClick={() => setTab("history")}>
-              📜 Lịch sử
+              Lịch sử
             </button>
           </div>
 
@@ -343,7 +343,7 @@ export function WalletDialog({ channelId, onClose }: { channelId: number | null;
           {tab === "history" && (
             <div className="wallet-history">
               <div className="wallet-history-filter">
-                <select value={txFilter} onChange={(e) => setTxFilter(e.target.value)}>
+                <select value={txFilter} onChange={(e) => setTxFilter(e.target.value)} aria-label="Lọc giao dịch">
                   <option value="all">Tất cả giao dịch</option>
                   <option value="bet_win">Thắng cược Cờ tướng</option>
                   <option value="bet_lock">Đặt cược Cờ tướng</option>

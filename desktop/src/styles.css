@@ -9041,28 +9041,42 @@ button.game-player:disabled {
   color: var(--muted);
   font-size: var(--step--1);
 }
+/* nút chính cả hàng, hai nút phụ chia đôi hàng dưới */
 .wallet-actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 0.5rem;
 }
+.wallet-actions .btn-primary {
+  grid-column: 1 / -1;
+}
+/* tab của ví: một dòng, gạch chân tab đang chọn */
 .wallet-tabs {
   display: flex;
-  gap: 0.35rem;
-  margin-bottom: 0.5rem;
+  gap: 0.25rem;
+  margin-bottom: 0.6rem;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+  scrollbar-width: none;
 }
 .wallet-tabs button {
-  flex: 1;
-  padding: 0.45rem 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  flex: 1 0 auto;
+  margin-bottom: -1px;
+  padding: 0.5rem 0.6rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--muted);
+  font-size: var(--step--1);
   font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.wallet-tabs button:hover {
+  color: var(--text);
 }
 .wallet-tabs button[aria-selected="true"] {
-  background: var(--signal-soft);
-  border-color: var(--signal);
+  border-bottom-color: var(--signal);
   color: var(--text);
 }
 .wallet-list {
@@ -10652,6 +10666,16 @@ button.villager:focus-visible .villager-name {
 .wallet-history-filter {
   margin-bottom: 0.5rem;
 }
+.wallet-history-filter select {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--step--1);
+}
 
 .wallet-tx-list {
   list-style: none;
@@ -11306,8 +11330,20 @@ button.villager:focus-visible .villager-name {
   white-space: nowrap;
 }
 .wp-dock-text small {
-  font-size: 0.7rem;
+  overflow: hidden;
   color: var(--muted);
+  font-size: 0.7rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.wp-panel-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.wp-banner-icon {
+  display: grid;
+  place-items: center;
 }
 
 .wp-dock-ctrls {

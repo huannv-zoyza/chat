@@ -239,3 +239,32 @@ export function playVictorySound() {
     console.warn("không phát được âm thanh chiến thắng:", err);
   }
 }
+
+/**
+ * Phát tiếng xu rơi leng keng khi nhận thưởng, điểm danh hoặc nhận chuyển khoản Xu.
+ */
+export function playCoinSound() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  try {
+    const now = ctx.currentTime;
+    const notes = [
+      { f: 1318.5, t: 0, d: 0.14, g: 0.14 }, // E6
+      { f: 1760.0, t: 0.07, d: 0.24, g: 0.16 }, // A6
+    ];
+    for (const n of notes) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(n.f, now + n.t);
+      gain.gain.setValueAtTime(0.001, now + n.t);
+      gain.gain.exponentialRampToValueAtTime(n.g, now + n.t + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + n.t + n.d);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now + n.t);
+      osc.stop(now + n.t + n.d + 0.02);
+    }
+  } catch {
+    // ignore
+  }
+}

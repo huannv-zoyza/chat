@@ -11,6 +11,7 @@ import type {
   Reaction,
   ThreadSummary,
   User,
+  Wallet,
 } from "../lib/api";
 import type { AIInfo } from "../lib/socket";
 import type { MessageLinkInfo } from "../lib/api";
@@ -92,6 +93,8 @@ export type ChatState = {
   reads: Record<number, Record<number, number>>;
   /** channelId -> danh sách các ván game đang hoạt động */
   liveGames: Record<number, LiveGameItem[]>;
+  /** Ví Xu của mình (null khi chưa tải). */
+  wallet: Wallet | null;
 };
 
 export function initialState(me: User): ChatState {
@@ -119,6 +122,7 @@ export function initialState(me: User): ChatState {
     linkPrompt: null,
     reads: {},
     liveGames: {},
+    wallet: null,
   };
 }
 
@@ -126,7 +130,8 @@ export function initialState(me: User): ChatState {
 
 export type Action =
   | { type: "status"; status: SocketStatus }
-  | { type: "ready"; me: User; online: number[]; ai: AIInfo | null }
+  | { type: "ready"; me: User; online: number[]; ai: AIInfo | null; wallet?: Wallet | null }
+  | { type: "wallet.set"; wallet: Wallet }
   | { type: "me.updated"; me: User }
   | { type: "channels.loaded"; channels: Channel[] }
   | { type: "channel.upsert"; channel: Channel; keepUnread?: boolean }
@@ -269,8 +274,18 @@ export function reducer(s: ChatState, a: Action): ChatState {
     case "ready": {
       const online: Record<number, true> = {};
       for (const id of a.online) online[id] = true;
-      return { ...s, me: a.me, online, users: withUsers(s.users, [a.me]), ai: a.ai };
+      return {
+        ...s,
+        me: a.me,
+        online,
+        users: withUsers(s.users, [a.me]),
+        ai: a.ai,
+        wallet: a.wallet ?? s.wallet,
+      };
     }
+
+    case "wallet.set":
+      return { ...s, wallet: a.wallet };
 
     case "me.updated":
       return { ...s, me: a.me, users: withUsers(s.users, [a.me]) };

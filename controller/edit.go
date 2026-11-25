@@ -120,6 +120,11 @@ func (a *API) deleteMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if msg.Embed != nil && msg.Embed.Type == "game" {
+		if updates, err := a.store.RefundGameBets(r.Context(), msg.ID, "Tin nhắn ván cờ đã bị xoá"); err == nil {
+			a.pushWalletUpdates(updates)
+		}
+	}
 	deleted, keys, err := a.store.DeleteMessage(r.Context(), msg.ID)
 	if err != nil {
 		internalError(w, r, err)

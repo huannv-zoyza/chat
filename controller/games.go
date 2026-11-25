@@ -156,9 +156,9 @@ func asPlayer(u model.User) game.Player {
 type LiveGameSummary struct {
 	MessageID   int64            `json:"message_id"`
 	ChannelID   int64            `json:"channel_id"`
-	Kind        string           `json:"kind"`        // "xiangqi", "chess", "caro", "werewolf", v.v.
-	Title       string           `json:"title"`       // Tiêu đề game: "Cờ tướng", "Cờ vua"...
-	Status      string           `json:"status"`      // "lobby" | "playing"
+	Kind        string           `json:"kind"`   // "xiangqi", "chess", "caro", "werewolf", v.v.
+	Title       string           `json:"title"`  // Tiêu đề game: "Cờ tướng", "Cờ vua"...
+	Status      string           `json:"status"` // "lobby" | "playing"
 	CreatedAt   time.Time        `json:"created_at"`
 	Host        model.PublicUser `json:"host"`
 	Players     []game.Player    `json:"players"`
@@ -295,7 +295,7 @@ func (a *API) startGame(ctx context.Context, ch model.Channel, host model.User, 
 	if title == "" {
 		return model.Message{}, game.Error("Không có trò chơi này.")
 	}
-	if ch.IsDM() && kind != "caro" && kind != "rps" && kind != "chess" {
+	if ch.IsDM() && kind != "caro" && kind != "rps" && kind != "chess" && kind != "xiangqi" {
 		return model.Message{}, game.Error("Trò này cần nhiều người, hãy mở trong kênh.")
 	}
 	now := time.Now()
@@ -307,9 +307,15 @@ func (a *API) startGame(ctx context.Context, ch model.Channel, host model.User, 
 	if err != nil {
 		return model.Message{}, err
 	}
-	m, err := a.store.CreateGame(ctx, ch.ID, host.ID, model.Embed{Type: "game", ID: kind, Title: title}, string(g.Status()), state)
+	m, walletUpd, err := a.store.CreateGameWithBet(ctx, ch.ID, host.ID, model.Embed{Type: "game", ID: kind, Title: title}, string(g.Status()), state, g.BetAmount())
 	if err != nil {
+		if errors.Is(err, store.ErrInsufficientBalance) {
+			return model.Message{}, game.Error("Số dư Xu không đủ để mở bàn cược này.")
+		}
 		return model.Message{}, err
+	}
+	if walletUpd != nil {
+		a.pushWalletUpdate(*walletUpd)
 	}
 	s := a.games.put(&gameSession{messageID: m.ID, channelID: ch.ID, g: g})
 	_, _, _ = a.store.MarkRead(ctx, ch.ID, host.ID, m.ID)
@@ -362,9 +368,40 @@ func (a *API) gameAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	wasPlaying := s.g.Status() == game.Playing
+	betAmount := s.g.BetAmount()
+	var joinedBetLocked bool
+	if req.Action == "join" && betAmount > 0 {
+		_, maxP := s.g.Limits()
+		if s.g.Status() == game.Lobby && !s.g.IsPlayer(me.ID) && len(s.g.Players()) < maxP {
+			wu, err := a.store.LockGameBet(r.Context(), me.ID, msg.ID, betAmount)
+			if err != nil {
+				if errors.Is(err, store.ErrInsufficientBalance) {
+					writeError(w, http.StatusBadRequest, "Số dư Xu không đủ để tham gia bàn cược này.")
+					return
+				}
+				internalError(w, r, err)
+				return
+			}
+			joinedBetLocked = true
+			a.pushWalletUpdate(wu)
+		}
+	}
 	if err := s.g.Act(asPlayer(me), req.Action, req.Data, time.Now()); err != nil {
+		if joinedBetLocked {
+			if wu, rErr := a.store.RefundUserBet(r.Context(), me.ID, msg.ID, "Hoàn tiền do tham gia phòng thất bại"); rErr == nil && wu != nil {
+				a.pushWalletUpdate(*wu)
+			}
+		}
 		writeGameError(w, r, err)
 		return
+	}
+	if req.Action == "leave" && betAmount > 0 {
+		if wu, rErr := a.store.RefundUserBet(r.Context(), me.ID, msg.ID, "Hoàn tiền do rời phòng chơi"); rErr == nil && wu != nil {
+			a.pushWalletUpdate(*wu)
+		}
+	}
+	if s.g.Status() == game.Ended {
+		a.settleEndedGame(r.Context(), s)
 	}
 	if s.g.Realtime() && wasPlaying && s.g.Status() == game.Playing {
 		// trò thời gian thực: vòng lặp gửi frame ngay lượt sau, thay đổi lớn thì nó lưu và cập nhật thẻ
@@ -374,6 +411,18 @@ func (a *API) gameAction(w http.ResponseWriter, r *http.Request) {
 	}
 	a.ensureLoop(s)
 	writeJSON(w, http.StatusOK, json.RawMessage(viewJSON(s.g, me.ID)))
+}
+
+func (a *API) settleEndedGame(ctx context.Context, s *gameSession) {
+	if s.g.BetAmount() <= 0 {
+		return
+	}
+	updates, err := a.store.SettleGameBets(ctx, s.messageID, s.g.Winners())
+	if err != nil {
+		log.Printf("settle game bets %d: %v", s.messageID, err)
+		return
+	}
+	a.pushWalletUpdates(updates)
 }
 
 func (a *API) gameLeaderboard(w http.ResponseWriter, r *http.Request) {
@@ -463,6 +512,9 @@ func (a *API) tickGames(ctx context.Context, now time.Time) {
 	for _, s := range list {
 		s.mu.Lock()
 		if !s.deleted && s.g.Tick(now) {
+			if s.g.Status() == game.Ended {
+				a.settleEndedGame(ctx, s)
+			}
 			a.saveAndBroadcast(ctx, s)
 		}
 		ended := s.g.Status() == game.Ended

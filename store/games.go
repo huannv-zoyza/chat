@@ -114,21 +114,33 @@ func (s *Store) ActiveGamesByChannel(ctx context.Context, channelID int64) ([]Ga
 }
 
 type MemberGameStats struct {
+	UserID        int64   `json:"user_id"`
+	Username      string  `json:"username"`
+	DisplayName   string  `json:"display_name"`
+	Avatar        *string `json:"avatar"`
+	Wins          int     `json:"wins"`
+	Losses        int     `json:"losses"`
+	Draws         int     `json:"draws"`
+	TotalGames    int     `json:"total_games"`
+	WinRate       float64 `json:"win_rate"`
+	NetProfit     int64   `json:"net_profit"`
+	WalletBalance int64   `json:"wallet_balance"`
+}
+
+type WalletLeader struct {
 	UserID      int64   `json:"user_id"`
 	Username    string  `json:"username"`
 	DisplayName string  `json:"display_name"`
 	Avatar      *string `json:"avatar"`
-	Wins        int     `json:"wins"`
-	Losses      int     `json:"losses"`
-	Draws       int     `json:"draws"`
-	TotalGames  int     `json:"total_games"`
-	WinRate     float64 `json:"win_rate"`
+	Balance     int64   `json:"balance"`
+	NetProfit   int64   `json:"net_profit"`
 }
 
 type LeaderboardResponse struct {
 	Kind       string            `json:"kind"`
 	TopWins    []MemberGameStats `json:"top_wins"`
 	TopLosses  []MemberGameStats `json:"top_losses"`
+	TopRichest []WalletLeader    `json:"top_richest"`
 	Members    []MemberGameStats `json:"members"`
 	TotalEnded int               `json:"total_ended"`
 }
@@ -223,14 +235,48 @@ func (s *Store) GetGameLeaderboard(ctx context.Context, kind string) (Leaderboar
 		return LeaderboardResponse{}, err
 	}
 
+	profitMap := make(map[int64]int64)
+	profitQuery := `
+		SELECT gb.user_id, COALESCE(SUM(gb.payout - gb.amount), 0)
+		FROM game_bets gb
+		JOIN games g ON g.message_id = gb.message_id
+		JOIN messages m ON m.id = g.message_id
+		WHERE gb.status IN ('won', 'lost') AND m.deleted_at IS NULL`
+	var profitArgs []any
+	if kind != "" && kind != "all" {
+		profitQuery += " AND g.kind = ?"
+		profitArgs = append(profitArgs, kind)
+	}
+	profitQuery += " GROUP BY gb.user_id"
+	if pRows, err := s.db.QueryContext(ctx, profitQuery, profitArgs...); err == nil {
+		defer pRows.Close()
+		for pRows.Next() {
+			var uid, profit int64
+			if err := pRows.Scan(&uid, &profit); err == nil {
+				profitMap[uid] = profit
+			}
+		}
+	}
+
+	walletMap := make(map[int64]int64)
+	if wRows, err := s.db.QueryContext(ctx, `SELECT user_id, balance FROM wallets`); err == nil {
+		defer wRows.Close()
+		for wRows.Next() {
+			var uid, bal int64
+			if err := wRows.Scan(&uid, &bal); err == nil {
+				walletMap[uid] = bal
+			}
+		}
+	}
+
 	userMap := make(map[int64]struct {
 		username    string
 		displayName string
 		avatar      *string
 	})
 
-	if len(statsMap) > 0 {
-		uRows, err := s.db.QueryContext(ctx, `SELECT id, username, display_name, avatar FROM users`)
+	if len(statsMap) > 0 || len(walletMap) > 0 {
+		uRows, err := s.db.QueryContext(ctx, `SELECT id, username, display_name, avatar FROM users WHERE status = 'active'`)
 		if err == nil {
 			defer uRows.Close()
 			for uRows.Next() {
@@ -269,15 +315,17 @@ func (s *Store) GetGameLeaderboard(ctx context.Context, kind string) (Leaderboar
 		}
 
 		members = append(members, MemberGameStats{
-			UserID:      id,
-			Username:    un,
-			DisplayName: dn,
-			Avatar:      av,
-			Wins:        st.wins,
-			Losses:      st.losses,
-			Draws:       st.draws,
-			TotalGames:  st.total,
-			WinRate:     wr,
+			UserID:        id,
+			Username:      un,
+			DisplayName:   dn,
+			Avatar:        av,
+			Wins:          st.wins,
+			Losses:        st.losses,
+			Draws:         st.draws,
+			TotalGames:    st.total,
+			WinRate:       wr,
+			NetProfit:     profitMap[id],
+			WalletBalance: walletMap[id],
 		})
 	}
 
@@ -315,6 +363,34 @@ func (s *Store) GetGameLeaderboard(ctx context.Context, kind string) (Leaderboar
 		topLossesList = topLossesList[:10]
 	}
 
+	topRichest := make([]WalletLeader, 0, len(userMap))
+	for uid, u := range userMap {
+		dn := u.displayName
+		if dn == "" {
+			dn = u.username
+		}
+		topRichest = append(topRichest, WalletLeader{
+			UserID:      uid,
+			Username:    u.username,
+			DisplayName: dn,
+			Avatar:      u.avatar,
+			Balance:     walletMap[uid],
+			NetProfit:   profitMap[uid],
+		})
+	}
+	sort.Slice(topRichest, func(i, j int) bool {
+		if topRichest[i].Balance != topRichest[j].Balance {
+			return topRichest[i].Balance > topRichest[j].Balance
+		}
+		if topRichest[i].NetProfit != topRichest[j].NetProfit {
+			return topRichest[i].NetProfit > topRichest[j].NetProfit
+		}
+		return topRichest[i].UserID < topRichest[j].UserID
+	})
+	if len(topRichest) > 10 {
+		topRichest = topRichest[:10]
+	}
+
 	if kind == "" {
 		kind = "caro"
 	}
@@ -323,6 +399,7 @@ func (s *Store) GetGameLeaderboard(ctx context.Context, kind string) (Leaderboar
 		Kind:       kind,
 		TopWins:    topWinsList,
 		TopLosses:  topLossesList,
+		TopRichest: topRichest,
 		Members:    members,
 		TotalEnded: totalEnded,
 	}, nil

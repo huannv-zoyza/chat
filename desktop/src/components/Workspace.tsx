@@ -16,6 +16,7 @@ import { UserSettingsDialog } from "./UserSettingsDialog";
 import { NewDMDialog } from "./NewDMDialog";
 import { SearchDialog } from "./MessageExtras";
 import { RemindersDialog } from "./Reminders";
+import { WalletDialog } from "./WalletDialog";
 import { CallOverlay } from "./CallOverlay";
 import { GroupCallOverlay, UpdateBanner } from "./GroupCall";
 import { StationOverlay } from "./Station";
@@ -26,7 +27,7 @@ import { load, save } from "../lib/storage";
 import { COMPACT_QUERY, useMediaQuery } from "../lib/useMedia";
 
 type DialogName =
-  "create" | "browse" | "channel" | "user" | "invite" | "joinLink" | "dm" | "search" | "reminders" | null;
+  "create" | "browse" | "channel" | "user" | "invite" | "joinLink" | "dm" | "search" | "reminders" | "wallet" | null;
 
 export function Workspace() {
   const { state, openThread, openMessageLink } = useChat();
@@ -155,6 +156,7 @@ export function Workspace() {
         onNewDM={() => setDialog("dm")}
         onSearch={() => setDialog("search")}
         onReminders={() => setDialog("reminders")}
+        onOpenWallet={() => setDialog("wallet")}
       />
 
       {channel ? (
@@ -211,6 +213,7 @@ export function Workspace() {
       <StationOverlay />
       <MessageLinkDialog />
       {dialog === "reminders" && <RemindersDialog onClose={() => setDialog(null)} onJumped={openRoom} />}
+      {dialog === "wallet" && <WalletDialog onClose={() => setDialog(null)} />}
       {dialog === "search" && <SearchDialog onClose={() => setDialog(null)} onJumped={openRoom} />}
       {dialog === "dm" && <NewDMDialog onClose={() => setDialog(null)} onOpened={openRoom} />}
       {dialog === "joinLink" && (

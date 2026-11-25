@@ -79,6 +79,38 @@ export type MessageLinkInfo = {
 export type GameKind = "station" | "werewolf" | "spy" | "caro" | "rps" | "chess" | "xiangqi";
 export type GamePlayer = { id: number; name: string };
 
+export type Wallet = {
+  user_id: number;
+  balance: number;
+  locked_balance: number;
+  can_checkin: boolean;
+  can_bailout: boolean;
+  last_checkin_at?: string;
+  updated_at: string;
+};
+
+export type WalletTransaction = {
+  id: number;
+  user_id: number;
+  type: string;
+  amount: number;
+  balance_after: number;
+  ref_type?: string;
+  ref_id?: number;
+  peer_user?: PublicUser;
+  note: string;
+  created_at: string;
+};
+
+export type WalletLeader = {
+  user_id: number;
+  username: string;
+  display_name: string;
+  avatar: string | null;
+  balance: number;
+  net_profit: number;
+};
+
 export type GameMemberStats = {
   user_id: number;
   username: string;
@@ -89,12 +121,15 @@ export type GameMemberStats = {
   draws: number;
   total_games: number;
   win_rate: number;
+  net_profit?: number;
+  wallet_balance?: number;
 };
 
 export type GameLeaderboard = {
   kind: string;
   top_wins: GameMemberStats[];
   top_losses: GameMemberStats[];
+  top_richest?: WalletLeader[];
   members: GameMemberStats[];
   total_ended: number;
 };
@@ -391,6 +426,22 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
       request<GameLeaderboard>("GET", `/api/games/leaderboard${kind ? `?kind=${encodeURIComponent(kind)}` : ""}`),
     gameAction: (messageId: number, action: string, data?: unknown) =>
       request<GameView>("POST", `/api/messages/${messageId}/game`, data === undefined ? { action } : { action, data }),
+    wallet: () => request<Wallet>("GET", "/api/wallet"),
+    walletTransactions: (opts?: { limit?: number; before_id?: number; type?: string }) => {
+      const qs = new URLSearchParams();
+      if (opts?.limit) qs.set("limit", String(opts.limit));
+      if (opts?.before_id) qs.set("before_id", String(opts.before_id));
+      if (opts?.type && opts.type !== "all") qs.set("type", opts.type);
+      const q = qs.toString();
+      return request<{ items: WalletTransaction[]; has_more: boolean }>(
+        "GET",
+        `/api/wallet/transactions${q ? `?${q}` : ""}`,
+      );
+    },
+    walletCheckin: () => request<{ wallet: Wallet; transaction: WalletTransaction }>("POST", "/api/wallet/checkin", {}),
+    walletBailout: () => request<{ wallet: Wallet; transaction: WalletTransaction }>("POST", "/api/wallet/bailout", {}),
+    walletTransfer: (b: { to_user_id: number; amount: number; note?: string }) =>
+      request<{ wallet: Wallet; transaction: WalletTransaction }>("POST", "/api/wallet/transfer", b),
     vote: (messageId: number, optionIds: number[]) =>
       request<Poll>("POST", `/api/messages/${messageId}/votes`, { option_ids: optionIds }),
     addPollOption: (messageId: number, text: string) =>

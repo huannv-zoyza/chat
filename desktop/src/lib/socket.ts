@@ -14,6 +14,8 @@ import type {
   Reaction,
   ThreadSummary,
   User,
+  Wallet,
+  WalletTransaction,
 } from "./api";
 
 /* ---------- Giao thức (khớp controller/events.go và controller/socket.go) ---------- */
@@ -28,6 +30,7 @@ export type ServerEvent =
       group_calls?: GroupRoom[];
       /** Trợ lý AI (không có: máy chủ tắt AI). */
       ai?: AIInfo;
+      wallet?: Wallet;
     }
   | { type: "groupcall.state"; channel_id: number; started_at?: string; participants?: GroupParticipant[] }
   | { type: "groupcall.started"; channel_id: number; by: PublicUser; video?: boolean }
@@ -45,6 +48,7 @@ export type ServerEvent =
   | { type: "key.updated"; user_id: number; public_key: string }
   | { type: "poll.updated"; channel_id: number; message_id: number; poll: Poll }
   | { type: "game.updated"; channel_id: number; message_id: number; game: GameView }
+  | { type: "wallet.updated"; wallet: Wallet; transaction?: WalletTransaction }
   | { type: "game.map"; message_id: number; map: StationMap }
   | { type: "game.frame"; message_id: number; frame: StFrame }
   | { type: "reminder.due"; reminder: Reminder }

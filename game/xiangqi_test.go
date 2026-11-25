@@ -406,3 +406,57 @@ func TestXiangqiCheckmate(t *testing.T) {
 		t.Errorf("expected pub.CheckSquare to be e9, got %s", pub.CheckSquare)
 	}
 }
+
+func TestXiangqiBetOptionsAndCancelGuard(t *testing.T) {
+	p1 := Player{ID: 1, Name: "Host"}
+	p2 := Player{ID: 2, Name: "Guest"}
+
+	// Negative or oversized bet must be rejected
+	if _, err := New("xiangqi", p1, json.RawMessage(`{"bet_amount":-100}`), t0); err == nil {
+		t.Fatal("expected error for negative bet_amount")
+	}
+	if _, err := New("xiangqi", p1, json.RawMessage(`{"bet_amount":1000001}`), t0); err == nil {
+		t.Fatal("expected error for bet_amount exceeding MaxXiangqiBet")
+	}
+
+	// Valid bet in lobby
+	g, err := New("xiangqi", p1, json.RawMessage(`{"bet_amount":1000,"first":"host"}`), t0)
+	if err != nil {
+		t.Fatalf("unexpected error creating xiangqi with bet: %v", err)
+	}
+	if g.BetAmount() != 1000 {
+		t.Fatalf("expected BetAmount=1000, got %d", g.BetAmount())
+	}
+	v1 := g.View(p1.ID)
+	pub1 := v1.State.(xiangqiPublic)
+	if pub1.BetAmount != 1000 || pub1.Pot != 1000 {
+		t.Fatalf("expected lobby bet_amount=1000 pot=1000, got %+v", pub1)
+	}
+
+	// Cancel in lobby succeeds
+	gLobby, err := New("xiangqi", p1, json.RawMessage(`{"bet_amount":500}`), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := gLobby.Act(p1, "cancel", nil, t0); err != nil {
+		t.Fatalf("cancel in lobby failed: %v", err)
+	}
+	if gLobby.Status() != Ended {
+		t.Fatalf("expected Ended after lobby cancel, got %v", gLobby.Status())
+	}
+
+	// Join starts game and updates pot; cancel during Playing must be rejected
+	if err := g.Act(p2, "join", nil, t0); err != nil {
+		t.Fatalf("join failed: %v", err)
+	}
+	if g.Status() != Playing {
+		t.Fatalf("expected Playing, got %v", g.Status())
+	}
+	pub2 := g.View(p1.ID).State.(xiangqiPublic)
+	if pub2.Pot != 2000 {
+		t.Fatalf("expected playing pot=2000, got %d", pub2.Pot)
+	}
+	if err := g.Act(p1, "cancel", nil, t0); err == nil {
+		t.Fatal("expected cancel while Playing to be rejected")
+	}
+}

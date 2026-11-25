@@ -15,6 +15,7 @@ import (
 //	key.updated      {user_id, public_key}                   ai đó tạo/đổi khoá mã hoá đầu cuối
 //	poll.updated     {channel_id, message_id, poll}          số phiếu / trạng thái bình chọn thay đổi
 //	game.updated     {channel_id, message_id, game}          ván chơi thay đổi (xem controller/games.go)
+//	wallet.updated   {wallet, transaction?}                  số dư ví Xu của mình thay đổi
 //	reminder.due     {reminder}                              tới giờ nhắc việc (chỉ gửi cho người đặt)
 //	call.*           xem controller/calls.go                 gọi thoại / video
 //	typing           {channel_id, user_id}                   ai đó đang gõ
@@ -42,6 +43,14 @@ type readyEvent struct {
 	GroupCalls []groupCallState `json:"group_calls"`
 	// Trợ lý AI (nil: máy chủ tắt AI).
 	AI *aiInfo `json:"ai,omitempty"`
+	// Ví Xu hiện tại của người dùng.
+	Wallet *model.Wallet `json:"wallet,omitempty"`
+}
+
+type walletUpdatedEvent struct {
+	Type        string                   `json:"type"`
+	Wallet      model.Wallet             `json:"wallet"`
+	Transaction *model.WalletTransaction `json:"transaction,omitempty"`
 }
 
 type messageNewEvent struct {

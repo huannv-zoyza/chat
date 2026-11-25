@@ -52,15 +52,29 @@ func scanUser(row scanner) (model.User, error) {
 }
 
 func (s *Store) CreateUser(ctx context.Context, username, email, passwordHash, displayName string) (model.User, error) {
-	row := s.db.QueryRowContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.User{}, err
+	}
+	defer tx.Rollback()
+	row := tx.QueryRowContext(ctx, `
 		INSERT INTO users (username, email, password_hash, display_name)
 		VALUES (?, ?, ?, ?)
 		RETURNING `+userColumns, username, email, passwordHash, displayName)
 	u, err := scanUser(row)
-	if isUniqueViolation(err) {
-		return u, ErrConflict
+	if err != nil {
+		if isUniqueViolation(err) {
+			return u, ErrConflict
+		}
+		return u, err
 	}
-	return u, err
+	if _, err := ensureWalletTx(ctx, tx, u.ID); err != nil {
+		return model.User{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.User{}, err
+	}
+	return u, nil
 }
 
 func (s *Store) GetUserByID(ctx context.Context, id int64) (model.User, error) {
@@ -696,6 +710,9 @@ func (s *Store) DeleteMessage(ctx context.Context, id int64) (model.Message, []s
 		keys = append(keys, k)
 	}
 	rows.Close()
+	if _, err := refundGameBetsTx(ctx, tx, id, "Tin nhắn ván cờ đã bị xoá"); err != nil {
+		return model.Message{}, nil, err
+	}
 	for _, q := range []string{
 		`DELETE FROM attachments WHERE message_id = ?`,
 		`DELETE FROM message_mentions WHERE message_id = ?`,

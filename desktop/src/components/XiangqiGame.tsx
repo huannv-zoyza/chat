@@ -127,6 +127,8 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
   const winnerId = game.winners && game.winners.length > 0 ? game.winners[0] : null;
   const winnerPlayer = winnerId ? game.players.find((p) => p.id === winnerId) : null;
   const isWinnerRed = winnerId === s.red_player_id;
+  const betAmount = s.bet_amount ?? s.opts?.bet_amount ?? 0;
+  const potAmount = s.pot ?? betAmount * game.players.length;
 
   // Tự động xoay bàn cờ nếu mình cầm Đen (để phe mình luôn ở phía dưới)
   const flipped = manualFlip !== null ? manualFlip : isBlack;
@@ -251,6 +253,30 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
 
   return (
     <div className="xiangqi-container" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem" }}>
+      {/* Huy hiệu mức cược & Quỹ thưởng */}
+      {betAmount > 0 && (
+        <div
+          className="xiangqi-bet-banner"
+          style={{
+            width: BOARD_WIDTH,
+            maxWidth: "100%",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "0.3rem 0.7rem",
+            borderRadius: "6px",
+            backgroundColor: "#fef3c7",
+            color: "#92400e",
+            border: "1px solid #fcd34d",
+            fontSize: "0.82rem",
+            fontWeight: 600,
+          }}
+        >
+          <span>🪙 Cược: {betAmount.toLocaleString("vi-VN")} Xu / người</span>
+          <span>🏆 Quỹ thưởng: {potAmount.toLocaleString("vi-VN")} Xu</span>
+        </div>
+      )}
+
       {/* Banner kết thúc trận đấu nếu đã thu nhỏ bảng vinh danh */}
       {game.status === "ended" && winnerPlayer && !showVictoryOverlay && (
         <div
@@ -470,6 +496,21 @@ export function XiangqiGame({ ctx }: { ctx: XiangqiCtx }) {
               <div style={{ fontSize: "0.82rem", color: "#fbbf24", fontWeight: 600 }}>
                 {isWinnerRed ? "🔴 Người chơi phe Đỏ" : "⚫ Người chơi phe Đen"} chiến thắng
               </div>
+              {betAmount > 0 && (
+                <div
+                  style={{
+                    fontSize: "0.85rem",
+                    fontWeight: 700,
+                    color: winnerPlayer.id === meId ? "#4ade80" : isPlayer ? "#fca5a5" : "#fde047",
+                  }}
+                >
+                  {winnerPlayer.id === meId
+                    ? `💰 +${potAmount.toLocaleString("vi-VN")} Xu (Lời +${betAmount.toLocaleString("vi-VN")} Xu)`
+                    : isPlayer
+                      ? `💸 -${betAmount.toLocaleString("vi-VN")} Xu`
+                      : `🏆 Tổng thưởng: ${potAmount.toLocaleString("vi-VN")} Xu`}
+                </div>
+              )}
             </div>
 
             <div

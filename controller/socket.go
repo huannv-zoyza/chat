@@ -99,9 +99,13 @@ func (a *API) serveSocket(w http.ResponseWriter, r *http.Request) {
 		close(writerDone)
 	}()
 
+	var walletPtr *model.Wallet
+	if w, err := a.store.GetWallet(ctx, user.ID); err == nil {
+		walletPtr = &w
+	}
 	a.hub.ToClient(client, mustJSON(readyEvent{
 		Type: "ready", User: user, OnlineUserIDs: a.hub.OnlineUserIDs(), UIBuild: a.uiBuild,
-		GroupCalls: a.groups.statesFor(channelIDs), AI: a.aiInfo(),
+		GroupCalls: a.groups.statesFor(channelIDs), AI: a.aiInfo(), Wallet: walletPtr,
 	}))
 	if firstConn {
 		a.hub.ToAll(mustJSON(presenceEvent{Type: "presence", UserID: user.ID, Online: true}))

@@ -358,11 +358,16 @@ const RULES: Record<GameKind, string[]> = {
 };
 
 function Lobby({ ctx }: { ctx: Ctx }) {
+  const { state } = useChat();
   const { game, meId, isPlayer, busy, act } = ctx;
   const isHost = game.host_id === meId;
   const full = game.players.length >= game.max_players;
   const enough = game.players.length >= game.min_players;
   const auto = game.min_players === game.max_players; // trò 2 người: đủ người là vào luôn
+  const myBalance = state.wallet?.balance ?? 0;
+  const xqState = game.kind === "xiangqi" ? (game.state as XiangqiState | undefined) : undefined;
+  const xqBet = xqState?.bet_amount ?? xqState?.opts?.bet_amount ?? 0;
+  const notEnoughForBet = !isPlayer && xqBet > 0 && myBalance < xqBet;
 
   let setup: ReactNode = null;
   if (game.kind === "station") {
@@ -418,9 +423,16 @@ function Lobby({ ctx }: { ctx: Ctx }) {
         ? "khách cầm Đỏ"
         : "ngẫu nhiên màu quân";
     setup = (
-      <p className="game-setup">
-        Bàn cờ 9×10 chuẩn · Luật WXF · {mins} phút/nước · {firstStr}
-      </p>
+      <div className="game-setup">
+        <p style={{ margin: 0 }}>
+          Bàn cờ 9×10 chuẩn · Luật WXF · {mins} phút/nước · {firstStr}
+        </p>
+        <div className={`xq-bet-pill${xqBet > 0 ? " is-paid" : ""}`}>
+          {xqBet > 0
+            ? `🪙 Mức cược: ${xqBet.toLocaleString("vi-VN")} Xu / người · Thắng nhận ${(xqBet * 2).toLocaleString("vi-VN")} Xu`
+            : "🤝 Giao hữu miễn phí (0 Xu)"}
+        </div>
+      </div>
     );
   } else {
     setup = <p className="game-setup">Chạm {Math.floor((game.state as RpsState).best_of / 2) + 1} ván thắng</p>;
@@ -451,9 +463,24 @@ function Lobby({ ctx }: { ctx: Ctx }) {
       </details>
       <div className="game-actions">
         {!isPlayer && !full && (
-          <button type="button" className="btn btn-primary" disabled={busy} onClick={() => act("join")}>
-            {auto ? "Nhận lời thách đấu" : "Vào chơi"}
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={busy || notEnoughForBet}
+            onClick={() => act("join")}
+            title={notEnoughForBet ? `Cần ít nhất ${xqBet.toLocaleString("vi-VN")} Xu để tham gia` : undefined}
+          >
+            {xqBet > 0
+              ? `Nhận thách đấu (Cược ${xqBet.toLocaleString("vi-VN")} Xu)`
+              : auto
+                ? "Nhận lời thách đấu"
+                : "Vào chơi"}
           </button>
+        )}
+        {notEnoughForBet && (
+          <span className="xq-bet-warn">
+            Số dư không đủ ({myBalance.toLocaleString("vi-VN")} / {xqBet.toLocaleString("vi-VN")} Xu)
+          </span>
         )}
         {isPlayer && !isHost && (
           <button type="button" className="btn" disabled={busy} onClick={() => act("leave")}>
@@ -1810,7 +1837,7 @@ function Rps({ ctx }: { ctx: Ctx }) {
 /* ---------- Mở phòng chơi ---------- */
 
 export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number; dm: boolean; onClose: () => void }) {
-  const { createGame } = useChat();
+  const { state, createGame } = useChat();
   const kinds = (Object.keys(GAME_INFO) as GameKind[]).filter((k) => !dm || k === "caro" || k === "rps" || k === "chess" || k === "xiangqi");
   const [kind, setKind] = useState<GameKind>(kinds[0]);
   const [day, setDay] = useState(120);
@@ -1822,7 +1849,11 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
   const [chessFirst, setChessFirst] = useState<"random" | "host" | "guest">("random");
   const [xiangqiMinutes, setXiangqiMinutes] = useState(3);
   const [xiangqiFirst, setXiangqiFirst] = useState<"random" | "host" | "guest">("random");
+  const [xiangqiBet, setXiangqiBet] = useState(0);
   const [bestOf, setBestOf] = useState(3);
+  const myBalance = state.wallet?.balance ?? 0;
+  const xiangqiInsufficient = kind === "xiangqi" && xiangqiBet > myBalance;
+  const xiangqiBetInvalid = kind === "xiangqi" && (xiangqiBet < 0 || xiangqiBet > 1_000_000 || xiangqiInsufficient);
   const [st, setSt] = useState({
     traitors: 0,
     kill_cooldown: 25,
@@ -1847,7 +1878,7 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
       spy: { spies },
       caro: { free_style: !blockRule },
       chess: { turn_minutes: chessMinutes, first: chessFirst },
-      xiangqi: { turn_minutes: xiangqiMinutes, first: xiangqiFirst },
+      xiangqi: { turn_minutes: xiangqiMinutes, first: xiangqiFirst, bet_amount: Math.max(0, Math.floor(xiangqiBet)) },
       rps: { best_of: bestOf },
     };
     try {
@@ -2045,6 +2076,35 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
                 <option value="guest">Khách cầm Đỏ</option>
               </select>
             </label>
+            <div className="field">
+              <span>Mức cược bàn (Xu) · Số dư: {myBalance.toLocaleString("vi-VN")} Xu</span>
+              <div className="wallet-chips">
+                {[0, 100, 500, 1000, 5000, 10000].map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    className={`wallet-chip${xiangqiBet === v ? " is-active" : ""}`}
+                    onClick={() => setXiangqiBet(v)}
+                  >
+                    {v === 0 ? "Miễn phí" : `${v.toLocaleString("vi-VN")}`}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="number"
+                min={0}
+                max={1000000}
+                step={50}
+                value={xiangqiBet}
+                onChange={(e) => setXiangqiBet(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+                placeholder="Nhập mức cược (0 - 1,000,000 Xu)"
+              />
+              {xiangqiInsufficient && (
+                <small style={{ color: "var(--warn)", fontWeight: 600 }}>
+                  Số dư Xu không đủ để mở bàn cược {xiangqiBet.toLocaleString("vi-VN")} Xu.
+                </small>
+              )}
+            </div>
           </>
         )}
         {kind === "rps" && (
@@ -2071,7 +2131,7 @@ export function CreateGameDialog({ channelId, dm, onClose }: { channelId: number
           <button type="button" className="btn" onClick={onClose} disabled={busy}>
             Huỷ
           </button>
-          <button className="btn btn-primary" disabled={busy}>
+          <button className="btn btn-primary" disabled={busy || xiangqiBetInvalid}>
             {busy ? "Đang mở…" : "Mở phòng"}
           </button>
         </div>
@@ -2096,12 +2156,26 @@ export function GameLeaderboardDialog({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const tabs: { id: string; label: string }[] = [
+    { id: "caro", label: "Cờ caro" },
+    { id: "chess", label: "Cờ vua" },
+    { id: "xiangqi", label: "Cờ tướng" },
+    { id: "richest", label: "🪙 Top Xu" },
+    { id: "all", label: "Tất cả game" },
+    { id: "rps", label: "Oẳn tù tì" },
+    { id: "werewolf", label: "Ma Sói" },
+    { id: "spy", label: "Gián điệp" },
+    { id: "station", label: "Trạm vũ trụ" },
+  ];
+
+  const apiKind = kind === "richest" ? "xiangqi" : kind;
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
     api
-      ?.gameLeaderboard(kind)
+      ?.gameLeaderboard(apiKind)
       .then((res) => {
         if (!cancelled) {
           setData(res);
@@ -2117,18 +2191,7 @@ export function GameLeaderboardDialog({
     return () => {
       cancelled = true;
     };
-  }, [api, kind]);
-
-  const tabs: { id: string; label: string }[] = [
-    { id: "caro", label: "Cờ caro" },
-    { id: "chess", label: "Cờ vua" },
-    { id: "xiangqi", label: "Cờ tướng" },
-    { id: "all", label: "Tất cả game" },
-    { id: "rps", label: "Oẳn tù tì" },
-    { id: "werewolf", label: "Ma Sói" },
-    { id: "spy", label: "Gián điệp" },
-    { id: "station", label: "Trạm vũ trụ" },
-  ];
+  }, [api, apiKind]);
 
   return (
     <Dialog title="🏆 Bảng xếp hạng trò chơi" onClose={onClose} wide>
@@ -2150,6 +2213,68 @@ export function GameLeaderboardDialog({
           <div className="lb-loading">Đang tải bảng xếp hạng…</div>
         ) : error ? (
           <div className="lb-error">{error}</div>
+        ) : kind === "richest" && data ? (
+          <div className="lb-body">
+            <div className="lb-table-wrap">
+              <div className="lb-card-header">
+                <h3>🪙 Bảng Xếp Hạng Tài Phú (Top Xu)</h3>
+                <span>{(data.top_richest ?? []).length} thành viên</span>
+              </div>
+              <div className="lb-table-scroll">
+                <table className="lb-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: "3.5rem" }}>Hạng</th>
+                      <th>Thành viên</th>
+                      <th style={{ textAlign: "right" }}>Lãi/Lỗ Cờ tướng</th>
+                      <th style={{ textAlign: "right" }}>Số dư khả dụng</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(data.top_richest ?? []).map((m, idx) => (
+                      <tr key={m.user_id}>
+                        <td className="lb-td-rank">
+                          {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : idx + 1}
+                        </td>
+                        <td className="lb-td-user">
+                          <div className="lb-td-user-inner">
+                            <Avatar
+                              user={
+                                {
+                                  id: m.user_id,
+                                  username: m.username,
+                                  display_name: m.display_name,
+                                  avatar: m.avatar,
+                                } as PublicUser
+                              }
+                              size={24}
+                            />
+                            <span className="lb-td-name">{m.display_name || m.username}</span>
+                            {m.username && <span className="lb-td-handle">@{m.username}</span>}
+                          </div>
+                        </td>
+                        <td
+                          style={{
+                            textAlign: "right",
+                            fontWeight: 600,
+                            color: m.net_profit > 0 ? "var(--ok)" : m.net_profit < 0 ? "var(--warn)" : "var(--muted)",
+                          }}
+                        >
+                          {m.net_profit > 0
+                            ? `+${m.net_profit.toLocaleString("vi-VN")}`
+                            : m.net_profit.toLocaleString("vi-VN")}{" "}
+                          Xu
+                        </td>
+                        <td style={{ textAlign: "right", fontWeight: 700, color: "#b45309" }}>
+                          🪙 {m.balance.toLocaleString("vi-VN")} Xu
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         ) : !data || data.total_ended === 0 ? (
           <div className="lb-empty">
             <p>Chưa có ván chơi nào hoàn thành cho mục này.</p>
@@ -2253,6 +2378,7 @@ export function GameLeaderboardDialog({
                       <th style={{ textAlign: "center" }}>Thua</th>
                       <th style={{ textAlign: "center" }}>Hoà</th>
                       <th style={{ textAlign: "right" }}>Tỉ lệ thắng</th>
+                      {(kind === "xiangqi" || kind === "all") && <th style={{ textAlign: "right" }}>Lãi/Lỗ (Xu)</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -2289,6 +2415,25 @@ export function GameLeaderboardDialog({
                         </td>
                         <td style={{ textAlign: "center", color: "var(--text-soft)" }}>{m.draws}</td>
                         <td style={{ textAlign: "right", fontWeight: 700 }}>{m.win_rate}%</td>
+                        {(kind === "xiangqi" || kind === "all") && (
+                          <td
+                            style={{
+                              textAlign: "right",
+                              fontWeight: 700,
+                              color:
+                                (m.net_profit ?? 0) > 0
+                                  ? "var(--ok)"
+                                  : (m.net_profit ?? 0) < 0
+                                    ? "var(--warn)"
+                                    : "var(--muted)",
+                            }}
+                          >
+                            {(m.net_profit ?? 0) > 0
+                              ? `+${(m.net_profit ?? 0).toLocaleString("vi-VN")}`
+                              : (m.net_profit ?? 0).toLocaleString("vi-VN")}{" "}
+                            Xu
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>

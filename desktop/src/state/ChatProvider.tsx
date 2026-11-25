@@ -32,7 +32,7 @@ import { ChatSocket } from "../lib/socket";
 import { ServerUrlContext } from "../components/ui";
 import { displayName, newClientId } from "../lib/format";
 import { showNotification } from "../lib/notify";
-import { playMentionSound, playMessageSound } from "../lib/sound";
+import { playCoinSound, playMentionSound, playMessageSound } from "../lib/sound";
 import { channelLabel, dmPeerId, isDM } from "../lib/channel";
 import { e2ee } from "../lib/e2ee";
 import { load, save } from "../lib/storage";
@@ -119,6 +119,7 @@ type ChatContextValue = {
   loadOlder: (channelId: number) => Promise<void>;
   loadMembers: (channelId: number) => Promise<void>;
   loadLiveGames: (channelId: number) => Promise<void>;
+  refreshWallet: () => Promise<void>;
   reconnectNow: () => void;
   onLogout: () => void;
 };
@@ -426,7 +427,10 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       }),
 
       sock.on("ready", (ev) => {
-        dispatch({ type: "ready", me: ev.user, online: ev.online_user_ids, ai: ev.ai ?? null });
+        dispatch({ type: "ready", me: ev.user, online: ev.online_user_ids, ai: ev.ai ?? null, wallet: ev.wallet ?? null });
+        if (!ev.wallet) {
+          api.wallet().then((wallet) => dispatch({ type: "wallet.set", wallet })).catch(() => {});
+        }
         stationStore.resubscribe();
         groups.setRooms(ev.group_calls ?? []);
         // bản web đang chạy cũ hơn bản máy chủ phục vụ: nhắc tải lại (app desktop có bản riêng)
@@ -470,6 +474,12 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       sock.on("poll.updated", (ev) => dispatch({ type: "poll.set", messageId: ev.message_id, poll: ev.poll })),
       sock.on("game.map", (ev) => stationStore.onMap(ev.message_id, ev.map)),
       sock.on("game.frame", (ev) => stationStore.onFrame(ev.message_id, ev.frame)),
+      sock.on("wallet.updated", (ev) => {
+        dispatch({ type: "wallet.set", wallet: ev.wallet });
+        if (ev.transaction && ev.transaction.amount > 0) {
+          playCoinSound();
+        }
+      }),
       sock.on("game.updated", (ev) => {
         const s = stateRef.current;
         const prev = findMessage(s, ev.message_id)?.game;
@@ -881,6 +891,11 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       },
 
       loadLiveGames,
+
+      refreshWallet: async () => {
+        const wallet = await api.wallet();
+        dispatch({ type: "wallet.set", wallet });
+      },
 
       reconnectNow: () => socketRef.current?.reconnectNow(),
     }),

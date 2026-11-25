@@ -27,6 +27,7 @@ type Props = {
   onNewDM: () => void;
   onSearch: () => void;
   onReminders: () => void;
+  onOpenWallet: () => void;
 };
 
 export function Sidebar({
@@ -38,6 +39,7 @@ export function Sidebar({
   onNewDM,
   onSearch,
   onReminders,
+  onOpenWallet,
 }: Props) {
   const { state, selectChannel, groupCalls } = useChat();
   const liveRooms = useGroupCall(groupCalls).rooms;
@@ -198,6 +200,21 @@ export function Sidebar({
           </ul>
         )}
       </div>
+
+      <button className="wallet-sidebar-pill" onClick={onOpenWallet} title="Ví Xu, Điểm danh & Chuyển Xu">
+        <span className="wallet-pill-left">
+          <span aria-hidden>🪙</span>
+          <span>
+            <b>{(state.wallet?.balance ?? 0).toLocaleString("vi-VN")}</b> Xu
+          </span>
+        </span>
+        {(state.wallet?.locked_balance ?? 0) > 0 && (
+          <span className="wallet-pill-locked" title="Đang giữ cược">
+            🔒 {state.wallet!.locked_balance.toLocaleString("vi-VN")}
+          </span>
+        )}
+        {state.wallet?.can_checkin && <span className="wallet-pill-dot" title="Có thể điểm danh nhận Xu" />}
+      </button>
 
       <button className="me-card" onClick={onOpenSettings} title="Cài đặt tài khoản">
         <Avatar user={me} size={34} online={state.status === "open"} />

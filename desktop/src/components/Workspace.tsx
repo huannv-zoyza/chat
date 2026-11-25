@@ -22,6 +22,7 @@ import { RemindersDialog } from "./Reminders";
 import { CallOverlay } from "./CallOverlay";
 import { GroupCallOverlay, UpdateBanner } from "./GroupCall";
 import { StationOverlay } from "./Station";
+import { GameVoiceBar } from "./GameVoice";
 import { VillageOverlay } from "./Village";
 import { FarmOverlay } from "./Farm";
 import { MessageLinkDialog } from "./Share";
@@ -246,6 +247,7 @@ export function Workspace() {
       <GroupCallOverlay />
       <StationOverlay />
       <VillageOverlay />
+      <GameVoiceBar />
       <FarmOverlay />
       <WatchPartyPlayerDock />
       <MessageLinkDialog />

@@ -41,6 +41,7 @@ type API struct {
 	calls          callRegistry
 	groups         groupRegistry
 	games          gameRegistry
+	voices         voiceRegistry
 	watchParties   watchPartyRegistry
 	ai             *aiService   // nil: tắt trợ lý AI
 	hookRate       *rateWindow  // giới hạn tin mỗi bot tích hợp

@@ -225,6 +225,8 @@ export type GameView<S = Record<string, unknown>, M = Record<string, unknown>> =
   version: number;
   state?: S;
   me?: M;
+  /** Thoại trong ván (chỉ trong bản riêng của người chơi): ai nghe được mình, mình nghe được ai. */
+  voice?: { talk: number[]; hear: number[] };
 };
 
 export type PollOption = { id: number; text: string; votes: number; voter_ids?: number[] };

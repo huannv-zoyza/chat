@@ -579,3 +579,68 @@ func TestWerewolfWolfChat(t *testing.T) {
 		t.Fatal("wolf chat leaked to villager")
 	}
 }
+
+func TestWerewolfVoice(t *testing.T) {
+	g, ps := newGame(t, "werewolf", 7, "")
+	if !g.HasVoice() {
+		t.Fatal("werewolf has voice")
+	}
+	// phòng chờ: ai cũng nghe nhau; người xem (không chơi) không có thoại
+	if v := g.View(ps[1].ID).Voice; v == nil || len(v.Talk) != 6 || len(v.Hear) != 6 {
+		t.Fatalf("lobby voice: %+v", v)
+	}
+	if g.View(99).Voice != nil || g.View(0).Voice != nil {
+		t.Fatal("non-players get no voice")
+	}
+	act(t, g, ps[0], "start", nil)
+	w := g.r.(*werewolf)
+	wolves := byRole(w, ps, roleWolf)
+	villagers := byRole(w, ps, roleVillager)
+	seer := byRole(w, ps, roleSeer)[0]
+
+	// đêm: chỉ Sói nghe nhau
+	if !g.CanHear(wolves[0].ID, wolves[1].ID) || !g.CanHear(wolves[1].ID, wolves[0].ID) {
+		t.Fatal("wolves talk at night")
+	}
+	if g.CanHear(wolves[0].ID, seer.ID) || g.CanHear(seer.ID, villagers[0].ID) || g.CanHear(villagers[0].ID, wolves[0].ID) {
+		t.Fatal("only wolves talk at night")
+	}
+	if v := g.View(seer.ID).Voice; len(v.Talk) != 0 || len(v.Hear) != 0 {
+		t.Fatalf("seer is silent at night: %+v", v)
+	}
+	if v := g.View(wolves[0].ID).Voice; len(v.Talk) != 1 || v.Talk[0] != wolves[1].ID {
+		t.Fatalf("wolf talks to mate only: %+v", v)
+	}
+	w.Phase = "witch"
+	if g.CanHear(seer.ID, villagers[0].ID) || !g.CanHear(wolves[0].ID, wolves[1].ID) {
+		t.Fatal("witch turn is still night")
+	}
+
+	// ngày: người sống nói với cả làng; người chết chỉ nói với người chết nhưng vẫn nghe cả làng
+	w.Phase = "day"
+	w.Dead[villagers[0].ID] = true
+	if !g.CanHear(seer.ID, wolves[0].ID) || !g.CanHear(seer.ID, villagers[0].ID) {
+		t.Fatal("alive talk to everyone by day")
+	}
+	if g.CanHear(villagers[0].ID, seer.ID) {
+		t.Fatal("the dead cannot talk to the living")
+	}
+	w.Dead[villagers[1].ID] = true
+	if !g.CanHear(villagers[0].ID, villagers[1].ID) {
+		t.Fatal("the dead talk to each other")
+	}
+	w.Phase = "night"
+	if g.CanHear(wolves[0].ID, villagers[0].ID) || !g.CanHear(villagers[0].ID, villagers[1].ID) {
+		t.Fatal("night: dead hear only the dead")
+	}
+	// Thợ săn đang ngắm bắn được nói với cả làng
+	w.Phase, w.Hunter = "hunter", villagers[0].ID
+	if !g.CanHear(villagers[0].ID, seer.ID) {
+		t.Fatal("hunter's last words")
+	}
+	// hết ván: mọi người nói chuyện lại
+	w.Status = Ended
+	if !g.CanHear(villagers[1].ID, seer.ID) || !g.CanHear(seer.ID, wolves[0].ID) {
+		t.Fatal("everyone talks after the game")
+	}
+}

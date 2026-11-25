@@ -114,6 +114,7 @@ func (a *API) serveSocket(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		a.calls.clientGone(a, client) // kết thúc cuộc gọi đang dùng kết nối này
 		a.leaveGroup(0, client)
+		a.leaveGameVoice(0, client)
 		a.spectatorClientGone(client)
 		a.watchPartyClientGone(client)
 		if lastConn := a.hub.Remove(client); lastConn {
@@ -255,6 +256,9 @@ func (a *API) handleRequest(ctx context.Context, client *socket.Client, user mod
 
 	case "groupcall.join", "groupcall.leave", "groupcall.signal":
 		a.handleGroupCall(ctx, client, user, req)
+
+	case "gamevoice.join", "gamevoice.leave", "gamevoice.signal":
+		a.handleGameVoice(ctx, client, user, req)
 
 	case "game.watch", "game.unwatch", "game.pos", "game.spectate", "game.unspectate":
 		a.handleGameSocket(ctx, client, user, req)

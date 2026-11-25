@@ -5,9 +5,11 @@ import { createPortal } from "react-dom";
 import type { Message } from "../lib/api";
 import { ROLE_INFO, type WerewolfRole, type WolfLine } from "../lib/games";
 import { useVillageId, village } from "../lib/village";
+import { useGameVoice } from "../lib/gamevoice";
 import { findMessage } from "../state/chat";
 import { useChat } from "../state/ChatProvider";
 import { Countdown, useGameCtx, useWerewolf, WitchPanel, type Ctx } from "./Games";
+import { VoiceButtons, VoiceStatus } from "./GameVoice";
 import { ThreadPanel } from "./ThreadPanel";
 import { Avatar, FormError, Icon } from "./ui";
 
@@ -62,6 +64,7 @@ function Village({ message }: { message: Message }) {
             {playing && <Countdown deadline={game.deadline} label="Thời gian còn lại" />}
           </div>
           <div className="village-top-actions">
+            {ctx.isPlayer && <VoiceButtons messageId={ctx.messageId} game={game} meId={meId} />}
             <button
               type="button"
               className={`village-btn${wolfUnread ? " has-dot" : ""}`}
@@ -149,6 +152,8 @@ function Scene({ ctx, ww }: { ctx: Ctx; ww: WW }) {
 
   const { game, meId } = ctx;
   const { s, me, step, dead, wolfMates, roleOf, canPick, onPick, pending, playing } = ww;
+  const voice = useGameVoice().active;
+  const speaking = new Set(voice?.messageId === ctx.messageId ? voice.speaking : []);
   const n = game.players.length;
   // mình ngồi ở giữa phía trước, người khác xếp vòng quanh lửa
   const order = useMemo(() => {
@@ -237,6 +242,7 @@ function Scene({ ctx, ww }: { ctx: Ctx; ww: WW }) {
                 voters={voters}
                 onPick={pickable ? () => onPick(p.id) : undefined}
                 busy={ctx.busy}
+                speaking={speaking.has(p.id)}
               />
             </li>
           );
@@ -410,6 +416,7 @@ function Villager({
   voters,
   onPick,
   busy,
+  speaking,
 }: {
   ctx: Ctx;
   id: number;
@@ -425,6 +432,8 @@ function Villager({
   voters: number[];
   onPick?: () => void;
   busy: boolean;
+  /** Đang nói trong thoại của ván (mình nghe được). */
+  speaking?: boolean;
 }) {
   const cls = [
     "villager",
@@ -433,6 +442,7 @@ function Villager({
     selected && "is-selected",
     winner && "is-winner",
     onPick && "is-pickable",
+    speaking && "is-speaking",
   ]
     .filter(Boolean)
     .join(" ");
@@ -456,6 +466,11 @@ function Villager({
         {dead ? <Tombstone /> : wolfForm ? <Werewolf id={id} /> : <Person id={id} sleeping={sleeping} />}
       </span>
       <span className="villager-name">
+        {speaking && (
+          <span className="villager-talk" aria-label="đang nói">
+            🎙
+          </span>
+        )}
         {name}
         {me && <small>bạn</small>}
       </span>
@@ -686,6 +701,7 @@ function Hud({ ctx, ww }: { ctx: Ctx; ww: WW }) {
       )}
 
       <div className="village-hud-main">
+        {ctx.isPlayer && <VoiceStatus messageId={ctx.messageId} game={game} />}
         {roleShown && me?.seer_log && me.seer_log.length > 0 && (
           <ul className="village-seer">
             {me.seer_log.map((c) => (

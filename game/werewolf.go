@@ -595,6 +595,23 @@ func (w *werewolf) wolfChat(p int64, data json.RawMessage, now time.Time) error 
 	return nil
 }
 
+// canHear: luật thoại. Người chết chỉ nói với người chết (vẫn nghe cả làng bàn ban ngày).
+// Ban đêm chỉ bầy Sói còn sống nghe nhau. Ban ngày ai còn sống cũng nói được với mọi người;
+// Thợ săn đang ngắm bắn được trăn trối với cả làng.
+func (w *werewolf) canHear(speaker, listener int64) bool {
+	if w.Phase == "hunter" && speaker == w.Hunter {
+		return true
+	}
+	if w.Dead[speaker] {
+		return w.Dead[listener]
+	}
+	switch w.Phase {
+	case "night", "witch":
+		return !w.Dead[listener] && w.Roles[speaker] == roleWolf && w.Roles[listener] == roleWolf
+	}
+	return true
+}
+
 // Thợ săn đang bắn thì đã được tính là chết; pha hunter vẫn cho người đó hành động.
 func (w *werewolf) aliveCount() int {
 	n := 0

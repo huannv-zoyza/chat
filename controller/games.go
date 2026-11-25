@@ -162,6 +162,7 @@ func (a *API) saveAndBroadcast(ctx context.Context, s *gameSession) {
 			Type: "game.updated", ChannelID: s.channelID, MessageID: s.messageID, Game: viewJSON(s.g, p.ID),
 		}))
 	}
+	a.syncGameVoice(s)
 }
 
 // getSpectatorsList trả về danh sách khán giả độc nhất (theo userID) đang xem ván đấu.

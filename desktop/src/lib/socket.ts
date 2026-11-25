@@ -1,3 +1,4 @@
+import type { GameVoiceEvent } from "./gamevoice";
 import type { GroupParticipant, GroupRoom } from "./groupcall";
 import type { StationMap, StFrame } from "./station";
 
@@ -43,6 +44,7 @@ export type ServerEvent =
       data: SignalData;
     }
   | { type: "groupcall.error"; channel_id: number; message: string }
+  | GameVoiceEvent
   | { type: "message.new"; message: Message; client_id?: string }
   | { type: "message.updated"; message: Message }
   | { type: "key.updated"; user_id: number; public_key: string }

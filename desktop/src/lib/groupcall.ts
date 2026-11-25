@@ -42,6 +42,8 @@ export type GroupState = {
   /** Lời mời khi có người bắt đầu gọi nhóm. */
   invite?: { channelId: number; by: PublicUser; video: boolean };
   error?: string;
+  /** Đang ở trong thoại của một ván: micro gọi nhóm tạm tắt, tiếng người chơi của ván cũng tắt. */
+  gameHold?: boolean;
 };
 
 type Send = (req: Record<string, unknown>) => boolean;
@@ -75,6 +77,8 @@ export class GroupCallController {
   private iceServers: RTCIceServer[] | null = null;
   private ringer = new Ringer();
   private ringTimer: number | undefined;
+  /** Người chơi của ván đang dùng thoại riêng (tắt tiếng họ ở đây); null = không giữ. */
+  private hold: Set<number> | null = null;
 
   constructor(
     private api: Api,
@@ -135,6 +139,7 @@ export class GroupCallController {
       error: undefined,
       active: { channelId, joinedAt: Date.now(), peers: {}, local, muted: false, camOff: false, minimized: false },
     });
+    this.applyHold();
     if (!this.send({ type: "groupcall.join", channel_id: channelId, video: local.getVideoTracks().length > 0 })) {
       this.cleanup("Đang mất kết nối tới máy chủ.");
     }
@@ -150,8 +155,24 @@ export class GroupCallController {
   toggleMute() {
     const a = this.state.active;
     if (!a) return;
-    a.local?.getAudioTracks().forEach((t) => (t.enabled = a.muted));
+    a.local?.getAudioTracks().forEach((t) => (t.enabled = a.muted && !this.hold));
     this.setActive({ muted: !a.muted });
+  }
+
+  /** Thoại trong ván bắt đầu / kết thúc: players = người chơi khác của ván, null = thả ra. */
+  setGameHold(players: number[] | null) {
+    this.hold = players ? new Set(players) : null;
+    this.applyHold();
+    if (!!this.state.gameHold !== !!players) this.set({ gameHold: !!players });
+  }
+
+  private applyHold() {
+    const a = this.state.active;
+    if (!a) return;
+    a.local?.getAudioTracks().forEach((t) => (t.enabled = !a.muted && !this.hold));
+    for (const p of Object.values(a.peers)) {
+      p.stream.getAudioTracks().forEach((t) => (t.enabled = !this.hold?.has(p.user.id)));
+    }
   }
 
   toggleCamera() {
@@ -241,6 +262,7 @@ export class GroupCallController {
     const channelId = a.channelId;
     pc.ontrack = (e) => {
       stream.addTrack(e.track);
+      if (e.track.kind === "audio" && this.hold?.has(user.id)) e.track.enabled = false;
       this.updatePeer(peerId, { stream });
     };
     pc.onicecandidate = (e) => {

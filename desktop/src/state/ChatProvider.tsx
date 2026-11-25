@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { CallController } from "../lib/calls";
+import { gameVoice } from "../lib/gamevoice";
 import { GroupCallController } from "../lib/groupcall";
 import { servedByServer } from "../lib/platform";
 
@@ -423,12 +424,14 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       },
     );
     setGroupCalls(groups);
+    gameVoice.configure(api, (req) => sock.sendGroup(req), groups);
 
     const offs = [
       sock.onStatus((status) => {
         dispatch({ type: "status", status });
         if (status !== "open") {
           calls.onDisconnected();
+          gameVoice.onDisconnected();
           groups.onDisconnected();
         }
         if (status === "unauthorized") onUnauthorized();
@@ -512,6 +515,7 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
         const s = stateRef.current;
         const prev = findMessage(s, ev.message_id)?.game;
         dispatch({ type: "game.set", messageId: ev.message_id, game: ev.game });
+        gameVoice.onGame(ev.message_id, ev.game);
 
         if (ev.game.status === "ended") {
           dispatch({ type: "liveGames.remove", channelId: ev.channel_id, messageId: ev.message_id });
@@ -559,6 +563,10 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       sock.on("groupcall.welcome", (ev) => void groups.onEvent(ev)),
       sock.on("groupcall.signal", (ev) => void groups.onEvent(ev)),
       sock.on("groupcall.error", (ev) => void groups.onEvent(ev)),
+      sock.on("gamevoice.state", (ev) => void gameVoice.onEvent(ev)),
+      sock.on("gamevoice.welcome", (ev) => void gameVoice.onEvent(ev)),
+      sock.on("gamevoice.signal", (ev) => void gameVoice.onEvent(ev)),
+      sock.on("gamevoice.error", (ev) => void gameVoice.onEvent(ev)),
       sock.on("call.incoming", (ev) => void calls.onEvent(ev)),
       sock.on("call.accepted", (ev) => void calls.onEvent(ev)),
       sock.on("call.signal", (ev) => void calls.onEvent(ev)),
@@ -636,6 +644,7 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
     return () => {
       offs.forEach((off) => off());
       calls.hangup();
+      gameVoice.leave();
       groups.leave();
       setCalls(null);
       setGroupCalls(null);

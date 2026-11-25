@@ -20,8 +20,12 @@ type gameResp struct {
 	Players []struct{ ID int64 } `json:"players"`
 	State   map[string]any       `json:"state"`
 	Me      map[string]any       `json:"me"`
-	Version int                  `json:"version"`
-	Error   string               `json:"error"`
+	Voice   *struct {
+		Talk []int64 `json:"talk"`
+		Hear []int64 `json:"hear"`
+	} `json:"voice"`
+	Version int    `json:"version"`
+	Error   string `json:"error"`
 }
 
 type gameMsg struct {
@@ -447,7 +451,7 @@ func TestListLiveGames(t *testing.T) {
 	// 3. Alice tạo ván xiangqi (chọn first: host)
 	var m gameMsg
 	if code := e.do("POST", "/api/channels/"+itoa(ch.ID)+"/games", alice.Token, map[string]any{
-		"kind": "xiangqi",
+		"kind":    "xiangqi",
 		"options": map[string]any{"first": "host"},
 	}, &m); code != 201 {
 		t.Fatalf("create xiangqi: %d", code)
@@ -695,6 +699,3 @@ func TestPlayerGameplayAnalytics(t *testing.T) {
 		t.Fatalf("expected rps counter tip, got: %v", rpsRep.CounterTips)
 	}
 }
-
-
-

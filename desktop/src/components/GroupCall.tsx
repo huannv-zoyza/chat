@@ -261,12 +261,14 @@ export function GroupCallOverlay() {
           <div className="gc-controls">
             <button
               type="button"
-              className={`call-btn${a.muted ? " is-off" : ""}`}
+              className={`call-btn${a.muted || gs.gameHold ? " is-off" : ""}`}
               onClick={() => g.toggleMute()}
-              aria-label={a.muted ? "Bật micro" : "Tắt micro"}
+              disabled={gs.gameHold}
+              aria-label={gs.gameHold ? "Micro đang dùng cho thoại Ma Sói" : a.muted ? "Bật micro" : "Tắt micro"}
+              title={gs.gameHold ? "Đang trong thoại Ma Sói: micro ở đây tạm tắt, tiếng người chơi chỉ đi qua thoại của ván" : undefined}
             >
-              <Icon name={a.muted ? "micOff" : "mic"} size={22} />
-              <span>Micro</span>
+              <Icon name={a.muted || gs.gameHold ? "micOff" : "mic"} size={22} />
+              <span>{gs.gameHold ? "Mic ở ván" : "Micro"}</span>
             </button>
             {!!a.local?.getVideoTracks().length && (
               <button

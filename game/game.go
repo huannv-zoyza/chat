@@ -441,6 +441,8 @@ type View struct {
 	Version    int        `json:"version"`
 	State      any        `json:"state,omitempty"`
 	Me         any        `json:"me,omitempty"`
+	// Voice: kênh thoại của ván, chỉ có trong bản riêng của người chơi.
+	Voice *Voice `json:"voice,omitempty"`
 }
 
 func (g *Game) View(viewer int64) View {
@@ -461,6 +463,7 @@ func (g *Game) View(viewer int64) View {
 	v.State, me = g.r.view(viewer)
 	if viewer != 0 && b.isPlayer(viewer) {
 		v.Me = me
+		v.Voice = g.voiceFor(viewer)
 	}
 	return v
 }

@@ -397,8 +397,19 @@ func readFarm(ctx context.Context, q execQuerier, userID int64) (farmRow, error)
 }
 
 func ensureFarm(ctx context.Context, tx *sql.Tx, userID int64) (farmRow, error) {
-	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO farms (user_id) VALUES (?)`, userID); err != nil {
+	r, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO farms (user_id) VALUES (?)`, userID)
+	if err != nil {
 		return farmRow{}, err
+	}
+	// nông trại mới: tặng gói thức ăn khởi đầu để vật nuôi đầu tiên có cái ăn
+	if n, _ := r.RowsAffected(); n == 1 && GiveStarterFeed {
+		for _, f := range StarterFeed {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO farm_stock (user_id, item, qty) VALUES (?, ?, ?)
+				ON CONFLICT (user_id, item) DO UPDATE SET qty = qty + excluded.qty`, userID, f.Item, f.Qty); err != nil {
+				return farmRow{}, err
+			}
+		}
 	}
 	return readFarm(ctx, tx, userID)
 }

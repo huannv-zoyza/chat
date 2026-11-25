@@ -48,7 +48,7 @@ const ANIMAL_FALLBACK: Record<
   string,
   { emoji: string; building: "coop" | "pasture"; product: string }
 > = {
-  ga: { emoji: "🐔", building: "coop", product: "🥚" },
+  ga: { emoji: "🐓", building: "coop", product: "🥚" }, // 🐔 ở font Noto chỉ có cái đầu
   bo: { emoji: "🐄", building: "pasture", product: "🥛" },
   de: { emoji: "🐐", building: "pasture", product: "🧀" },
   cuu: { emoji: "🐑", building: "pasture", product: "🧶" },

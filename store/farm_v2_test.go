@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -775,5 +776,59 @@ func TestFarmV2Race(t *testing.T) {
 	wg.Wait()
 	if st := e.storage(thief.ID); steals != 1 || st.Used != 60 || delivers != 1 || e.balance(owner.ID) != 1000-50+81 {
 		t.Fatalf("steals %d (want 1) storage %+v delivers %d balance %d", steals, st, delivers, e.balance(owner.ID))
+	}
+}
+
+func TestFarmStarterFeedAndMarketBuy(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	store.GiveStarterFeed = true
+	t.Cleanup(func() { store.GiveStarterFeed = false })
+	u, _ := st.CreateUser(ctx, "nongdan", "nd@x.vn", "h", "Nông dân")
+
+	// nông trại mới có gói thức ăn khởi đầu, đúng một lần
+	v, err := st.GetFarm(ctx, u.ID, u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int64{"rau_muong": 6, "ngo": 3, "ca_rot": 4, "ca_chua": 3}
+	for k, n := range want {
+		if v.Storage.Stock[k] != n {
+			t.Fatalf("starter %s = %d, want %d (stock %v)", k, v.Storage.Stock[k], n, v.Storage.Stock)
+		}
+	}
+	v, _ = st.GetFarm(ctx, u.ID, u.ID)
+	if v.Storage.Stock["rau_muong"] != 6 {
+		t.Fatalf("starter given twice: %v", v.Storage.Stock)
+	}
+
+	// mua ở chợ: giá đắt hơn bán 50%, cộng vào kho, trừ ví
+	res, err := st.FarmBuyItem(ctx, u.ID, "rau_muong", 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Gained == nil || res.Gained.Items["rau_muong"] != 4 {
+		t.Fatalf("gained: %+v", res.Gained)
+	}
+	w, _ := st.GetWallet(ctx, u.ID)
+	if w.Balance != store.WalletStart-4*8 {
+		t.Fatalf("balance after buy: %d", w.Balance)
+	}
+	v, _ = st.GetFarm(ctx, u.ID, u.ID)
+	if v.Storage.Stock["rau_muong"] != 10 {
+		t.Fatalf("stock after buy: %v", v.Storage.Stock)
+	}
+	// chưa đủ cấp, sản phẩm chăn nuôi, số lượng sai, thiếu xu
+	if _, err := st.FarmBuyItem(ctx, u.ID, "ngo", 1); err == nil {
+		t.Fatal("bought a level-3 crop at level 1")
+	}
+	if _, err := st.FarmBuyItem(ctx, u.ID, "trung", 1); err == nil {
+		t.Fatal("bought an animal product")
+	}
+	if _, err := st.FarmBuyItem(ctx, u.ID, "rau_muong", 0); err == nil {
+		t.Fatal("bought zero")
+	}
+	if _, err := st.FarmBuyItem(ctx, u.ID, "ca_rot", 50); err == nil {
+		t.Fatal("bought more than the wallet holds")
 	}
 }

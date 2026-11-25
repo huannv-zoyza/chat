@@ -128,6 +128,7 @@ func (a *API) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("POST /api/farm/expand", a.requireAuth(a.farmExpand))
 	mux.HandleFunc("POST /api/farm/buy-plot", a.requireAuth(a.farmExpand)) // bí danh cũ của /expand
 	mux.HandleFunc("POST /api/farm/sell", a.requireAuth(a.farmSell))
+	mux.HandleFunc("POST /api/farm/buy", a.requireAuth(a.farmBuyItem))
 	mux.HandleFunc("POST /api/farm/storage/upgrade", a.requireAuth(a.farmUpgradeStorage))
 	mux.HandleFunc("POST /api/farm/buildings/{id}", a.requireAuth(a.farmBuild))
 	mux.HandleFunc("POST /api/farm/buildings/{id}/upgrade", a.requireAuth(a.farmUpgradeBuilding))

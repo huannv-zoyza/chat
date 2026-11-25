@@ -84,7 +84,16 @@ export type FarmView = {
   expansion?: { tier: number; plots: number; next?: { plots: number; price: number; level: number } | null };
 };
 
-export type Item = { id: string; name: string; emoji: string; price: number; kind: "crop" | "product"; level: number };
+export type Item = {
+  id: string;
+  name: string;
+  emoji: string;
+  price: number;
+  kind: "crop" | "product";
+  level: number;
+  /** Giá mua 1 đơn vị ở chợ (nông sản làm thức ăn); không có: không bán ở chợ. */
+  buy_price?: number;
+};
 
 export type Building = {
   id: "coop" | "pasture";

@@ -602,6 +602,8 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     farmClaim: (questId: string) => request<import("./farm").FarmView>("POST", `/api/farm/quests/${questId}/claim`),
     farmSell: (item: string | "all", qty = 1) =>
       request<import("./farm").FarmView>("POST", "/api/farm/sell", item === "all" ? { all: true } : { item, qty }),
+    farmBuyItem: (item: string, qty: number) =>
+      request<import("./farm").FarmView>("POST", "/api/farm/buy", { item, qty }),
     farmExpand: () => request<import("./farm").FarmView>("POST", "/api/farm/expand"),
     farmUpgradeStorage: () => request<import("./farm").FarmView>("POST", "/api/farm/storage/upgrade"),
     farmBuild: (id: string) => request<import("./farm").FarmView>("POST", `/api/farm/buildings/${id}`),

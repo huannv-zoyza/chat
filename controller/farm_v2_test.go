@@ -36,7 +36,7 @@ func TestFarmV2API(t *testing.T) {
 		}
 	}
 	items := raw["items"].([]any)
-	if len(items) != 13 || keys(items[0]) != "emoji,id,kind,level,name,price" || items[0].(map[string]any)["price"] != float64(5) ||
+	if len(items) != 13 || keys(items[0]) != "buy_price,emoji,id,kind,level,name,price" || items[0].(map[string]any)["price"] != float64(5) ||
 		items[8].(map[string]any)["id"] != "trung" || items[8].(map[string]any)["kind"] != "product" {
 		t.Fatalf("items: %v", items)
 	}

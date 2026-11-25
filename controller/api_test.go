@@ -22,7 +22,8 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	auth.Iterations = 1000 // test không cần băm chậm
+	auth.Iterations = 1000        // test không cần băm chậm
+	store.GiveStarterFeed = false // kho nông trại bắt đầu trống trong test
 	os.Exit(m.Run())
 }
 

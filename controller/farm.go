@@ -234,6 +234,18 @@ func (a *API) farmSell(w http.ResponseWriter, r *http.Request) {
 	a.farmRespond(w, r, res, err)
 }
 
+func (a *API) farmBuyItem(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Item string `json:"item"`
+		Qty  int64  `json:"qty"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	res, err := a.store.FarmBuyItem(r.Context(), currentUser(r).ID, req.Item, req.Qty)
+	a.farmRespond(w, r, res, err)
+}
+
 func (a *API) farmUpgradeStorage(w http.ResponseWriter, r *http.Request) {
 	res, err := a.store.FarmUpgradeStorage(r.Context(), currentUser(r).ID)
 	a.farmRespond(w, r, res, err)

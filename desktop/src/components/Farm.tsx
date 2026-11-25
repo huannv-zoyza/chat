@@ -353,6 +353,19 @@ function Farm() {
         !!a.ready_at &&
         new Date(a.ready_at).getTime() <= now);
     if (ready) return void act(-1, () => api.farmCollect(a.id));
+    if (
+      a.state === "hungry" &&
+      k &&
+      (view.storage?.stock[k.feed] ?? 0) < k.feed_qty
+    ) {
+      // thiếu thức ăn: nói rõ thiếu gì và mở luôn chợ trong tab Kho
+      const feed = view.items?.find((i) => i.id === k.feed);
+      setTab("storage");
+      return showToast(
+        `${k.name} cần ${k.feed_qty} ${feed?.emoji ?? ""} ${feed?.name.toLowerCase() ?? k.feed}. Trồng thêm hoặc mua ở Chợ bên phải.`,
+        "bad",
+      );
+    }
     if (a.state === "hungry")
       return void act(
         -1,
@@ -485,7 +498,7 @@ function Farm() {
                       -1,
                       () => api.farmBuild(id),
                       id === "coop"
-                        ? "Đã xây chuồng gà 🐔"
+                        ? "Đã xây chuồng gà 🐓"
                         : "Đã xây đồng cỏ 🐄",
                     )
                   }
@@ -597,6 +610,9 @@ function Farm() {
                   busy={busy}
                   onSell={(item, qty) =>
                     void act(-1, () => api.farmSell(item, qty))
+                  }
+                  onBuy={(item, qty) =>
+                    void act(-1, () => api.farmBuyItem(item, qty))
                   }
                   onUpgrade={() =>
                     void act(
@@ -1463,11 +1479,13 @@ function StoragePanel({
   farm,
   busy,
   onSell,
+  onBuy,
   onUpgrade,
 }: {
   farm: FarmView;
   busy: boolean;
   onSell: (item: string | "all", qty?: number) => void;
+  onBuy: (item: string, qty: number) => void;
   onUpgrade: () => void;
 }) {
   const st = farm.storage;
@@ -1506,7 +1524,8 @@ function StoragePanel({
       </div>
       {rows.length === 0 ? (
         <EmptyState icon="clock" title="Kho trống">
-          Thu hoạch ruộng và thu trứng, sữa… sẽ cất vào đây.
+          Thu hoạch ruộng và thu trứng, sữa… sẽ cất vào đây. Cần thức ăn ngay
+          thì mua ở chợ bên dưới.
         </EmptyState>
       ) : (
         <>
@@ -1554,7 +1573,71 @@ function StoragePanel({
           </button>
         </>
       )}
+      <MarketList farm={farm} busy={busy} onBuy={onBuy} />
     </div>
+  );
+}
+
+/** Chợ: mua nông sản làm thức ăn cho vật nuôi (đắt hơn giá bán), chỉ loại đã mở theo cấp. */
+function MarketList({
+  farm,
+  busy,
+  onBuy,
+}: {
+  farm: FarmView;
+  busy: boolean;
+  onBuy: (item: string, qty: number) => void;
+}) {
+  const balance = farm.wallet?.balance ?? 0;
+  const feeds = new Map((farm.animal_kinds ?? []).map((k) => [k.feed, k.name]));
+  const goods = (farm.items ?? []).filter(
+    (i) => (i.buy_price ?? 0) > 0 && i.level <= farm.level,
+  );
+  if (goods.length === 0) return null;
+  // món vật nuôi đang cần lên đầu
+  goods.sort(
+    (a, b) =>
+      Number(feeds.has(b.id)) - Number(feeds.has(a.id)) || a.level - b.level,
+  );
+  return (
+    <>
+      <h3 className="farm-h">🛒 Chợ: mua thức ăn</h3>
+      <p className="farm-foot">
+        Thiếu thức ăn cho vật nuôi thì mua ở đây (đắt hơn tự trồng).
+      </p>
+      <ul className="stock-list">
+        {goods.map((i) => (
+          <li key={i.id}>
+            <span className="stock-emoji" aria-hidden>
+              {i.emoji}
+            </span>
+            <span className="stock-main">
+              <b>{i.name}</b>
+              <small>
+                {i.buy_price} 🪙/cái
+                {feeds.has(i.id) ? ` · ${feeds.get(i.id)} ăn` : ""}
+              </small>
+            </span>
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={busy || balance < (i.buy_price ?? 0)}
+              onClick={() => onBuy(i.id, 1)}
+            >
+              Mua 1
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-primary"
+              disabled={busy || balance < (i.buy_price ?? 0) * 5}
+              onClick={() => onBuy(i.id, 5)}
+            >
+              Mua 5
+            </button>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 

@@ -21,6 +21,9 @@ type Item struct {
 	Price int64  `json:"price"`
 	Kind  string `json:"kind"` // crop | product
 	Level int    `json:"level"`
+	// BuyPrice: giá mua một đơn vị ở chợ (chỉ nông sản, để có thức ăn cho vật nuôi). Đắt hơn giá bán
+	// 50% để không mua đi bán lại kiếm lời được. 0: không bán ở chợ.
+	BuyPrice int64 `json:"buy_price,omitempty"`
 }
 
 type AnimalKind struct {
@@ -39,7 +42,7 @@ type AnimalKind struct {
 
 // AnimalKinds: danh mục vật nuôi (cố định).
 var AnimalKinds = []AnimalKind{
-	{"ga", "Gà", "🐔", "coop", 80, 2, "rau_muong", 1, 20 * 60, "trung", 2},
+	{"ga", "Gà", "🐓", "coop", 80, 2, "rau_muong", 1, 20 * 60, "trung", 2}, // 🐓: 🐔 ở font Noto chỉ vẽ cái đầu
 	{"bo", "Bò", "🐄", "pasture", 300, 3, "ngo", 1, 60 * 60, "sua", 6},
 	{"de", "Dê", "🐐", "pasture", 400, 5, "ca_chua", 1, 90 * 60, "pho_mai", 8},
 	{"cuu", "Cừu", "🐑", "pasture", 450, 4, "ca_rot", 2, 2 * 3600, "len", 10},
@@ -62,10 +65,11 @@ var products = []struct {
 var Items = func() []Item {
 	out := make([]Item, 0, len(Crops)+len(products))
 	for _, c := range Crops {
-		out = append(out, Item{c.ID, c.Name, c.Emoji, (c.Sell + FarmHarvestUnits - 1) / FarmHarvestUnits, "crop", c.Level})
+		price := (c.Sell + FarmHarvestUnits - 1) / FarmHarvestUnits
+		out = append(out, Item{c.ID, c.Name, c.Emoji, price, "crop", c.Level, (price*3 + 1) / 2})
 	}
 	for i, p := range products {
-		out = append(out, Item{p.ID, p.Name, p.Emoji, p.Price, "product", AnimalKinds[i].Level})
+		out = append(out, Item{p.ID, p.Name, p.Emoji, p.Price, "product", AnimalKinds[i].Level, 0})
 	}
 	return out
 }()
@@ -355,6 +359,53 @@ func (s *Store) FarmSell(ctx context.Context, userID int64, itemID string, qty i
 			return err
 		}
 		res.Gained = &Gained{Xu: total}
+		return nil
+	})
+	return res, err
+}
+
+// GiveStarterFeed: tặng StarterFeed khi tạo nông trại. Test tắt đi để kho bắt đầu trống.
+var GiveStarterFeed = true
+
+// StarterFeed: gói thức ăn khởi đầu (mỗi nông trại nhận một lần): đủ cho gà, bò, cừu, dê ăn vài lượt.
+var StarterFeed = []struct {
+	Item string
+	Qty  int64
+}{{"rau_muong", 6}, {"ngo", 3}, {"ca_rot", 4}, {"ca_chua", 3}}
+
+// FarmBuyItem: mua nông sản ở chợ (để làm thức ăn), giá BuyPrice, cần đủ cấp và còn chỗ trong kho.
+func (s *Store) FarmBuyItem(ctx context.Context, userID int64, itemID string, qty int64) (FarmResult, error) {
+	res := FarmResult{OwnerID: userID}
+	var err error
+	res.Wallets, err = s.farmTx(ctx, func(op *farmOp) error {
+		it, ok := itemByID(itemID)
+		if !ok || it.BuyPrice <= 0 {
+			return ErrFarmUnknownItem
+		}
+		if qty <= 0 || qty > 50 {
+			return ErrFarmBadQty
+		}
+		f, err := ensureFarm(ctx, op.tx, userID)
+		if err != nil {
+			return err
+		}
+		if lv := levelFor(f.XP); lv < it.Level {
+			return farmErr("Cần đạt cấp %d mới mua được %s.", it.Level, it.Name)
+		}
+		room, err := op.storageRoom(userID)
+		if err != nil {
+			return err
+		}
+		if room < qty {
+			return ErrFarmStorageFull
+		}
+		if err := op.spend(userID, it.BuyPrice*qty, fmt.Sprintf("Mua %d %s ở chợ", qty, it.Name)); err != nil {
+			return err
+		}
+		if err := op.addStock(userID, it.ID, qty); err != nil {
+			return err
+		}
+		res.Gained = &Gained{Items: map[string]int64{it.ID: qty}}
 		return nil
 	})
 	return res, err

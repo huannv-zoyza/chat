@@ -15,6 +15,7 @@ import (
 
 func newStore(t *testing.T) *store.Store {
 	t.Helper()
+	store.GiveStarterFeed = false // kho bắt đầu trống, các con số trong test mới rõ ràng
 	db, err := database.InitDB(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatal(err)

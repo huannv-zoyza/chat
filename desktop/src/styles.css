@@ -8275,6 +8275,9 @@ button.game-player:disabled {
 .share-quick .btn {
   gap: 0.35rem;
 }
+.share-quick:empty {
+  display: none;
+}
 .share-note {
   margin: 0 0 0.6rem;
   color: var(--muted);
@@ -9926,23 +9929,23 @@ button.villager:disabled {
   animation-delay: var(--delay);
   transition: filter 0.2s ease;
 }
-.person {
+.vfig {
   display: block;
   width: 100%;
   height: auto;
   overflow: visible;
 }
-.person-shadow {
+.vfig-shadow {
   fill: rgba(0, 0, 0, 0.35);
 }
-.person-eye {
+.vfig-eye {
   fill: #2a1f18;
   transform-box: fill-box;
   transform-origin: center;
   animation: vl-blink 5s infinite;
   animation-delay: var(--delay);
 }
-.person-z {
+.vfig-z {
   font: 700 14px system-ui, sans-serif;
   fill: #d8e0ff;
   animation: vl-z 2.6s ease-in-out infinite;

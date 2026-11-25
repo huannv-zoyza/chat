@@ -477,12 +477,12 @@ function Person({ id, sleeping }: { id: number; sleeping: boolean }) {
   const l = looks(id);
   const longHair = l.style === 1;
   return (
-    <svg className="person" viewBox="0 0 100 124" aria-hidden>
+    <svg className="vfig" viewBox="0 0 100 124" aria-hidden>
       {/* khúc gỗ làm ghế */}
-      <ellipse className="person-shadow" cx={50} cy={118} rx={34} ry={5} />
+      <ellipse className="vfig-shadow" cx={50} cy={118} rx={34} ry={5} />
       <rect x={20} y={98} width={60} height={18} rx={8} fill="#6b4426" />
       <ellipse cx={20} cy={107} rx={5} ry={9} fill="#8a5a33" />
-      <g className="person-body">
+      <g className="vfig-body">
         {/* chân (ngồi, đầu gối ra trước) */}
         <rect x={34} y={86} width={13} height={26} rx={6} fill={l.pants} />
         <rect x={53} y={86} width={13} height={26} rx={6} fill={l.pants} />
@@ -507,7 +507,7 @@ function Person({ id, sleeping }: { id: number; sleeping: boolean }) {
         <circle cx={50} cy={34} r={18} fill={l.skin} />
         <Hair style={l.hat === 4 ? -1 : l.style} color={l.hair} />
         {/* mặt */}
-        <g className={`person-eyes${sleeping ? " is-closed" : ""}`}>
+        <g className={`vfig-eyes${sleeping ? " is-closed" : ""}`}>
           {sleeping ? (
             <>
               <path d="M40 36 Q43 39 46 36" fill="none" stroke="#2a1f18" strokeWidth={1.8} strokeLinecap="round" />
@@ -515,8 +515,8 @@ function Person({ id, sleeping }: { id: number; sleeping: boolean }) {
             </>
           ) : (
             <>
-              <ellipse className="person-eye" cx={43} cy={35} rx={2.3} ry={2.8} />
-              <ellipse className="person-eye" cx={57} cy={35} rx={2.3} ry={2.8} />
+              <ellipse className="vfig-eye" cx={43} cy={35} rx={2.3} ry={2.8} />
+              <ellipse className="vfig-eye" cx={57} cy={35} rx={2.3} ry={2.8} />
             </>
           )}
         </g>
@@ -537,7 +537,7 @@ function Person({ id, sleeping }: { id: number; sleeping: boolean }) {
         )}
       </g>
       {sleeping && (
-        <text className="person-z" x={70} y={18}>
+        <text className="vfig-z" x={70} y={18}>
           z
         </text>
       )}
@@ -553,11 +553,11 @@ function Werewolf({ id }: { id: number }) {
   const fur = FURS[id % FURS.length];
   const dark = shade(fur);
   return (
-    <svg className="person is-werewolf" viewBox="0 0 100 124" aria-hidden>
-      <ellipse className="person-shadow" cx={50} cy={118} rx={34} ry={5} />
+    <svg className="vfig is-werewolf" viewBox="0 0 100 124" aria-hidden>
+      <ellipse className="vfig-shadow" cx={50} cy={118} rx={34} ry={5} />
       <rect x={20} y={98} width={60} height={18} rx={8} fill="#6b4426" />
       <ellipse cx={20} cy={107} rx={5} ry={9} fill="#8a5a33" />
-      <g className="person-body">
+      <g className="vfig-body">
         {/* đuôi */}
         <path d="M70 100 Q92 96 90 74 Q84 88 70 92Z" fill={fur} />
         {/* chân lông, móng */}
@@ -622,8 +622,8 @@ function Hair({ style, color }: { style: number; color: string }) {
 
 function Tombstone() {
   return (
-    <svg className="person tombstone" viewBox="0 0 100 124" aria-hidden>
-      <ellipse className="person-shadow" cx={50} cy={118} rx={30} ry={5} />
+    <svg className="vfig tombstone" viewBox="0 0 100 124" aria-hidden>
+      <ellipse className="vfig-shadow" cx={50} cy={118} rx={30} ry={5} />
       <path d="M28 116 V60 Q28 36 50 36 Q72 36 72 60 V116Z" fill="#8b929c" />
       <path d="M28 116 V60 Q28 36 50 36 Q56 36 60 38 Q36 42 36 64 V116Z" fill="#a3aab3" />
       <text x={50} y={74} textAnchor="middle" className="tomb-text">

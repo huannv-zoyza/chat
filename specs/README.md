@@ -22,6 +22,7 @@ Mọi tính năng mới, trò chơi tương tác hoặc module kiến trúc ph�
 | 10 | [BAU_CUA_XU_SPEC.md](BAU_CUA_XU_SPEC.md) | Game | ✅ Đã triển khai | Bầu cua tôm cá có người làm cái xoay vòng, cược bằng ví xu ảo (nhận hằng ngày, vay ngân hàng, đại gia / con nợ). |
 | 11 | [XIANGQI_BETTING_WALLET_SPEC.md](file:///Users/hoang.nguyen3/tidebird/chat/specs/XIANGQI_BETTING_WALLET_SPEC.md) | Feature | ✅ Đã triển khai | Đặt cược 1v1 Cờ Tướng (escrow), chuyển Xu P2P và lịch sử giao dịch sổ cái. |
 | 12 | [WATCH_PARTY_MUSIC_QUEUE_SPEC.md](file:///Users/hoang.nguyen3/tidebird/chat/specs/WATCH_PARTY_MUSIC_QUEUE_SPEC.md) | Feature | ✅ Đã triển khai | Phòng Nghe nhạc & Xem video YouTube chung theo Queue (bắt buộc bấm Join, cộng tác thêm/xoá/sửa/sắp xếp). |
+| 13 | [RPS_BETTING_SPEC.md](file:///Users/hoang.nguyen3/tidebird/chat/specs/RPS_BETTING_SPEC.md) | Game | ✅ Đã triển khai | Cược xu ảo theo các mức cố định trong Oẳn tù tì; không đủ xu thì không thể tạo hoặc tham gia. |
 | 12 | [BACKLOG.md](file:///Users/hoang.nguyen3/tidebird/chat/specs/BACKLOG.md) | Backlog | 📋 Đang theo dõi | Danh mục tính năng dự kiến (v2+), ý tưởng phát triển và nợ kỹ thuật (Tech Debt). |
 
 ---

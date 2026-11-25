@@ -77,8 +77,11 @@ export type CaroState = {
 };
 
 export type RpsChoice = "rock" | "paper" | "scissors";
+export const RPS_BET_LEVELS = [0, 50, 100, 200, 500, 1000] as const;
 export type RpsState = {
   best_of: number;
+  bet?: number;
+  pot?: number;
   score: [number, number];
   rounds: { picks: [RpsChoice | "", RpsChoice | ""]; winner: number }[];
   ready: [boolean, boolean];

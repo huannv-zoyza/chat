@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -244,6 +245,28 @@ func (a *API) buyInLocked(ctx context.Context, s *gameSession, userID int64) err
 	return nil
 }
 
+// buyInExactLocked trừ đúng exactAmount xu từ ví userID và lưu trạng thái ván trong một transaction.
+// Nếu không đủ xu hoặc commit lỗi thì nạp lại ván từ DB để bỏ thay đổi trong bộ nhớ.
+func (a *API) buyInExactLocked(ctx context.Context, s *gameSession, userID, exactAmount int64) error {
+	ctx = context.WithoutCancel(ctx)
+	seq := s.g.BuyInCount(userID) + 1
+	wal, err := a.store.BuyInExact(ctx, s.messageID, userID, seq, exactAmount, func(amount int64) (string, []byte, error) {
+		s.g.BuyIn(userID, amount)
+		state, err := s.g.Marshal()
+		return string(s.g.Status()), state, err
+	})
+	if err != nil {
+		a.reloadLocked(ctx, s)
+		var ibe store.InsufficientBalanceError
+		if errors.As(err, &ibe) {
+			return game.Error(fmt.Sprintf("Không đủ %d xu để tham gia (bạn đang có %d xu).", ibe.Need, ibe.Have))
+		}
+		return err
+	}
+	a.pushWallet(wal)
+	return nil
+}
+
 // payOutLocked trả chip (và nợ trong bàn) về ví, đồng thời lưu trạng thái ván. Gọi lại không cộng hai lần.
 func (a *API) payOutLocked(ctx context.Context, s *gameSession, kind string, seq int64, stakes []game.Stake) error {
 	ctx = context.WithoutCancel(ctx) // ghi tiền không bỏ dở vì người dùng đóng tab
@@ -326,10 +349,10 @@ func (a *API) settleChannelGames(ctx context.Context, channelID int64) error {
 	return nil
 }
 
-// settlePendingCashouts: lúc khởi động, trả chip cho các ván bầu cua đã kết thúc (hoặc tin đã xoá)
+// settlePendingCashouts: lúc khởi động, trả chip/cược cho các ván dùng xu đã kết thúc (hoặc tin đã xoá)
 // mà chưa kịp trả (máy chủ tắt giữa chừng).
 func (a *API) settlePendingCashouts(ctx context.Context) {
-	rows, err := a.store.GamesNeedingCashout(ctx, "baucua")
+	rows, err := a.store.GamesNeedingCashout(ctx, "baucua", "rps")
 	if err != nil {
 		log.Printf("pending cashouts: %v", err)
 		return
@@ -338,6 +361,9 @@ func (a *API) settlePendingCashouts(ctx context.Context) {
 		g, err := game.Load(row.Kind, row.State)
 		if err != nil {
 			log.Printf("load game %d: %v", row.MessageID, err)
+			continue
+		}
+		if !g.Staked() {
 			continue
 		}
 		g.Abort("Ván kết thúc khi máy chủ khởi động lại.")

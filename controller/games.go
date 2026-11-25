@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -257,9 +258,9 @@ func asPlayer(u model.User) game.Player {
 type LiveGameSummary struct {
 	MessageID   int64            `json:"message_id"`
 	ChannelID   int64            `json:"channel_id"`
-	Kind        string           `json:"kind"`        // "xiangqi", "chess", "caro", "werewolf", v.v.
-	Title       string           `json:"title"`       // Tiêu đề game: "Cờ tướng", "Cờ vua"...
-	Status      string           `json:"status"`      // "lobby" | "playing"
+	Kind        string           `json:"kind"`   // "xiangqi", "chess", "caro", "werewolf", v.v.
+	Title       string           `json:"title"`  // Tiêu đề game: "Cờ tướng", "Cờ vua"...
+	Status      string           `json:"status"` // "lobby" | "playing"
 	CreatedAt   time.Time        `json:"created_at"`
 	Host        model.PublicUser `json:"host"`
 	Players     []game.Player    `json:"players"`
@@ -407,33 +408,59 @@ func (a *API) startGame(ctx context.Context, ch model.Channel, host model.User, 
 	if err != nil {
 		return model.Message{}, err
 	}
-	if g.BetAmount() > 0 {
+	// bàn có xu chảy giữa người chơi (cược Cờ tướng, cược cố định Oẳn tù tì): tài khoản mới tạo chưa được mở
+	exact, stakeAmt := g.StakeRequirement()
+	if g.BetAmount() > 0 || (g.Staked() && exact && stakeAmt > 0) {
 		if until := a.coinsLockedUntil(host); until != nil {
 			return model.Message{}, game.Error(newAccountMsg("mở bàn cược", *until))
 		}
 	}
-	state, err := g.Marshal()
-	if err != nil {
-		return model.Message{}, err
-	}
-	m, walletUpd, err := a.store.CreateGameWithBet(ctx, ch.ID, host.ID, model.Embed{Type: "game", ID: kind, Title: title}, string(g.Status()), state, g.BetAmount())
-	if err != nil {
-		if errors.Is(err, store.ErrInsufficientBalance) {
-			return model.Message{}, game.Error("Số dư xu không đủ để mở bàn cược này.")
-		}
-		return model.Message{}, err
-	}
-	if walletUpd != nil {
-		a.pushWallet(*walletUpd)
-	}
-	s := a.games.put(&gameSession{messageID: m.ID, channelID: ch.ID, g: g})
-	if g.Staked() {
-		s.mu.Lock()
-		err := a.buyInLocked(ctx, s, host.ID)
-		g = s.g
-		s.mu.Unlock()
+	var (
+		m model.Message
+		s *gameSession
+	)
+	if g.Staked() && exact {
+		// cược cố định: trừ xu và tạo ván trong cùng một transaction, thiếu xu thì không tạo gì
+		var wal store.Wallet
+		m, wal, err = a.store.CreateStakedGame(ctx, ch.ID, host.ID, model.Embed{Type: "game", ID: kind, Title: title}, stakeAmt, func() (string, []byte, error) {
+			g.BuyIn(host.ID, stakeAmt)
+			st, err := g.Marshal()
+			return string(g.Status()), st, err
+		})
 		if err != nil {
-			log.Printf("game %d: chủ phòng mua chip: %v", m.ID, err)
+			var ibe store.InsufficientBalanceError
+			if errors.As(err, &ibe) {
+				return model.Message{}, game.Error(fmt.Sprintf("Không đủ %d xu để đặt cược (bạn đang có %d xu).", ibe.Need, ibe.Have))
+			}
+			return model.Message{}, err
+		}
+		s = a.games.put(&gameSession{messageID: m.ID, channelID: ch.ID, g: g})
+		a.pushWallet(wal)
+	} else {
+		state, err := g.Marshal()
+		if err != nil {
+			return model.Message{}, err
+		}
+		var walletUpd *store.Wallet
+		m, walletUpd, err = a.store.CreateGameWithBet(ctx, ch.ID, host.ID, model.Embed{Type: "game", ID: kind, Title: title}, string(g.Status()), state, g.BetAmount())
+		if err != nil {
+			if errors.Is(err, store.ErrInsufficientBalance) {
+				return model.Message{}, game.Error("Số dư xu không đủ để mở bàn cược này.")
+			}
+			return model.Message{}, err
+		}
+		if walletUpd != nil {
+			a.pushWallet(*walletUpd)
+		}
+		s = a.games.put(&gameSession{messageID: m.ID, channelID: ch.ID, g: g})
+		if g.Staked() {
+			s.mu.Lock()
+			err := a.buyInLocked(ctx, s, host.ID)
+			g = s.g
+			s.mu.Unlock()
+			if err != nil {
+				log.Printf("game %d: chủ phòng mua chip: %v", m.ID, err)
+			}
 		}
 	}
 	_, _, _ = a.store.MarkRead(ctx, ch.ID, host.ID, m.ID)
@@ -488,9 +515,11 @@ func (a *API) gameAction(w http.ResponseWriter, r *http.Request) {
 	wasPlaying := s.g.Status() == game.Playing
 	staked := s.g.Staked()
 	betAmount := s.g.BetAmount()
+	exact, stakeAmt := s.g.StakeRequirement()
 	leaveStake, leaveSeq := s.g.StakeOf(me.ID), s.g.BuyInCount(me.ID)
 	var joinedBetLocked bool
-	if req.Action == "join" && betAmount > 0 {
+	// bàn có xu chảy giữa người chơi: chặn tài khoản mới và tài khoản dùng chung máy với người trong bàn
+	if req.Action == "join" && (betAmount > 0 || (staked && exact && stakeAmt > 0)) {
 		_, maxP := s.g.Limits()
 		if s.g.Status() == game.Lobby && !s.g.IsPlayer(me.ID) && len(s.g.Players()) < maxP {
 			if until := a.coinsLockedUntil(me); until != nil {
@@ -508,17 +537,19 @@ func (a *API) gameAction(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusForbidden, sharedDeviceMsg)
 				return
 			}
-			wUpd, err := a.store.LockGameBet(r.Context(), me.ID, msg.ID, betAmount)
-			if err != nil {
-				if errors.Is(err, store.ErrInsufficientBalance) {
-					writeError(w, http.StatusBadRequest, "Số dư xu không đủ để tham gia bàn cược này.")
+			if betAmount > 0 {
+				wUpd, err := a.store.LockGameBet(r.Context(), me.ID, msg.ID, betAmount)
+				if err != nil {
+					if errors.Is(err, store.ErrInsufficientBalance) {
+						writeError(w, http.StatusBadRequest, "Số dư xu không đủ để tham gia bàn cược này.")
+						return
+					}
+					internalError(w, r, err)
 					return
 				}
-				internalError(w, r, err)
-				return
+				joinedBetLocked = true
+				a.pushWallet(wUpd)
 			}
-			joinedBetLocked = true
-			a.pushWallet(wUpd)
 		}
 	}
 	if err := s.g.Act(asPlayer(me), req.Action, req.Data, time.Now()); err != nil {
@@ -542,14 +573,18 @@ func (a *API) gameAction(w http.ResponseWriter, r *http.Request) {
 		var err error
 		switch req.Action {
 		case "join":
-			err = a.buyInLocked(r.Context(), s, me.ID)
+			if exact {
+				err = a.buyInExactLocked(r.Context(), s, me.ID, stakeAmt)
+			} else {
+				err = a.buyInLocked(r.Context(), s, me.ID)
+			}
 		case "leave":
 			if err = a.payOutLocked(r.Context(), s, "refund", leaveSeq, []game.Stake{leaveStake}); err != nil {
 				a.reloadLocked(r.Context(), s)
 			}
 		}
 		if err != nil {
-			internalError(w, r, err)
+			writeGameError(w, r, err)
 			return
 		}
 	}

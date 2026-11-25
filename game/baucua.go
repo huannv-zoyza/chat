@@ -87,6 +87,9 @@ func (g *baucua) normalize() {
 
 /* ---------- chip (interface staked) ---------- */
 
+func (g *baucua) isStaked() bool                  { return true }
+func (g *baucua) stakeRequirement() (bool, int64) { return false, 0 }
+
 func (g *baucua) buyIn(uid, amount int64) int64 {
 	g.normalize()
 	g.Chips[uid] += amount

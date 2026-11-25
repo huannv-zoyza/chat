@@ -356,3 +356,62 @@ func TestDailyStreakAndAutoRepay(t *testing.T) {
 		t.Fatalf("auto_repay rows: %+v", items)
 	}
 }
+
+func TestFixedBetWalletFlow(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	alice, _ := st.CreateUser(ctx, "alice", "a@x.vn", "h", "Alice")
+	bob, _ := st.CreateUser(ctx, "bob", "b@x.vn", "h", "Bob")
+	ch, _ := st.CreateChannel(ctx, alice.ID, "kenh", "", false)
+	_, _ = st.AddMember(ctx, ch.ID, bob.ID)
+
+	// Không đủ xu tạo phòng (có 1000, đòi 1500) -> không tạo tin nhắn, không trừ ví.
+	if _, _, err := st.CreateStakedGame(ctx, ch.ID, alice.ID, model.Embed{Type: "game", ID: "rps", Title: "Oẳn tù tì"}, 1500, func() (string, []byte, error) {
+		return "lobby", []byte(`{"opts":{"best_of":3,"bet":1500}}`), nil
+	}); !errors.Is(err, store.ErrInsufficientBalance) {
+		t.Fatalf("expected ErrInsufficientBalance, got %v", err)
+	}
+	if msgs, _, _ := st.ListMessages(ctx, ch.ID, 0, 10); len(msgs) != 0 {
+		t.Fatalf("expected no message created, got %d", len(msgs))
+	}
+
+	// Tạo phòng cược 500 -> trừ đúng 500, còn lại 500 trong ví.
+	m, wal, err := st.CreateStakedGame(ctx, ch.ID, alice.ID, model.Embed{Type: "game", ID: "rps", Title: "Oẳn tù tì"}, 500, func() (string, []byte, error) {
+		return "lobby", []byte(`{"opts":{"best_of":3,"bet":500}}`), nil
+	})
+	if err != nil || wal.Balance != 500 {
+		t.Fatalf("CreateStakedGame: wal=%+v err=%v", wal, err)
+	}
+
+	// Bob thử BuyInExact quá số dư -> ErrInsufficientBalance, state không đổi.
+	if _, err := st.BuyInExact(ctx, m.ID, bob.ID, 1, 1500, func(int64) (string, []byte, error) {
+		return "playing", []byte(`{"changed":true}`), nil
+	}); !errors.Is(err, store.ErrInsufficientBalance) {
+		t.Fatalf("expected ErrInsufficientBalance on BuyInExact, got %v", err)
+	}
+	if g, _ := st.GetGame(ctx, m.ID); string(g.State) != `{"opts":{"best_of":3,"bet":500}}` {
+		t.Fatalf("game state mutated on failed BuyInExact: %s", g.State)
+	}
+
+	// Bob BuyInExact 500 thành công -> còn 500.
+	walBob, err := st.BuyInExact(ctx, m.ID, bob.ID, 1, 500, func(amt int64) (string, []byte, error) {
+		if amt != 500 {
+			t.Fatalf("amt = %d, want 500", amt)
+		}
+		return "playing", []byte(`{"opts":{"best_of":3,"bet":500}}`), nil
+	})
+	if err != nil || walBob.Balance != 500 {
+		t.Fatalf("BuyInExact: wal=%+v err=%v", walBob, err)
+	}
+
+	// Tạo thêm một ván rps miễn phí (bet=0) đã kết thúc -> GamesNeedingCashout không lấy ván này.
+	mFree, _ := st.CreateGame(ctx, ch.ID, alice.ID, model.Embed{Type: "game", ID: "rps", Title: "Oẳn tù tì"}, "ended", []byte(`{"opts":{"best_of":3,"bet":0}}`))
+	_ = mFree
+	if err := st.SaveGame(ctx, m.ID, "ended", []byte(`{"opts":{"best_of":3,"bet":500}}`)); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := st.GamesNeedingCashout(ctx, "baucua", "rps")
+	if err != nil || len(rows) != 1 || rows[0].MessageID != m.ID {
+		t.Fatalf("GamesNeedingCashout = %+v (err=%v), want only %d", rows, err, m.ID)
+	}
+}

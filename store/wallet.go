@@ -50,6 +50,18 @@ func (e *LoanCooldownError) Error() string {
 }
 func (e *LoanCooldownError) Is(target error) bool { return target == ErrLoanCooldown }
 
+// InsufficientBalanceError chứa số xu cần và số xu đang có khi người chơi không đủ tiền cược.
+type InsufficientBalanceError struct {
+	Need int64
+	Have int64
+}
+
+func (e InsufficientBalanceError) Error() string {
+	return fmt.Sprintf("insufficient balance: need %d, have %d", e.Need, e.Have)
+}
+
+func (e InsufficientBalanceError) Unwrap() error { return ErrInsufficientBalance }
+
 type Wallet struct {
 	UserID    int64  `json:"-"`
 	Balance   int64  `json:"balance"`
@@ -288,6 +300,73 @@ func (s *Store) BuyIn(ctx context.Context, gameID, userID, seq int64,
 	})
 }
 
+// BuyInExact trừ đúng exactAmount xu từ ví userID khi tham gia ván cược cố định.
+// Nếu số dư không đủ exactAmount thì không sửa ví hay game và trả InsufficientBalanceError.
+func (s *Store) BuyInExact(ctx context.Context, gameID, userID, seq, exactAmount int64,
+	apply func(amount int64) (status string, state []byte, err error)) (Wallet, error) {
+	return s.walletTx(ctx, userID, func(tx *sql.Tx, w Wallet) error {
+		if w.Balance < exactAmount {
+			return InsufficientBalanceError{Need: exactAmount, Have: w.Balance}
+		}
+		status, state, err := apply(exactAmount)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE wallets SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`,
+			exactAmount, userID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO wallet_tx (user_id, kind, amount, game_id, seq) VALUES (?, 'buyin', ?, ?, ?)`,
+			userID, -exactAmount, gameID, seq); err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx,
+			`UPDATE games SET status = ?, state = ?, updated_at = CURRENT_TIMESTAMP WHERE message_id = ?`,
+			status, string(state), gameID)
+		return err
+	})
+}
+
+// CreateStakedGame tạo phòng chơi cược cố định và trừ stakeAmount xu của chủ phòng trong cùng một transaction.
+// Nếu số dư không đủ stakeAmount thì không tạo tin nhắn hay ván chơi và trả InsufficientBalanceError.
+func (s *Store) CreateStakedGame(ctx context.Context, channelID, userID int64, embed model.Embed, stakeAmount int64,
+	applyBuyIn func() (status string, state []byte, err error)) (model.Message, Wallet, error) {
+	var msgID int64
+	wal, err := s.walletTx(ctx, userID, func(tx *sql.Tx, w Wallet) error {
+		if w.Balance < stakeAmount {
+			return InsufficientBalanceError{Need: stakeAmount, Have: w.Balance}
+		}
+		status, state, err := applyBuyIn()
+		if err != nil {
+			return err
+		}
+		id, err := insertGameMessage(ctx, tx, channelID, userID, embed, status, state)
+		if err != nil {
+			return err
+		}
+		msgID = id
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE wallets SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`,
+			stakeAmount, userID); err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx,
+			`INSERT INTO wallet_tx (user_id, kind, amount, game_id, seq) VALUES (?, 'buyin', ?, ?, 1)`,
+			userID, -stakeAmount, id)
+		return err
+	})
+	if err != nil {
+		return model.Message{}, Wallet{}, err
+	}
+	msg, err := s.GetMessage(ctx, msgID)
+	if err != nil {
+		return model.Message{}, Wallet{}, err
+	}
+	return msg, wal, nil
+}
+
 // PayOut trả chip về ví (kind "refund" khi rời phòng chờ, "cashout" khi hết ván) và lưu trạng thái ván,
 // trong một transaction. Mỗi (ván, người, kind, seq) chỉ được cộng một lần: gọi lại không đổi gì.
 // Trả về các ví đã thay đổi.
@@ -335,12 +414,24 @@ func (s *Store) PayOut(ctx context.Context, gameID int64, kind string, seq int64
 	return out, tx.Commit()
 }
 
-// GamesNeedingCashout: ván kind đã kết thúc (hoặc tin đã bị xoá) mà chưa trả chip.
-func (s *Store) GamesNeedingCashout(ctx context.Context, kind string) ([]GameRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+// GamesNeedingCashout: các ván thuộc danh sách kinds đã kết thúc (hoặc tin đã bị xoá) mà chưa trả chip/cược.
+func (s *Store) GamesNeedingCashout(ctx context.Context, kinds ...string) ([]GameRow, error) {
+	if len(kinds) == 0 {
+		return nil, nil
+	}
+	holders := make([]string, len(kinds))
+	args := make([]any, len(kinds))
+	for i, k := range kinds {
+		holders[i] = "?"
+		args[i] = k
+	}
+	query := fmt.Sprintf(`
 		SELECT g.message_id, m.channel_id, g.kind, g.state FROM games g JOIN messages m ON m.id = g.message_id
-		WHERE g.kind = ? AND (g.status = 'ended' OR m.deleted_at IS NOT NULL)
-		  AND NOT EXISTS (SELECT 1 FROM wallet_tx t WHERE t.game_id = g.message_id AND t.kind = 'cashout')`, kind)
+		WHERE g.kind IN (%s) AND (g.status = 'ended' OR m.deleted_at IS NOT NULL)
+		  AND (g.kind <> 'rps' OR json_extract(g.state, '$.opts.bet') > 0)
+		  AND NOT EXISTS (SELECT 1 FROM wallet_tx t WHERE t.game_id = g.message_id AND t.kind = 'cashout')`,
+		strings.Join(holders, ", "))
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

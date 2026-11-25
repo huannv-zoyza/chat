@@ -380,3 +380,118 @@ func TestWalletTransferHistoryAndXiangqiBetting(t *testing.T) {
 		t.Fatalf("unexpected net_profit: %+v", profit)
 	}
 }
+
+func TestRPSBettingMoneyFlow(t *testing.T) {
+	e := newEnv(t)
+	alice := e.register("alice", "Alice")
+	bob := e.register("bob", "Bob")
+	var ch channel
+	e.do("POST", "/api/channels", alice.Token, map[string]string{"name": "oantuti"}, &ch)
+	e.do("POST", "/api/channels/"+itoa(ch.ID)+"/join", bob.Token, nil, nil)
+	wa := e.dial(alice.Token)
+	wa.waitFor("ready")
+	wb := e.dial(bob.Token)
+	wb.waitFor("ready")
+
+	createRPS := func(token string, bestOf int, bet int64) (int, int64) {
+		var m struct{ ID int64 }
+		code := e.do("POST", "/api/channels/"+itoa(ch.ID)+"/games", token, map[string]any{
+			"kind":    "rps",
+			"options": map[string]any{"best_of": bestOf, "bet": bet},
+		}, &m)
+		return code, m.ID
+	}
+	act := func(token string, id int64, action string, data any) int {
+		body := map[string]any{"action": action}
+		if data != nil {
+			body["data"] = data
+		}
+		return e.do("POST", "/api/messages/"+itoa(id)+"/game", token, body, nil)
+	}
+
+	// Mức cược không hợp lệ bị từ chối.
+	if code, _ := createRPS(alice.Token, 3, 75); code != 400 {
+		t.Fatalf("invalid bet code = %d, want 400", code)
+	}
+
+	// Alice mở phòng cược 500 -> ví còn 500, in_tables = 500.
+	code, g1 := createRPS(alice.Token, 1, 500)
+	if code != 201 {
+		t.Fatalf("create rps 500: %d", code)
+	}
+	if w := e.wallet(alice.Token); w.Balance != 500 || w.InTables != 500 {
+		t.Fatalf("alice wallet after create: %+v", w)
+	}
+	// Alice mở thêm phòng cược 1000 khi chỉ còn 500 -> bị từ chối 400.
+	if code, _ := createRPS(alice.Token, 1, 1000); code != 400 {
+		t.Fatalf("create rps 1000 without enough balance: %d", code)
+	}
+
+	// Bob khoá 500 xu vào phòng riêng của mình -> Bob còn 500, rồi thử vào phòng 1000 của Alice (sau khi Alice huỷ g1 và mở 1000).
+	if code := act(alice.Token, g1, "cancel", nil); code != 200 {
+		t.Fatalf("cancel lobby g1: %d", code)
+	}
+	if w := e.wallet(alice.Token); w.Balance != 1000 || w.InTables != 0 {
+		t.Fatalf("alice after lobby cancel: %+v", w)
+	}
+	_, gBob := createRPS(bob.Token, 1, 500)
+	_, gAlice := createRPS(alice.Token, 1, 1000)
+
+	// Bob chỉ còn 500 xu, bấm join phòng 1000 xu -> bị từ chối 400, ví Bob giữ nguyên 500.
+	if code := act(bob.Token, gAlice, "join", nil); code != 400 {
+		t.Fatalf("bob join 1000 with 500 balance: %d", code)
+	}
+	if w := e.wallet(bob.Token); w.Balance != 500 || w.InTables != 500 {
+		t.Fatalf("bob wallet unchanged after rejected join: %+v", w)
+	}
+
+	// Bob huỷ phòng 500 -> đủ 1000 xu -> vào phòng 1000 của Alice thành công.
+	act(bob.Token, gBob, "cancel", nil)
+	if code := act(bob.Token, gAlice, "join", nil); code != 200 {
+		t.Fatalf("bob join 1000: %d", code)
+	}
+	if a, b := e.wallet(alice.Token), e.wallet(bob.Token); a.Balance != 0 || b.Balance != 0 || a.InTables != 1000 || b.InTables != 1000 {
+		t.Fatalf("wallets while playing: alice=%+v bob=%+v", a, b)
+	}
+
+	// Không cho chủ phòng huỷ ván khi đã đang Playing.
+	if code := act(alice.Token, gAlice, "cancel", nil); code != 400 {
+		t.Fatalf("cancel while playing: %d", code)
+	}
+
+	// Alice thắng 1-0 -> Alice nhận 2000 xu, Bob còn 0 xu.
+	act(alice.Token, gAlice, "pick", map[string]string{"choice": "rock"})
+	act(bob.Token, gAlice, "pick", map[string]string{"choice": "scissors"})
+	if a, b := e.wallet(alice.Token), e.wallet(bob.Token); a.Balance != 2000 || b.Balance != 0 || a.InTables != 0 || b.InTables != 0 {
+		t.Fatalf("wallets after alice win: alice=%+v bob=%+v", a, b)
+	}
+
+	// Chơi ván nữa (100 xu) rồi xoá tin nhắn giữa trận -> hoàn 100 xu cho cả hai.
+	// Bob vay ngân hàng (luật mới: +300 xu, nợ 360) để đủ 100 xu.
+	if code := e.do("POST", "/api/wallet/loan", bob.Token, nil, nil); code != 200 {
+		t.Fatalf("bob loan: %d", code)
+	}
+	_, gDel := createRPS(alice.Token, 3, 100)
+	act(bob.Token, gDel, "join", nil)
+	if code := e.do("DELETE", "/api/messages/"+itoa(gDel), alice.Token, nil, nil); code != 200 {
+		t.Fatalf("delete rps message: %d", code)
+	}
+	if a, b := e.wallet(alice.Token), e.wallet(bob.Token); a.Balance != 2000 || b.Balance != 300 || b.Debt != 360 {
+		t.Fatalf("wallets after delete refund: alice=%+v bob=%+v", a, b)
+	}
+
+	// Giả lập server restart khi có ván rps cược kết thúc chưa kịp trả tiền -> settlePendingCashouts trả bù 1 lần.
+	_, gCrash := createRPS(alice.Token, 1, 200)
+	row, err := e.st.GetGame(context.Background(), gCrash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.SaveGame(context.Background(), gCrash, "ended", row.State); err != nil {
+		t.Fatal(err)
+	}
+	e.api.SettlePendingCashoutsForTest(context.Background())
+	e.api.SettlePendingCashoutsForTest(context.Background())
+	if a := e.wallet(alice.Token); a.Balance != 2000 {
+		t.Fatalf("alice after restart cashout = %d, want 2000", a.Balance)
+	}
+}

@@ -202,20 +202,19 @@ func TestBauCuaMoneyFlow(t *testing.T) {
 	bal(alice.Token, 1000)
 	bal(bob.Token, 1000)
 
-	// ví 0 xu vẫn vào bàn được, vay trong bàn; nợ vào ví khi hết ván
+	// ví 0 xu vẫn vào bàn được nhưng không vay trong bàn được nữa (vay chỉ ở Ví), không sinh nợ
 	g3 := open()
 	g4 := open() // alice đã mang hết xu vào g3: vào g4 với 0 chip, bob làm cái
 	act(bob.Token, g4, "join", nil)
 	act(alice.Token, g4, "start", nil)
-	if code := act(alice.Token, g4, "loan", nil); code != 200 {
-		t.Fatalf("loan in table: %d", code)
+	if code := act(alice.Token, g4, "loan", nil); code != 400 {
+		t.Fatalf("loan in table should be refused: %d", code)
 	}
 	act(alice.Token, g4, "cancel", nil)
 	act(alice.Token, g3, "cancel", nil)
-	if w := e.wallet(alice.Token); w.Balance != 1500 || w.Debt != 500 {
-		t.Fatalf("alice after loan: %+v", w)
+	if w := e.wallet(alice.Token); w.Balance != 1000 || w.Debt != 0 {
+		t.Fatalf("alice after refused loan: %+v", w)
 	}
-	e.do("POST", "/api/wallet/repay", alice.Token, nil, nil)
 
 	// ván đã kết thúc mà chưa trả chip (máy chủ tắt giữa chừng): khởi động trả bù đúng một lần
 	g5 := open()

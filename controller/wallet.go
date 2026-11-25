@@ -179,6 +179,9 @@ func (a *API) transferCoins(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, store.ErrInsufficientBalance):
 		writeError(w, http.StatusBadRequest, "Số dư xu không đủ để thực hiện giao dịch.")
 		return
+	case errors.Is(err, store.ErrTransferInDebt):
+		writeError(w, http.StatusBadRequest, "Bạn đang nợ ngân hàng, trả hết nợ rồi mới chuyển xu được.")
+		return
 	case err != nil:
 		internalError(w, r, err)
 		return

@@ -244,7 +244,12 @@ export function WalletDialog({ channelId, onClose }: { channelId: number | null;
               </ol>
             ))}
 
-          {tab === "transfer" && (
+          {tab === "transfer" && debt > 0 && (
+            <p className="wallet-note wallet-transfer-blocked">
+              Bạn đang nợ ngân hàng {formatXu(debt)} xu. Trả hết nợ rồi mới chuyển xu cho người khác được.
+            </p>
+          )}
+          {tab === "transfer" && debt === 0 && (
             <form className="wallet-transfer-form" onSubmit={(e) => void handleTransfer(e)}>
               <div className="field">
                 <span>Người nhận</span>

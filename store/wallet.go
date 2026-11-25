@@ -31,6 +31,7 @@ var (
 	ErrInvalidAmount       = errors.New("invalid amount")
 	ErrSelfTransfer        = errors.New("cannot transfer to self")
 	ErrRecipientNotFound   = errors.New("recipient not found")
+	ErrTransferInDebt      = errors.New("cannot transfer while in debt")
 	ErrBetAlreadyLocked    = errors.New("bet already locked")
 )
 
@@ -411,6 +412,10 @@ func (s *Store) TransferCoins(ctx context.Context, fromUserID, toUserID, amount 
 	senderW, err := loadWallet(ctx, tx, fromUserID)
 	if err != nil {
 		return Wallet{}, Wallet{}, model.WalletTransaction{}, err
+	}
+	// Đang nợ ngân hàng thì không chuyển được: chặn vay rồi chuyển cho bạn để "in tiền".
+	if senderW.Debt > 0 {
+		return Wallet{}, Wallet{}, model.WalletTransaction{}, ErrTransferInDebt
 	}
 	if senderW.Balance < amount {
 		return Wallet{}, Wallet{}, model.WalletTransaction{}, ErrInsufficientBalance

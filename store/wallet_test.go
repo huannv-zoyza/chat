@@ -222,3 +222,27 @@ func TestWalletTransferHistoryAndXiangqiEscrow(t *testing.T) {
 		t.Fatalf("list transactions: err=%v len=%d hasMore=%v", err, len(items), hasMore)
 	}
 }
+
+// Đang nợ ngân hàng thì không chuyển xu được (chặn vay rồi chuyển cho bạn để "in tiền").
+func TestTransferBlockedWhileInDebt(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	u1, _ := st.CreateUser(ctx, "debtor", "debtor@x.vn", "h", "Debtor")
+	u2, _ := st.CreateUser(ctx, "friend", "friend@x.vn", "h", "Friend")
+
+	if _, _, _, err := st.TransferCoins(ctx, u1.ID, u2.ID, store.WalletStart-50, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.TakeLoan(ctx, u1.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := st.TransferCoins(ctx, u1.ID, u2.ID, 10, ""); !errors.Is(err, store.ErrTransferInDebt) {
+		t.Fatalf("expected ErrTransferInDebt, got %v", err)
+	}
+	if _, err := st.RepayDebt(ctx, u1.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := st.TransferCoins(ctx, u1.ID, u2.ID, 10, ""); err != nil {
+		t.Fatalf("transfer after repaying: %v", err)
+	}
+}

@@ -251,8 +251,15 @@ export function FileCard({
 }
 
 /** Ảnh/file của tin đang gửi: xem trước từ máy, chưa có trên server. */
-export function LocalFiles({ files }: { files: File[] }) {
+export function LocalFiles({ files, progress }: { files: File[]; progress?: number }) {
   const urls = useObjectUrls(files);
+  // đang tải lên: ảnh mờ đi, thanh tiến trình chạy dưới đáy ảnh
+  const bar =
+    progress !== undefined ? (
+      <span className="upload-bar" aria-hidden>
+        <span style={{ width: `${Math.max(4, Math.round(progress * 100))}%` }} />
+      </span>
+    ) : null;
   const images = files.map((f, i) => ({ f, url: urls[i] })).filter((x) => x.url);
   const others = files.filter((_, i) => !urls[i]);
   return (
@@ -260,8 +267,9 @@ export function LocalFiles({ files }: { files: File[] }) {
       {images.length > 0 && (
         <div className={`image-grid${images.length === 1 ? " is-single" : ""}`}>
           {images.map(({ f, url }) => (
-            <span key={url} className="image-thumb is-local">
+            <span key={url} className={`image-thumb is-local${progress !== undefined ? " is-uploading" : ""}`}>
               <img src={url!} alt={f.name} />
+              {bar}
             </span>
           ))}
         </div>

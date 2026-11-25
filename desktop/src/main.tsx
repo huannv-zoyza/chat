@@ -11,10 +11,11 @@ import "@fontsource/be-vietnam-pro/latin-600.css";
 import "@fontsource/be-vietnam-pro/latin-700.css";
 import "./styles.css";
 import App from "./App";
-import { applyTheme, getTheme } from "./lib/theme";
+import { applyDensity, applyTheme, getDensity, getTheme } from "./lib/theme";
 import { captureInviteFromUrl, captureMessageFromUrl } from "./lib/platform";
 
 applyTheme(getTheme());
+applyDensity(getDensity());
 captureInviteFromUrl();
 captureMessageFromUrl();
 

@@ -12414,3 +12414,101 @@ button.villager:focus-visible .villager-name {
     animation: none;
   }
 }
+
+/* Điện thoại: mở kênh thì khung chat trượt vào từ phải, quay lại thì danh sách trượt nhẹ từ trái */
+@media (max-width: 720px) {
+  .app.show-room .room {
+    animation: mob-push-in 0.24s var(--ease);
+  }
+  .app.show-list .sidebar {
+    animation: mob-pop-in 0.22s var(--ease);
+  }
+}
+@keyframes mob-push-in {
+  from {
+    opacity: 0.4;
+    transform: translateX(28%);
+  }
+}
+@keyframes mob-pop-in {
+  from {
+    opacity: 0.5;
+    transform: translateX(-12%);
+  }
+}
+
+/* Tin vừa tới lúc đang mở kênh: trượt lên nhẹ */
+.msg.is-arrived {
+  animation: msg-arrive 0.26s var(--ease);
+}
+@keyframes msg-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* Ảnh đang tải lên: mờ đi, thanh tiến trình dưới đáy */
+.image-thumb.is-uploading {
+  position: relative;
+}
+.image-thumb.is-uploading img {
+  opacity: 0.55;
+  filter: saturate(0.7);
+}
+.upload-bar {
+  position: absolute;
+  left: 0.5rem;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  height: 0.3rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.35);
+}
+.upload-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--signal);
+  transition: width 0.2s linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app.show-room .room,
+  .app.show-list .sidebar,
+  .msg.is-arrived {
+    animation: none;
+  }
+}
+
+/* Mật độ "Gọn" (Cài đặt → Ứng dụng): tin sát nhau, avatar nhỏ.
+   Avatar đặt cỡ bằng style nội tuyến nên phải !important mới thu nhỏ được. */
+[data-density="compact"] .msg {
+  grid-template-columns: 2.25rem minmax(0, 1fr);
+  gap: 0 0.6rem;
+  margin-top: 0.15rem;
+  padding-top: 0.25rem;
+  padding-bottom: 0.05rem;
+}
+[data-density="compact"] .msg-grouped {
+  margin-top: 0;
+  padding-top: 0;
+}
+[data-density="compact"] .msg-gutter > .avatar {
+  width: 28px !important;
+  height: 28px !important;
+  font-size: 11px !important;
+}
+[data-density="compact"] .msg-head {
+  margin-bottom: 0;
+}
+[data-density="compact"] .day-divider {
+  margin-block: 0.4rem;
+}
+[data-density="compact"] .channel {
+  padding-block: 0.3rem;
+}
+[data-density="compact"] .member {
+  padding-block: 0.25rem;
+}

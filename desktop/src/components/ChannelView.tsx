@@ -282,6 +282,13 @@ function MessageList({ channel }: { channel: Channel }) {
     [state.pending, channel.id],
   );
   const rows = useMemo(() => buildRows(cm.items, pending, state.me.id), [cm.items, pending, state.me.id]);
+  // Tin "vừa tới": id lớn hơn tin mới nhất lúc mở kênh. Chỉ những tin này trượt vào; tin tải lúc mở
+  // kênh hay tin cũ hơn (cuộn lên) thì hiện ngay, không nhấp nháy cả màn hình.
+  const arrivalFloor = useRef<{ ch: number; id: number } | null>(null);
+  if (cm.loaded && arrivalFloor.current?.ch !== channel.id) {
+    arrivalFloor.current = { ch: channel.id, id: cm.items.reduce((mx, m) => Math.max(mx, m.id), 0) };
+  }
+  const floorId = arrivalFloor.current?.ch === channel.id ? arrivalFloor.current.id : Infinity;
   const seen = useMemo(
     () => seenByMessage(cm.items, state.reads[channel.id], state.me.id),
     [cm.items, state.reads, channel.id, state.me.id],
@@ -414,6 +421,7 @@ function MessageList({ channel }: { channel: Channel }) {
                 return (
                   <Fragment key={r.key}>
                     <MessageRow
+                      arrived={r.msg.id > floorId && r.msg.user_id !== state.me.id}
                       mine={r.msg.user_id === state.me.id}
                       mentioned={!!r.msg.mentions?.includes(state.me.id)}
                       grouped={r.grouped}
@@ -433,6 +441,7 @@ function MessageList({ channel }: { channel: Channel }) {
               return (
                 <MessageRow
                   key={r.key}
+                  arrived
                   mine
                   grouped={r.grouped}
                   name={shownName(me, state.nicknames[channel.id])}
@@ -525,6 +534,8 @@ function SeenBy({ userIds }: { userIds: number[] }) {
 
 type RowProps = {
   mine: boolean;
+  /** Tin vừa tới khi đang mở kênh (hoặc tin mình đang gửi): trượt nhẹ vào. */
+  arrived?: boolean;
   mentioned?: boolean;
   grouped: boolean;
   name: string;
@@ -600,6 +611,7 @@ export function MessageRow(props: RowProps) {
   const uploading = pending && pending.status === "sending" && pending.files?.length;
   const cls = [
     "msg",
+    props.arrived && "is-arrived",
     (grouped || funRow) && "msg-grouped",
     funRow && "msg-funrow",
     mine && "msg-mine",
@@ -713,7 +725,9 @@ export function MessageRow(props: RowProps) {
           attachments.length > 0 &&
           props.onOpenImage && <Attachments attachments={attachments} onOpenImage={props.onOpenImage} />
         )}
-        {pending?.files && pending.files.length > 0 && <LocalFiles files={pending.files} />}
+        {pending?.files && pending.files.length > 0 && (
+          <LocalFiles files={pending.files} progress={uploading ? (pending.progress ?? 0) : undefined} />
+        )}
         {message && <ReactionBar message={message} onAdd={setPickerAnchor} />}
         {message && props.onOpenThread && <ThreadSummaryLink message={message} onOpen={props.onOpenThread} />}
 

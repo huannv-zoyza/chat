@@ -13,3 +13,17 @@ export function applyTheme(t: ThemePref) {
   else root.setAttribute("data-theme", t);
   save("theme", t);
 }
+
+export type DensityPref = "comfy" | "compact";
+
+export function getDensity(): DensityPref {
+  return load<DensityPref>("density", "comfy");
+}
+
+/** "compact": tin sát nhau hơn, avatar nhỏ hơn, để một màn hình chứa nhiều tin hơn. */
+export function applyDensity(d: DensityPref) {
+  const root = document.documentElement;
+  if (d === "compact") root.setAttribute("data-density", "compact");
+  else root.removeAttribute("data-density");
+  save("density", d);
+}

@@ -1,6 +1,6 @@
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { ApiError } from "../lib/api";
-import { applyTheme, getTheme, type ThemePref } from "../lib/theme";
+import { applyDensity, applyTheme, getDensity, getTheme, type DensityPref, type ThemePref } from "../lib/theme";
 import { servedByServer } from "../lib/platform";
 import {
   ensureNotifyPermission,
@@ -310,6 +310,11 @@ function AccountTab() {
 
 /* ---------- Ứng dụng ---------- */
 
+const DENSITIES: { id: DensityPref; label: string }[] = [
+  { id: "comfy", label: "Thoáng" },
+  { id: "compact", label: "Gọn" },
+];
+
 const THEMES: { id: ThemePref; label: string }[] = [
   { id: "system", label: "Theo hệ thống" },
   { id: "light", label: "Sáng" },
@@ -319,6 +324,7 @@ const THEMES: { id: ThemePref; label: string }[] = [
 function AppTab() {
   const { serverUrl } = useChat();
   const [theme, setTheme] = useState<ThemePref>(getTheme);
+  const [density, setDensity] = useState<DensityPref>(getDensity);
   const [notify, setNotify] = useState(getNotifyPref);
   const [notifyMsg, setNotifyMsg] = useState<string | null>(null);
   const [soundMentions, setSoundMentions] = useState(getSoundMentionsPref);
@@ -355,6 +361,28 @@ function AppTab() {
             </label>
           ))}
         </div>
+      </fieldset>
+
+      <fieldset className="field">
+        <legend>Mật độ tin nhắn</legend>
+        <div className="segmented">
+          {DENSITIES.map((d) => (
+            <label key={d.id} className={`segment${density === d.id ? " is-on" : ""}`}>
+              <input
+                type="radio"
+                name="density"
+                value={d.id}
+                checked={density === d.id}
+                onChange={() => {
+                  setDensity(d.id);
+                  applyDensity(d.id);
+                }}
+              />
+              {d.label}
+            </label>
+          ))}
+        </div>
+        <small>“Gọn” cho tin sát nhau hơn và avatar nhỏ hơn, một màn hình xem được nhiều tin hơn.</small>
       </fieldset>
 
       <fieldset className="field">

@@ -14,6 +14,7 @@ import {
   type FarmView,
   type Plot,
   type PlotState,
+  type Spot,
 } from "../lib/farm";
 import { SvgEmo, SvgLabel } from "./Emoji";
 
@@ -43,7 +44,14 @@ const TIERS: { cols: number; rows: number }[] = [
 ];
 const COOP = { gx: 2, gy: 2, w: 5, d: 4.4 };
 const PASTURE = { gx: 2, gy: 9, w: 5.4, d: 5.6 };
-const KITCHEN = { gx: 12.6, gy: 12.4, w: 2.6, d: 1.9 }; // xưởng chế biến, dưới ruộng
+/** Xưởng chế biến: chỗ mặc định (ô) và cỡ vẽ bên trong khối 3 × 2 ô nó chiếm (store/farm_place.go). */
+const KITCHEN_SPOT: Spot = { x: 12, y: 12 };
+const kitchenRect = (s: Spot) => ({
+  gx: s.x + 0.2,
+  gy: s.y + 0.05,
+  w: 2.6,
+  d: 1.9,
+});
 
 /** Danh mục vật nuôi dự phòng: xem vườn hàng xóm máy chủ không gửi animal_kinds. */
 const ANIMAL_FALLBACK: Record<
@@ -869,6 +877,16 @@ export type WorldHandlers = {
   onExpand: () => void;
   onStorage: () => void;
   onOrders: () => void;
+  /** đang chọn chỗ đặt công trình: chạm / kéo trên bản đồ để dời chỗ */
+  onPlaceSpot?: (s: Spot) => void;
+};
+
+/** Đang chọn chỗ đặt công trình tự do id (xem lib/farm.ts spotProblem). */
+export type Placing = {
+  id: string;
+  spot: Spot;
+  ok: boolean;
+  size: { w: number; d: number };
 };
 
 export function FarmWorld({
@@ -877,6 +895,7 @@ export function FarmWorld({
   busy,
   live,
   dog,
+  placing = null,
   ...h
 }: {
   view: FarmView;
@@ -884,6 +903,7 @@ export function FarmWorld({
   busy: boolean;
   dog: boolean;
   live: (p: Plot) => { state: PlotState; progress: number; left: number };
+  placing?: Placing | null;
 } & WorldHandlers) {
   const me = view.me;
   const crop = (id?: string) => view.crops.find((c) => c.id === id);
@@ -900,6 +920,9 @@ export function FarmWorld({
   const kitchen = view.buildings?.find((b) => b.id === "kitchen");
   const jobs = view.jobs ?? [];
   const kitchenOn = (kitchen?.built ?? false) || jobs.length > 0;
+  const KITCHEN = kitchenRect(kitchen?.spot ?? KITCHEN_SPOT);
+  // đang dời / chọn chỗ cho xưởng: xưởng thật ẩn đi, vẽ bản nháp ở chỗ đang chọn
+  const placingKitchen = placing?.id === "kitchen";
   const jobDone = jobs.filter(
     (j) => j.state === "ready" || new Date(j.ready_at).getTime() <= now,
   );
@@ -983,7 +1006,23 @@ export function FarmWorld({
     cx: number;
     cy: number;
     moved: boolean;
+    ghost: boolean; // kéo bản nháp công trình thay vì kéo bản đồ
   } | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  /** Ô công trình đang chọn chỗ khi tâm của nó nằm dưới ngón tay / con trỏ (clientX, clientY). */
+  const spotAt = (clientX: number, clientY: number): Spot | null => {
+    const svg = svgRef.current;
+    const m = svg?.getScreenCTM();
+    if (!svg || !m || !placing) return null;
+    const q = new DOMPoint(clientX, clientY).matrixTransform(m.inverse());
+    const gx = (q.x / (TW / 2) + q.y / (TH / 2)) / 2;
+    const gy = (q.y / (TH / 2) - q.x / (TW / 2)) / 2;
+    const { w, d } = placing.size;
+    return {
+      x: Math.max(0, Math.min(GW - w, Math.round(gx - w / 2))),
+      y: Math.max(0, Math.min(GH - d, Math.round(gy - d / 2))),
+    };
+  };
   const onDown = (e: RPointerEvent) => {
     if (!cam) return;
     drag.current = {
@@ -992,6 +1031,7 @@ export function FarmWorld({
       cx: cam.x,
       cy: cam.y,
       moved: false,
+      ghost: !!placing && !!(e.target as Element).closest?.(".iso-ghost"),
     };
   };
   const onMove = (e: RPointerEvent) => {
@@ -1002,6 +1042,12 @@ export function FarmWorld({
     if (!d.moved && Math.hypot(dx, dy) < 6) return;
     if (!d.moved) (e.currentTarget as Element).setPointerCapture(e.pointerId);
     d.moved = true;
+    if (d.ghost) {
+      const s = spotAt(e.clientX, e.clientY);
+      if (s && (s.x !== placing?.spot.x || s.y !== placing?.spot.y))
+        h.onPlaceSpot?.(s);
+      return;
+    }
     setCam({ ...cam, x: d.cx - dx / cam.z, y: d.cy - dy / cam.z });
   };
   const onUp = () => {
@@ -1247,12 +1293,13 @@ export function FarmWorld({
   );
 
   // xưởng chế biến (chưa xây: chỉ có nền đất chờ xây ở vườn mình)
-  if (kitchenOn)
+  if (kitchenOn && !placingKitchen)
     add(
       KITCHEN.gx + KITCHEN.w,
       KITCHEN.gy + KITCHEN.d,
       <Workshop
         key="kitchen"
+        r={KITCHEN}
         working={jobWorking}
         onClick={me ? h.onKitchen : undefined}
         label={me ? "🍳 Xưởng" : undefined}
@@ -1330,7 +1377,7 @@ export function FarmWorld({
       </g>,
     );
   }
-  if (kitchenOn && jobDone.length > 0) {
+  if (kitchenOn && !placingKitchen && jobDone.length > 0) {
     const [bx, by] = pt(
       KITCHEN.gx + KITCHEN.w / 2,
       KITCHEN.gy + KITCHEN.d / 2,
@@ -1419,7 +1466,8 @@ export function FarmWorld({
       onPointerCancel={onUp}
     >
       <svg
-        className="iso-svg"
+        ref={svgRef}
+        className={`iso-svg${placing ? " is-placing" : ""}`}
         viewBox={vb}
         preserveAspectRatio="xMidYMid meet"
         role="img"
@@ -1450,7 +1498,7 @@ export function FarmWorld({
         {/* nền chuồng */}
         <Pen r={COOP} fill="#d8bf86" />
         <Pen r={PASTURE} fill="#9fd36a" />
-        {me && !kitchenOn && (
+        {me && !placing && !kitchenOn && (
           <polygon
             className="iso-lot"
             points={poly([
@@ -1480,22 +1528,55 @@ export function FarmWorld({
         {expandArea}
         {things.map((t) => t.node)}
         <g>{hud}</g>
+        {placing && (
+          <>
+            {/* chạm chỗ nào trên bản đồ thì dời bản nháp tới đó; không bấm nhầm vào ruộng, chuồng */}
+            <rect
+              className="iso-place-catch"
+              x={-6000}
+              y={-6000}
+              width={12000}
+              height={12000}
+              onClick={(e) => {
+                const s = spotAt(e.clientX, e.clientY);
+                if (s) h.onPlaceSpot?.(s);
+              }}
+            />
+            <g className={`iso-ghost${placing.ok ? "" : " is-bad"}`}>
+              <polygon
+                className="iso-ghost-foot"
+                points={poly([
+                  pt(placing.spot.x, placing.spot.y),
+                  pt(placing.spot.x + placing.size.w, placing.spot.y),
+                  pt(
+                    placing.spot.x + placing.size.w,
+                    placing.spot.y + placing.size.d,
+                  ),
+                  pt(placing.spot.x, placing.spot.y + placing.size.d),
+                ])}
+              />
+              {placingKitchen && (
+                <Workshop r={kitchenRect(placing.spot)} working={false} />
+              )}
+            </g>
+          </>
+        )}
         {/* biển chuồng chưa xây */}
-        {me && !coopOn && (
+        {me && !placing && !coopOn && (
           <BuildSign
             r={COOP}
             text={`Xây chuồng gà · ${coop?.price ?? 200}🪙`}
             onClick={() => h.onBuild("coop")}
           />
         )}
-        {me && !(pasture?.built ?? pastureAnimals.length > 0) && (
+        {me && !placing && !(pasture?.built ?? pastureAnimals.length > 0) && (
           <BuildSign
             r={PASTURE}
             text={`Xây đồng cỏ · ${pasture?.price ?? 600}🪙`}
             onClick={() => h.onBuild("pasture")}
           />
         )}
-        {me && !kitchenOn && (
+        {me && !placing && !kitchenOn && (
           <BuildSign
             r={KITCHEN}
             text={
@@ -1507,7 +1588,7 @@ export function FarmWorld({
             onClick={h.onKitchen}
           />
         )}
-        {expandArea && view.expansion?.next && (
+        {!placing && expandArea && view.expansion?.next && (
           <g
             className="iso-click iso-sign"
             transform={`translate(${signAt[0]}, ${signAt[1] - 6})`}
@@ -1549,15 +1630,17 @@ export function FarmWorld({
  * bóng món nảy trên mái (vẽ ở lớp hud).
  */
 function Workshop({
+  r,
   working,
   onClick,
   label,
 }: {
+  r: { gx: number; gy: number; w: number; d: number };
   working: boolean;
   onClick?: () => void;
   label?: string;
 }) {
-  const { gx: x, gy: y, w, d } = KITCHEN;
+  const { gx: x, gy: y, w, d } = r;
   const h = 40;
   const rh = 28;
   const P = (a: number, b: number, z: number) => pt(x + a, y + b, z);

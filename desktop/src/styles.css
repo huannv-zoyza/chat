@@ -16404,3 +16404,99 @@ button.villager:focus-visible .villager-name {
   gap: 0.5rem;
   margin-top: 1rem;
 }
+
+/* ---------- chọn chỗ đặt công trình ---------- */
+.iso-place-catch {
+  fill: transparent;
+  cursor: crosshair;
+}
+.iso-ghost {
+  cursor: grab;
+  opacity: 0.9;
+}
+.iso-ghost-foot {
+  fill: rgb(80 200 90 / 0.4);
+  stroke: #2e9b3e;
+  stroke-width: 3;
+  stroke-dasharray: 10 6;
+}
+.iso-ghost.is-bad .iso-ghost-foot {
+  fill: rgb(235 70 60 / 0.4);
+  stroke: #c62828;
+}
+.iso-ghost.is-bad > g {
+  opacity: 0.6;
+}
+.farm-place-bar {
+  position: absolute;
+  /* chỗ của dòng gợi ý: dưới HUD, giữa vùng bản đồ không bị bảng bên phải che */
+  top: 5.4rem;
+  left: calc((100% - 23.5rem) / 2);
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem 0.75rem;
+  width: max-content;
+  max-width: calc(100% - 2rem);
+  padding: 0.5rem 0.6rem 0.5rem 0.9rem;
+  border: 2.5px solid #7a4b22;
+  border-radius: 16px;
+  background: #fff8e6;
+  box-shadow: 0 4px 0 #7a4b22;
+  color: var(--ink-brown);
+  font-size: var(--step--1);
+  font-weight: 800;
+  translate: -50% 0;
+}
+.farm-place-bar > span.is-bad {
+  color: #c62828;
+}
+.farm-place-bar > div {
+  display: flex;
+  gap: 0.4rem;
+}
+.farm-place-bar .btn {
+  white-space: nowrap;
+}
+@media (max-width: 960px) {
+  .farm-place-bar {
+    top: calc(var(--farm-hud-h) + 0.4rem);
+    left: 50%;
+  }
+}
+.kitchen-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+@media (max-width: 720px) {
+  .farm-place-bar {
+    flex-wrap: nowrap;
+    gap: 0.4rem;
+    width: calc(100% - 1.5rem);
+    max-width: none;
+    padding: 0.4rem 0.45rem 0.4rem 0.7rem;
+    font-size: var(--step--2);
+    line-height: 1.3;
+  }
+  .farm-place-bar > span {
+    flex: 1;
+    min-width: 0;
+  }
+  .farm-place-bar .btn {
+    padding-inline: 0.55rem;
+  }
+}
+/* thẻ giới thiệu xưởng: nút "Chọn chỗ xây" xuống dòng riêng, chữ không bị ép thành cột hẹp */
+.kitchen-intro {
+  flex-wrap: wrap;
+}
+.kitchen-intro > div {
+  flex: 1 1 12rem;
+}
+.kitchen-intro .btn {
+  flex: 1 0 100%;
+}

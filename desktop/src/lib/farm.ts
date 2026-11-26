@@ -85,7 +85,50 @@ export type FarmView = {
   // phần 3: xưởng chế biến (jobs ai xem cũng có, recipes chỉ chủ vườn)
   jobs?: Job[];
   recipes?: Recipe[];
+  /** vùng cố định không xây đè được (chỉ vườn mình), để chọn chỗ đặt công trình */
+  blocked?: Rect[];
 };
+
+export type Spot = { x: number; y: number };
+export type Rect = { x: number; y: number; w: number; d: number };
+
+/** Cỡ bản đồ nông trại theo ô (khớp store/farm_place.go). */
+export const FARM_MAP = { w: 24, h: 20 };
+
+const overlaps = (a: Rect, b: Rect) =>
+  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.d && b.y < a.y + a.d;
+
+/**
+ * Công trình tự do id đặt ở spot có được không (cùng luật với máy chủ): null là được, không thì câu
+ * báo lý do.
+ */
+export function spotProblem(
+  view: FarmView,
+  id: string,
+  spot: Spot,
+): string | null {
+  const b = view.buildings?.find((x) => x.id === id);
+  if (!b?.size) return "Công trình này không dời chỗ được";
+  const r = { x: spot.x, y: spot.y, w: b.size.w, d: b.size.d };
+  if (
+    r.x < 0 ||
+    r.y < 0 ||
+    r.x + r.w > FARM_MAP.w ||
+    r.y + r.d > FARM_MAP.h
+  )
+    return "Ra ngoài nông trại rồi";
+  if ((view.blocked ?? []).some((z) => overlaps(r, z)))
+    return "Vướng ruộng, chuồng, ao hoặc đường đi";
+  const taken = (view.buildings ?? []).some(
+    (o) =>
+      o.id !== id &&
+      o.built &&
+      o.size &&
+      o.spot &&
+      overlaps(r, { ...o.spot, w: o.size.w, d: o.size.d }),
+  );
+  return taken ? "Đã có công trình khác ở đây" : null;
+}
 
 export type Recipe = {
   id: string;
@@ -125,6 +168,9 @@ export type Building = {
   price: number;
   level: number;
   upgrade_price?: number | null;
+  /** công trình tự do (xưởng): số ô chiếm và chỗ đang đặt */
+  size?: { w: number; d: number };
+  spot?: Spot;
 };
 
 export type AnimalKind = {

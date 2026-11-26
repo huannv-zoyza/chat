@@ -134,6 +134,7 @@ func (a *API) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("POST /api/farm/storage/upgrade", a.requireAuth(a.farmUpgradeStorage))
 	mux.HandleFunc("POST /api/farm/buildings/{id}", a.requireAuth(a.farmBuild))
 	mux.HandleFunc("POST /api/farm/buildings/{id}/upgrade", a.requireAuth(a.farmUpgradeBuilding))
+	mux.HandleFunc("POST /api/farm/buildings/{id}/move", a.requireAuth(a.farmMoveBuilding))
 	mux.HandleFunc("POST /api/farm/animals", a.requireAuth(a.farmBuyAnimal))
 	mux.HandleFunc("POST /api/farm/animals/feed", a.requireAuth(a.farmFeed))
 	mux.HandleFunc("POST /api/farm/animals/collect", a.requireAuth(a.farmCollect))

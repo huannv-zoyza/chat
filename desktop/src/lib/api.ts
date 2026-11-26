@@ -608,7 +608,10 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
       request<import("./farm").FarmView>("POST", "/api/farm/buy", { item, qty }),
     farmExpand: () => request<import("./farm").FarmView>("POST", "/api/farm/expand"),
     farmUpgradeStorage: () => request<import("./farm").FarmView>("POST", "/api/farm/storage/upgrade"),
-    farmBuild: (id: string) => request<import("./farm").FarmView>("POST", `/api/farm/buildings/${id}`),
+    farmBuild: (id: string, spot?: import("./farm").Spot) =>
+      request<import("./farm").FarmView>("POST", `/api/farm/buildings/${id}`, spot),
+    farmMoveBuilding: (id: string, spot: import("./farm").Spot) =>
+      request<import("./farm").FarmView>("POST", `/api/farm/buildings/${id}/move`, spot),
     farmUpgradeBuilding: (id: string) => request<import("./farm").FarmView>("POST", `/api/farm/buildings/${id}/upgrade`),
     farmBuyAnimal: (kind: string) => request<import("./farm").FarmView>("POST", "/api/farm/animals", { kind }),
     farmFeed: (id: number | "all") =>

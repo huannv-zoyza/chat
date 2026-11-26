@@ -268,6 +268,8 @@ type FarmView struct {
 	// Xưởng chế biến: jobs luôn có (lò đang nấu / đã xong), recipes chỉ khi me.
 	Jobs    []Job    `json:"jobs"`
 	Recipes []Recipe `json:"recipes,omitempty"`
+	// Vùng cố định không xây đè được (chỉ khi me), để chọn chỗ đặt công trình.
+	Blocked []Rect `json:"blocked,omitempty"`
 }
 
 type Neighbor struct {

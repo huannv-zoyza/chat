@@ -25,6 +25,8 @@ import {
   type PlotState,
   type Quest,
   type Recipe,
+  type Spot,
+  spotProblem,
 } from "../lib/farm";
 import { playCoinSound } from "../lib/sound";
 import { useChat } from "../state/ChatProvider";
@@ -144,6 +146,12 @@ function Farm() {
   const [newLogs, setNewLogs] = useState(0);
   // mua / xây từ bản đồ phải hỏi lại: chạm nhầm trên bản đồ dễ hơn bấm nút trong cửa hàng
   const [confirm, setConfirm] = useState<ConfirmBuy | null>(null);
+  // đang chọn chỗ xây / dời công trình tự do (xưởng...) trên bản đồ
+  const [placing, setPlacing] = useState<{
+    id: string;
+    mode: "build" | "move";
+    spot: Spot;
+  } | null>(null);
   const view = visit ?? mine;
   const now = useServerNow(view?.now);
   // đang thăm vườn người khác: Esc là về nhà (Esc ở nhà mới đóng nông trại, xem FarmOverlay)
@@ -288,6 +296,7 @@ function Farm() {
           "level",
         );
       else if (okText) showToast(okText);
+      return true;
     } catch (err) {
       setError(errMsg(err));
       if (view && !view.me)
@@ -299,6 +308,7 @@ function Farm() {
     } finally {
       setBusy(false);
     }
+    return false;
   };
 
   const goVisit = async (userId: number) => {
@@ -406,6 +416,48 @@ function Farm() {
     scrollToPanel();
   };
 
+  /** Bắt đầu chọn chỗ xây / dời công trình tự do id: hiện bản nháp trên bản đồ, kéo hoặc chạm để dời. */
+  const startPlacing = (id: string, mode: "build" | "move") => {
+    const b = mine?.buildings?.find((x) => x.id === id);
+    if (!b?.spot) return;
+    setVisit(null);
+    setPlacing({ id, mode, spot: b.spot });
+    // điện thoại: bản đồ ở trên bảng mục, cuộn lên cho thấy
+    document.querySelector(".farm-scroll")?.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const placeB = placing
+    ? mine?.buildings?.find((b) => b.id === placing.id)
+    : undefined;
+  const placeProblem =
+    placing && mine ? spotProblem(mine, placing.id, placing.spot) : null;
+  const confirmPlace = async () => {
+    if (!placing || !placeB || placeProblem) return;
+    const { id, mode, spot } = placing;
+    const ok = await act(
+      -1,
+      () =>
+        mode === "build"
+          ? api.farmBuild(id, spot)
+          : api.farmMoveBuilding(id, spot),
+      mode === "build"
+        ? `Đã xây ${placeB.name.toLowerCase()} 🔨`
+        : `Đã dời ${placeB.name.toLowerCase()} sang chỗ mới`,
+    );
+    if (ok) setPlacing(null);
+  };
+  // Esc: thôi chọn chỗ
+  useEffect(() => {
+    if (!placing) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !document.querySelector("dialog[open]")) {
+        e.stopImmediatePropagation();
+        setPlacing(null);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [placing]);
+
   /** Bấm xưởng trên bản đồ: có món xong thì lấy hết, chưa xây thì xây (đủ cấp), còn lại mở tab Xưởng. */
   const onKitchen = () => {
     if (!view?.me || busy) return;
@@ -416,18 +468,7 @@ function Farm() {
     setTab("kitchen");
     if (done > 0) return void act(-1, () => api.farmCraftCollect("all"));
     if (k && !k.built && view.level >= k.level)
-      return setConfirm({
-        emoji: "🍳",
-        title: "Xây xưởng chế biến?",
-        text: "Có 2 lò nấu: biến rau củ, trứng, sữa trong kho thành món bán giá gấp rưỡi.",
-        price: k.price,
-        run: () =>
-          void act(
-            -1,
-            () => api.farmBuild("kitchen"),
-            "Đã xây xưởng chế biến 🍳 Chọn món để nấu nhé!",
-          ),
-      });
+      return startPlacing("kitchen", "build");
     if (k && !k.built)
       return showToast(
         `Lên cấp ${k.level} để xây xưởng chế biến: biến rau củ, trứng, sữa thành món giá cao.`,
@@ -505,6 +546,45 @@ function Farm() {
             <Scenery tod={tod} dog={dogLeft > 0} />
             {view ? (
               <>
+                {placing && view.me && placeB ? (
+                  <div className="farm-place-bar" role="toolbar">
+                    <span className={placeProblem ? "is-bad" : ""}>
+                      {placeProblem ? (
+                        <>
+                          <Emo e="🚧" /> {placeProblem}
+                        </>
+                      ) : (
+                        <>
+                          <Emo e="👆" /> Kéo hoặc chạm để chọn chỗ đặt{" "}
+                          {placeB.name.toLowerCase()}
+                        </>
+                      )}
+                    </span>
+                    <div>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={() => setPlacing(null)}
+                      >
+                        Huỷ
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        disabled={!!placeProblem || busy}
+                        onClick={() => void confirmPlace()}
+                      >
+                        {placing.mode === "build" ? (
+                          <>
+                            Xây ở đây · {placeB.price} <Emo e="🪙" />
+                          </>
+                        ) : (
+                          "Đặt ở đây"
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
                 <div className="farm-banner">
                   {view.me ? (
                     ripeCount > 0 ? (
@@ -533,10 +613,24 @@ function Farm() {
                     </span>
                   )}
                 </div>
+                )}
                 <FarmWorld
                   view={view}
                   now={now}
                   busy={busy}
+                  placing={
+                    placing && view.me && placeB?.size
+                      ? {
+                          id: placing.id,
+                          spot: placing.spot,
+                          ok: !placeProblem,
+                          size: placeB.size,
+                        }
+                      : null
+                  }
+                  onPlaceSpot={(spot) =>
+                    setPlacing((p) => (p ? { ...p, spot } : p))
+                  }
                   dog={dogLeft > 0}
                   live={(p) => liveState(p, now)}
                   onPlot={onPlot}
@@ -708,13 +802,8 @@ function Farm() {
                   farm={mine}
                   now={now}
                   busy={busy}
-                  onBuild={() =>
-                    void act(
-                      -1,
-                      () => api.farmBuild("kitchen"),
-                      "Đã xây xưởng chế biến 🍳",
-                    )
-                  }
+                  onBuild={() => startPlacing("kitchen", "build")}
+                  onMove={() => startPlacing("kitchen", "move")}
                   onUpgrade={() =>
                     void act(
                       -1,
@@ -740,7 +829,9 @@ function Farm() {
                   now={now}
                   busy={busy}
                   onBuild={(id) =>
-                    void act(-1, () => api.farmBuild(id), "Đã xây xong 🔨")
+                    id === "kitchen"
+                      ? startPlacing(id, "build")
+                      : void act(-1, () => api.farmBuild(id), "Đã xây xong 🔨")
                   }
                   onUpgradeBuilding={(id) =>
                     void act(
@@ -1593,6 +1684,7 @@ function KitchenPanel({
   now,
   busy,
   onBuild,
+  onMove,
   onUpgrade,
   onCraft,
   onCollect,
@@ -1601,6 +1693,7 @@ function KitchenPanel({
   now: number;
   busy: boolean;
   onBuild: () => void;
+  onMove: () => void;
   onUpgrade: () => void;
   onCraft: (r: Recipe) => void;
   onCollect: (slot: number | "all") => void;
@@ -1652,34 +1745,44 @@ function KitchenPanel({
             disabled={!!buildBlock || busy}
             onClick={onBuild}
           >
-            {emo(buildBlock ?? `Xây · ${k.price} 🪙`)}
+            {emo(buildBlock ?? `Chọn chỗ xây · ${k.price} 🪙`)}
           </button>
         </div>
       ) : (
         <>
           <div className="kitchen-head">
             <b>
-              Lò nấu · {jobs.size}/{k.cap} đang dùng
+              Lò nấu {jobs.size}/{k.cap}
             </b>
-            {done > 0 ? (
-              <button
-                type="button"
-                className="btn btn-sm btn-primary"
-                disabled={busy}
-                onClick={() => onCollect("all")}
-              >
-                Lấy hết {done} món
-              </button>
-            ) : k.upgrade_price ? (
+            <span className="kitchen-head-actions">
               <button
                 type="button"
                 className="btn btn-sm"
-                disabled={busy || balance < k.upgrade_price}
-                onClick={onUpgrade}
+                onClick={onMove}
+                title="Chọn chỗ khác trên bản đồ cho xưởng"
               >
-                +2 lò · {k.upgrade_price} <Emo e="🪙" />
+                Đổi chỗ
               </button>
-            ) : null}
+              {done > 0 ? (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  disabled={busy}
+                  onClick={() => onCollect("all")}
+                >
+                  Lấy hết {done} món
+                </button>
+              ) : k.upgrade_price ? (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={busy || balance < k.upgrade_price}
+                  onClick={onUpgrade}
+                >
+                  +2 lò · {k.upgrade_price} <Emo e="🪙" />
+                </button>
+              ) : null}
+            </span>
           </div>
           <ul className="kitchen-slots">
             {Array.from({ length: k.cap }, (_, slot) => {
@@ -1737,7 +1840,7 @@ function KitchenPanel({
           const block = locked
             ? `Cấp ${r.level}`
             : !k.built
-              ? "Chưa có xưởng"
+              ? "Chưa xây"
               : short
                 ? "Thiếu"
                 : free <= 0

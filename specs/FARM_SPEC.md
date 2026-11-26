@@ -298,3 +298,18 @@ Tham khảo Hay Day (tiệm bánh, máy làm bơ...): nguyên liệu trong kho �
 
 FarmView thêm: `jobs: {slot, recipe, ready_at, state: "working"|"ready"}[]` (luôn có, hàng xóm cũng thấy để vẽ
 khói bếp) và `recipes: {id, name, emoji, inputs: {item, qty}[], time_sec, price, xp, level}[]` (chỉ khi `me`).
+
+## 10. Chọn chỗ đặt công trình
+
+- Bản đồ nông trại là lưới **24 × 20** ô. Công trình **tự do** (hiện có xưởng chế biến, chiếm **3 × 2** ô, chỗ mặc
+  định ô `(12, 12)`) đặt được ở bất cứ đâu: không ra ngoài bản đồ, không chồng lên vùng cố định (`blocked`: ruộng
+  cỡ lớn nhất, chuồng gà, đồng cỏ, nhà kho, vườn cây, ao, đường đá, xe tải, luống hoa...) và không chồng lên
+  công trình tự do khác. Chuồng gà, đồng cỏ cố định chỗ.
+- Xây: `POST /api/farm/buildings/{id} {x, y}` (không gửi chỗ thì đặt ở chỗ mặc định). Dời (miễn phí):
+  `POST /api/farm/buildings/{id}/move {x, y}`. Lỗi: "Chỗ này ra ngoài nông trại rồi.", "Chỗ này vướng ruộng,
+  chuồng, ao hoặc đường đi, chọn chỗ khác nhé.", "Chỗ này đã có công trình khác.", "Công trình này không dời chỗ
+  được.". Chỗ không hợp lệ thì không trừ xu.
+- `buildings[]` thêm `size: {w, d}` và `spot: {x, y}` cho công trình tự do (hàng xóm cũng thấy để vẽ đúng chỗ);
+  FarmView thêm `blocked: {x, y, w, d}[]` (chỉ khi `me`) để giao diện tô xanh / đỏ lúc chọn chỗ.
+- Giao diện: bấm xây hoặc "Đổi chỗ" thì hiện bản nháp công trình trên bản đồ; kéo bản nháp hoặc chạm chỗ khác để
+  dời, rồi bấm "Xây ở đây" / "Đặt ở đây".

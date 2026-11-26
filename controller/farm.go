@@ -1,7 +1,9 @@
 package controller
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -25,7 +27,8 @@ import (
 //	POST /api/farm/quests/{questId}/claim  ("chest" = rương thưởng ngày)
 //	POST /api/farm/sell       {item, qty} | {all: true}
 //	POST /api/farm/storage/upgrade
-//	POST /api/farm/buildings/{id}          xây coop | pasture
+//	POST /api/farm/buildings/{id}          xây coop | pasture | kitchen   {x, y} tuỳ chọn: chỗ đặt
+//	POST /api/farm/buildings/{id}/move     {x, y}  dời công trình tự do (xưởng)
 //	POST /api/farm/buildings/{id}/upgrade
 //	POST /api/farm/animals    {kind}       mua con vật
 //	POST /api/farm/animals/feed    {id} | {all: true}
@@ -253,8 +256,32 @@ func (a *API) farmUpgradeStorage(w http.ResponseWriter, r *http.Request) {
 	a.farmRespond(w, r, res, err)
 }
 
+// farmBuild: thân {x, y} (tuỳ chọn) là chỗ đặt công trình tự do; không gửi thì đặt chỗ mặc định.
 func (a *API) farmBuild(w http.ResponseWriter, r *http.Request) {
-	res, err := a.store.FarmBuild(r.Context(), currentUser(r).ID, r.PathValue("id"))
+	var req struct {
+		X *int `json:"x"`
+		Y *int `json:"y"`
+	}
+	if r.ContentLength != 0 && r.Body != nil {
+		if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			writeError(w, http.StatusBadRequest, "Dữ liệu gửi lên không hợp lệ.")
+			return
+		}
+	}
+	var at *store.Spot
+	if req.X != nil && req.Y != nil {
+		at = &store.Spot{X: *req.X, Y: *req.Y}
+	}
+	res, err := a.store.FarmBuildAt(r.Context(), currentUser(r).ID, r.PathValue("id"), at)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmMoveBuilding(w http.ResponseWriter, r *http.Request) {
+	var req store.Spot
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	res, err := a.store.FarmMoveBuilding(r.Context(), currentUser(r).ID, r.PathValue("id"), req)
 	a.farmRespond(w, r, res, err)
 }
 

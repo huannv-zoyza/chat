@@ -111,12 +111,17 @@ type buildingDef struct {
 	Cap          int // sức chứa cơ bản (xưởng: số lò)
 	UpgradeCap   int // sức chứa sau nâng cấp
 	UpgradePrice int64
+	// Size khác 0: công trình tự do, đặt ở chỗ tuỳ chọn trên bản đồ (farm_place.go); Default là chỗ
+	// khi không chọn. Size 0: cố định chỗ (chuồng có hàng rào vẽ sẵn).
+	Size    Size
+	Default Spot
 }
 
 var buildingDefs = []buildingDef{
-	{"coop", "Chuồng gà", 200, 2, 4, 8, 400},
-	{"pasture", "Đồng cỏ", 600, 3, 3, 6, 900},
-	{kitchenID, "Xưởng chế biến", 500, 4, 2, 4, 1200},
+	{ID: "coop", Name: "Chuồng gà", Price: 200, Level: 2, Cap: 4, UpgradeCap: 8, UpgradePrice: 400},
+	{ID: "pasture", Name: "Đồng cỏ", Price: 600, Level: 3, Cap: 3, UpgradeCap: 6, UpgradePrice: 900},
+	{ID: kitchenID, Name: "Xưởng chế biến", Price: 500, Level: 4, Cap: 2, UpgradeCap: 4, UpgradePrice: 1200,
+		Size: Size{3, 2}, Default: Spot{12, 12}},
 }
 
 func buildingByID(id string) (buildingDef, bool) {
@@ -198,6 +203,9 @@ type BuildingView struct {
 	Price        int64  `json:"price"`
 	Level        int    `json:"level"`
 	UpgradePrice *int64 `json:"upgrade_price"`
+	// Công trình tự do: số ô chiếm và chỗ đang đặt (chưa xây: chỗ mặc định).
+	Size *Size `json:"size,omitempty"`
+	Spot *Spot `json:"spot,omitempty"`
 }
 
 type Animal struct {
@@ -459,8 +467,14 @@ func loadBuildings(ctx context.Context, q queryer, userID int64) (map[string]int
 	return out, rows.Err()
 }
 
-// FarmBuild: xây chuồng id (coop | pasture).
+// FarmBuild: xây công trình id ở chỗ mặc định.
 func (s *Store) FarmBuild(ctx context.Context, userID int64, id string) (FarmResult, error) {
+	return s.FarmBuildAt(ctx, userID, id, nil)
+}
+
+// FarmBuildAt: xây công trình id (coop | pasture | kitchen); công trình tự do đặt ở at (nil: chỗ mặc
+// định), chỗ phải hợp lệ (farm_place.go).
+func (s *Store) FarmBuildAt(ctx context.Context, userID int64, id string, at *Spot) (FarmResult, error) {
 	res := FarmResult{OwnerID: userID}
 	var err error
 	res.Wallets, err = s.farmTx(ctx, func(op *farmOp) error {
@@ -482,10 +496,19 @@ func (s *Store) FarmBuild(ctx context.Context, userID int64, id string) (FarmRes
 		if levelFor(f.XP) < b.Level {
 			return farmErr("Cần đạt cấp %d mới xây được %s.", b.Level, b.Name)
 		}
+		spot, err := op.placeSpot(userID, b, at)
+		if err != nil {
+			return err
+		}
 		if err := op.spend(userID, b.Price, "Xây "+b.Name); err != nil {
 			return err
 		}
-		_, err = op.tx.ExecContext(ctx, `INSERT INTO farm_buildings (user_id, building, level) VALUES (?, ?, 1)`, userID, b.ID)
+		var x, y any
+		if spot != nil {
+			x, y = spot.X, spot.Y
+		}
+		_, err = op.tx.ExecContext(ctx, `INSERT INTO farm_buildings (user_id, building, level, x, y) VALUES (?, ?, 1, ?, ?)`,
+			userID, b.ID, x, y)
 		return err
 	})
 	return res, err
@@ -950,10 +973,21 @@ func (s *Store) fillFarmV2(ctx context.Context, v *FarmView, ownerID int64, f fa
 	if err != nil {
 		return err
 	}
+	spots, err := loadSpots(ctx, s.db, ownerID)
+	if err != nil {
+		return err
+	}
 	v.Buildings = make([]BuildingView, len(buildingDefs))
 	for i, b := range buildingDefs {
 		lv := built[b.ID]
 		bv := BuildingView{ID: b.ID, Name: b.Name, Built: lv > 0, Cap: b.capAt(lv), Price: b.Price, Level: b.Level}
+		if b.movable() {
+			size, spot := b.Size, b.Default
+			if sp, ok := spots[b.ID]; ok {
+				spot = sp
+			}
+			bv.Size, bv.Spot = &size, &spot
+		}
 		if lv == 1 {
 			p := b.UpgradePrice
 			bv.UpgradePrice = &p
@@ -986,7 +1020,7 @@ func (s *Store) fillFarmV2(ctx context.Context, v *FarmView, ownerID int64, f fa
 	if !v.Me {
 		return nil
 	}
-	v.Items, v.AnimalKinds = Items, AnimalKinds
+	v.Items, v.AnimalKinds, v.Blocked = Items, AnimalKinds, FarmBlocked
 	v.Storage = &StorageView{Cap: storageCap(f.StorageLevel), Used: stockUsed(stock), Stock: stock}
 	if f.StorageLevel < len(StoragePrices) {
 		v.Storage.NextUpgrade = &PriceTag{Price: StoragePrices[f.StorageLevel]}

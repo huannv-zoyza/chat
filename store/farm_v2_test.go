@@ -1006,3 +1006,52 @@ func TestFarmOrdersGoods(t *testing.T) {
 		t.Fatalf("goods lines %d in %d orders", n, o)
 	}
 }
+
+// Chọn chỗ đặt công trình tự do (§10): chỗ mặc định hợp lệ, chỗ vướng / ra ngoài bị từ chối, dời được.
+func TestFarmBuildingSpots(t *testing.T) {
+	e := newFarmEnv(t)
+	alice, bob := e.user("alice"), e.user("bob")
+	e.setXP(alice.ID, 160)
+	k := e.view(alice.ID, alice.ID).Buildings[2]
+	if k.Size == nil || k.Spot == nil || *k.Size != (store.Size{W: 3, D: 2}) || *k.Spot != (store.Spot{X: 12, Y: 12}) {
+		t.Fatalf("kitchen size/spot: %+v", k)
+	}
+	if v := e.view(alice.ID, alice.ID); len(v.Blocked) == 0 || v.Buildings[0].Spot != nil {
+		t.Fatalf("blocked %d, coop spot %v", len(v.Blocked), v.Buildings[0].Spot)
+	}
+	before := e.balance(alice.ID)
+	for _, c := range []struct {
+		at  store.Spot
+		err error
+	}{
+		{store.Spot{X: 10, Y: 7}, store.ErrFarmSpotBlocked}, // giữa ruộng
+		{store.Spot{X: 18, Y: 10}, store.ErrFarmSpotBlocked}, // ao
+		{store.Spot{X: 22, Y: 5}, store.ErrFarmSpotOut},      // lố mép phải
+		{store.Spot{X: -1, Y: 5}, store.ErrFarmSpotOut},
+	} {
+		_, err := e.st.FarmBuildAt(e.ctx, alice.ID, "kitchen", &c.at)
+		wantErr(t, err, c.err)
+	}
+	if e.balance(alice.ID) != before {
+		t.Fatal("rejected spot still charged")
+	}
+	at := store.Spot{X: 20, Y: 6}
+	if _, err := e.st.FarmBuildAt(e.ctx, alice.ID, "kitchen", &at); err != nil {
+		t.Fatal(err)
+	}
+	if k := e.view(alice.ID, bob.ID).Buildings[2]; !k.Built || *k.Spot != at {
+		t.Fatalf("neighbour sees kitchen at %+v", k.Spot)
+	}
+	_, err := e.st.FarmMoveBuilding(e.ctx, alice.ID, "kitchen", store.Spot{X: 9, Y: 9})
+	wantErr(t, err, store.ErrFarmSpotBlocked)
+	if _, err := e.st.FarmMoveBuilding(e.ctx, alice.ID, "kitchen", store.Spot{X: 2, Y: 17}); err != nil {
+		t.Fatal(err)
+	}
+	if k := e.view(alice.ID, alice.ID).Buildings[2]; *k.Spot != (store.Spot{X: 2, Y: 17}) {
+		t.Fatalf("moved to %+v", k.Spot)
+	}
+	_, err = e.st.FarmMoveBuilding(e.ctx, alice.ID, "coop", store.Spot{X: 2, Y: 17})
+	wantErr(t, err, store.ErrFarmNotMovable)
+	_, err = e.st.FarmMoveBuilding(e.ctx, bob.ID, "kitchen", store.Spot{X: 2, Y: 17})
+	wantMsg(t, err, "Chưa xây Xưởng chế biến.")
+}

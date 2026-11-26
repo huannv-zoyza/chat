@@ -1392,7 +1392,8 @@ export function FarmWorld({
     me &&
     nextTier &&
     (nextTier.cols > tier.cols || nextTier.rows > tier.rows) ? (
-      <g className="iso-click iso-expand" onClick={h.onExpand}>
+      // chỉ là khung báo vùng đất sắp mở, không bấm được: bấm nhầm quanh ruộng là mất xu
+      <g className="iso-expand" aria-hidden>
         <polygon
           points={poly([
             pt(FIELD.gx - 0.1, FIELD.gy - 0.1, 1),

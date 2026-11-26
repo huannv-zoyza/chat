@@ -142,6 +142,8 @@ function Farm() {
     tone: "good" | "bad" | "level";
   } | null>(null);
   const [newLogs, setNewLogs] = useState(0);
+  // mua / xây từ bản đồ phải hỏi lại: chạm nhầm trên bản đồ dễ hơn bấm nút trong cửa hàng
+  const [confirm, setConfirm] = useState<ConfirmBuy | null>(null);
   const view = visit ?? mine;
   const now = useServerNow(view?.now);
   // đang thăm vườn người khác: Esc là về nhà (Esc ở nhà mới đóng nông trại, xem FarmOverlay)
@@ -414,11 +416,18 @@ function Farm() {
     setTab("kitchen");
     if (done > 0) return void act(-1, () => api.farmCraftCollect("all"));
     if (k && !k.built && view.level >= k.level)
-      return void act(
-        -1,
-        () => api.farmBuild("kitchen"),
-        "Đã xây xưởng chế biến 🍳 Chọn món để nấu nhé!",
-      );
+      return setConfirm({
+        emoji: "🍳",
+        title: "Xây xưởng chế biến?",
+        text: "Có 2 lò nấu: biến rau củ, trứng, sữa trong kho thành món bán giá gấp rưỡi.",
+        price: k.price,
+        run: () =>
+          void act(
+            -1,
+            () => api.farmBuild("kitchen"),
+            "Đã xây xưởng chế biến 🍳 Chọn món để nấu nhé!",
+          ),
+      });
     if (k && !k.built)
       return showToast(
         `Lên cấp ${k.level} để xây xưởng chế biến: biến rau củ, trứng, sữa thành món giá cao.`,
@@ -532,18 +541,44 @@ function Farm() {
                   live={(p) => liveState(p, now)}
                   onPlot={onPlot}
                   onAnimal={onAnimal}
-                  onBuild={(id) =>
-                    void act(
-                      -1,
-                      () => api.farmBuild(id),
-                      id === "coop"
-                        ? "Đã xây chuồng gà 🐓"
-                        : "Đã xây đồng cỏ 🐄",
-                    )
-                  }
-                  onExpand={() =>
-                    void act(-1, () => api.farmExpand(), "Đã mở rộng ruộng 🌱")
-                  }
+                  onBuild={(id) => {
+                    const b = view.buildings?.find((x) => x.id === id);
+                    setConfirm({
+                      emoji: id === "coop" ? "🛖" : "🌿",
+                      title: `Xây ${b?.name.toLowerCase() ?? "chuồng"}?`,
+                      text:
+                        id === "coop"
+                          ? "Chuồng gà nuôi được 4 con, gà ăn rau muống và đẻ trứng."
+                          : "Đồng cỏ nuôi được 3 con bò, cừu, dê hoặc heo.",
+                      price: b?.price ?? 0,
+                      need: b?.level,
+                      run: () =>
+                        void act(
+                          -1,
+                          () => api.farmBuild(id),
+                          id === "coop"
+                            ? "Đã xây chuồng gà 🐓"
+                            : "Đã xây đồng cỏ 🐄",
+                        ),
+                    });
+                  }}
+                  onExpand={() => {
+                    const n = view.expansion?.next;
+                    if (!n) return;
+                    setConfirm({
+                      emoji: "🌱",
+                      title: `Mở rộng ruộng lên ${n.plots} ô?`,
+                      text: `Thêm ${n.plots - view.plots.length} ô đất để trồng cùng lúc nhiều cây hơn.`,
+                      price: n.price,
+                      need: n.level,
+                      run: () =>
+                        void act(
+                          -1,
+                          () => api.farmExpand(),
+                          "Đã mở rộng ruộng 🌱",
+                        ),
+                    });
+                  }}
                   onStorage={() => openTab("storage")}
                   onOrders={() => openTab("orders")}
                   onKitchen={onKitchen}
@@ -759,6 +794,14 @@ function Farm() {
         </div>
       </div>
 
+      {confirm && mine && (
+        <ConfirmBuyDialog
+          c={confirm}
+          balance={mine.wallet?.balance ?? 0}
+          level={mine.level}
+          onClose={() => setConfirm(null)}
+        />
+      )}
       {seedFor !== null && mine && (
         <SeedPicker
           farm={mine}
@@ -778,6 +821,69 @@ function Farm() {
         />
       )}
     </div>
+  );
+}
+
+type ConfirmBuy = {
+  emoji: string;
+  title: string;
+  text: string;
+  price: number;
+  /** cấp nông trại cần (không đủ thì không cho mua) */
+  need?: number;
+  run: () => void;
+};
+
+/** Hỏi lại trước khi tiêu xu cho một thứ bấm từ bản đồ (mở rộng ruộng, xây chuồng, xưởng). */
+function ConfirmBuyDialog({
+  c,
+  balance,
+  level,
+  onClose,
+}: {
+  c: ConfirmBuy;
+  balance: number;
+  level: number;
+  onClose: () => void;
+}) {
+  const block =
+    c.need && level < c.need
+      ? `Cần đạt cấp ${c.need}`
+      : balance < c.price
+        ? `Thiếu ${(c.price - balance).toLocaleString("vi-VN")} xu`
+        : null;
+  return (
+    <Dialog title={c.title} onClose={onClose} className="farm-confirm">
+      <div className="farm-confirm-body">
+        <span className="farm-confirm-icon" aria-hidden>
+          <Emo e={c.emoji} />
+        </span>
+        <p>{c.text}</p>
+        <p className="farm-confirm-price">
+          Giá <b>{c.price.toLocaleString("vi-VN")}</b> <Emo e="🪙" />
+          <small>
+            {" "}
+            · đang có {balance.toLocaleString("vi-VN")} <Emo e="🪙" />
+          </small>
+        </p>
+      </div>
+      <div className="farm-confirm-actions">
+        <button type="button" className="btn" onClick={onClose}>
+          Để sau
+        </button>
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={!!block}
+          onClick={() => {
+            onClose();
+            c.run();
+          }}
+        >
+          {block ?? emo(`Đồng ý · ${c.price.toLocaleString("vi-VN")} 🪙`)}
+        </button>
+      </div>
+    </Dialog>
   );
 }
 

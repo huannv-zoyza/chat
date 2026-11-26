@@ -16377,3 +16377,30 @@ button.villager:focus-visible .villager-name {
     opacity: 0.6;
   }
 }
+
+/* vùng đất mở rộng kế tiếp chỉ để nhìn; chỉ biển "Mở rộng" bấm được (và còn hỏi lại) */
+.iso-expand {
+  pointer-events: none;
+}
+.farm-confirm-body {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+  text-align: center;
+}
+.farm-confirm-body p {
+  margin: 0;
+}
+.farm-confirm-icon {
+  font-size: 2.6rem;
+  line-height: 1;
+}
+.farm-confirm-price small {
+  color: var(--muted);
+}
+.farm-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}

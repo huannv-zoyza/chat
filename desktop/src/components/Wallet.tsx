@@ -21,6 +21,7 @@ const TX_META: Record<string, { icon: string; label: string }> = {
   bet_loss: { icon: "♟️", label: "Thua cược" },
   farm: { icon: "🌾", label: "Nông trại" },
   auto_repay: { icon: "🧾", label: "Tự trừ nợ (50% xu kiếm được)" },
+  admin: { icon: "🎁", label: "Quản trị điều chỉnh ví" },
 };
 
 const STREAK_REWARD = [100, 120, 140, 160, 180, 200, 300];

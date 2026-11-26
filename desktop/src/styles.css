@@ -16630,10 +16630,14 @@ button.villager:focus-visible .villager-name {
   align-items: center;
   gap: 0.5rem;
 }
-.love-request > span {
+/* chỉ dòng chữ giãn ra; avatar (cũng là <span>) giữ đúng cỡ, không thành dải ảnh to */
+.love-request-text {
   flex: 1 1 9rem;
   min-width: 0;
   font-size: var(--step--1);
+}
+.love-request > .avatar {
+  flex: none;
 }
 .love-request + .love-request {
   padding-top: 0.5rem;

@@ -1669,7 +1669,7 @@ function LoveCard({
       {reqs.map((r) => (
         <div key={r.user.id} className="love-request">
           <Avatar user={r.user} size={34} />
-          <span>
+          <span className="love-request-text">
             <b>{displayName(r.user)}</b> ngỏ lời kết đôi với bạn <Emo e="💌" />
           </span>
           <div className="love-actions">
@@ -1695,7 +1695,7 @@ function LoveCard({
       {farm.couple_sent && (
         <div className="love-request">
           <Avatar user={farm.couple_sent.user} size={34} />
-          <span>
+          <span className="love-request-text">
             Đang chờ <b>{displayName(farm.couple_sent.user)}</b> trả lời{" "}
             <Emo e="💌" />
           </span>

@@ -618,6 +618,14 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
       request<import("./farm").FarmView>("POST", "/api/farm/animals/feed", id === "all" ? { all: true } : { id }),
     farmCollect: (id: number | "all") =>
       request<import("./farm").FarmView>("POST", "/api/farm/animals/collect", id === "all" ? { all: true } : { id }),
+    farmPropose: (userId: number) =>
+      request<import("./farm").FarmView>("POST", "/api/farm/couple/propose", { user_id: userId }),
+    farmCancelPropose: () => request<import("./farm").FarmView>("DELETE", "/api/farm/couple/propose"),
+    farmCoupleRespond: (userId: number, accept: boolean) =>
+      request<import("./farm").FarmView>("POST", "/api/farm/couple/respond", { user_id: userId, accept }),
+    farmBreakUp: () => request<import("./farm").FarmView>("DELETE", "/api/farm/couple"),
+    farmGift: (item: string, qty: number) =>
+      request<import("./farm").FarmView>("POST", "/api/farm/couple/gift", { item, qty }),
     farmCraft: (recipe: string) => request<import("./farm").FarmView>("POST", "/api/farm/craft", { recipe }),
     farmCraftCollect: (slot: number | "all") =>
       request<import("./farm").FarmView>("POST", "/api/farm/craft/collect", slot === "all" ? { all: true } : { slot }),

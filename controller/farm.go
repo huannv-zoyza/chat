@@ -35,6 +35,11 @@ import (
 //	POST /api/farm/animals/collect {id} | {all: true}
 //	POST /api/farm/craft      {recipe}     nấu một món ở lò trống của xưởng
 //	POST /api/farm/craft/collect {slot} | {all: true}
+//	POST /api/farm/couple/propose  {user_id}          ngỏ lời kết đôi
+//	POST /api/farm/couple/respond  {user_id, accept}  trả lời lời ngỏ
+//	DELETE /api/farm/couple/propose                   rút lại lời ngỏ của mình
+//	DELETE /api/farm/couple                           chia tay
+//	POST /api/farm/couple/gift     {item, qty}        tặng nông sản cho người thương
 //	POST /api/farm/orders/{id}/deliver
 //	DELETE /api/farm/orders/{id}           huỷ đơn
 //
@@ -112,8 +117,12 @@ func (a *API) farmRespond(w http.ResponseWriter, r *http.Request, res store.Farm
 	for _, wal := range res.Wallets {
 		a.pushWallet(wal)
 	}
-	if res.Log != nil && res.OwnerID != me {
-		a.hub.ToUser(res.OwnerID, mustJSON(farmUpdatedEvent{Type: "farm.updated", Log: res.Log}))
+	notify := res.OwnerID
+	if res.Notify != 0 {
+		notify = res.Notify
+	}
+	if res.Log != nil && notify != me {
+		a.hub.ToUser(notify, mustJSON(farmUpdatedEvent{Type: "farm.updated", Log: res.Log}))
 	}
 	v, err := a.store.GetFarm(r.Context(), res.OwnerID, me)
 	if err != nil {
@@ -344,6 +353,52 @@ func (a *API) farmCraftCollect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := a.store.FarmCraftCollect(r.Context(), currentUser(r).ID, req.Slot, req.All)
+	a.farmRespond(w, r, res, err)
+}
+
+// Kết đôi (store/farm_couple.go).
+func (a *API) farmPropose(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UserID int64 `json:"user_id"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	res, err := a.store.FarmPropose(r.Context(), currentUser(r).ID, req.UserID)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmCoupleRespond(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UserID int64 `json:"user_id"`
+		Accept bool  `json:"accept"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	res, err := a.store.FarmCoupleRespond(r.Context(), currentUser(r).ID, req.UserID, req.Accept)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmCancelPropose(w http.ResponseWriter, r *http.Request) {
+	res, err := a.store.FarmCancelPropose(r.Context(), currentUser(r).ID)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmBreakUp(w http.ResponseWriter, r *http.Request) {
+	res, err := a.store.FarmBreakUp(r.Context(), currentUser(r).ID)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmGift(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Item string `json:"item"`
+		Qty  int64  `json:"qty"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	res, err := a.store.FarmGift(r.Context(), currentUser(r).ID, req.Item, req.Qty)
 	a.farmRespond(w, r, res, err)
 }
 

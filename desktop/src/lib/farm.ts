@@ -48,7 +48,15 @@ export type Quest = {
 export type FarmLog = {
   at: string;
   actor: PublicUser;
-  action: "water" | "bug" | "steal" | "dog";
+  action:
+    | "water"
+    | "bug"
+    | "steal"
+    | "dog"
+    | "propose"
+    | "couple"
+    | "breakup"
+    | "gift";
   crop?: string;
   xu?: number;
 };
@@ -72,7 +80,15 @@ export type FarmView = {
   chest?: { ready: boolean; claimed: boolean; xu: number; xp: number };
   log?: FarmLog[];
   steals_left?: number;
-  gained?: { xu: number; xp: number; level_up?: number; items?: Record<string, number> };
+  gained?: {
+    xu: number;
+    xp: number;
+    level_up?: number;
+    items?: Record<string, number>;
+    /** điểm thân mật vừa cộng / cấp thân mật mới (kết đôi) */
+    love?: number;
+    love_up?: number;
+  };
   dog?: boolean;
   // phần 2: kho, chăn nuôi, đơn hàng, mở rộng đất (máy chủ cũ không có: để tuỳ chọn)
   items?: Item[];
@@ -87,7 +103,26 @@ export type FarmView = {
   recipes?: Recipe[];
   /** vùng cố định không xây đè được (chỉ vườn mình), để chọn chỗ đặt công trình */
   blocked?: Rect[];
+  // kết đôi: couple ai xem cũng thấy; requests / sent chỉ vườn mình; state chỉ khi xem vườn người khác
+  couple?: Couple;
+  couple_requests?: CoupleRequest[];
+  couple_sent?: CoupleRequest | null;
+  couple_state?: "partner" | "can_propose" | "sent" | "incoming";
 };
+
+export type Couple = {
+  partner: PublicUser;
+  love: number;
+  level: number;
+  level_name: string;
+  level_love: number;
+  next_love: number | null;
+  since: string;
+  /** chỉ vườn mình: còn bao nhiêu lần tặng quà hôm nay */
+  gifts_left?: number;
+};
+
+export type CoupleRequest = { user: PublicUser; at: string };
 
 export type Spot = { x: number; y: number };
 export type Rect = { x: number; y: number; w: number; d: number };
@@ -213,6 +248,8 @@ export type Neighbor = {
   stealable: number;
   needs_help: number;
   dog: boolean;
+  /** người thương của mình */
+  partner?: boolean;
 };
 
 export type LeaderRow = { user: PublicUser; level: number; xp: number };

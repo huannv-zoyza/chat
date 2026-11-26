@@ -1347,6 +1347,26 @@ export function FarmWorld({
     ),
   );
 
+  // có đôi: biển 💞 tên người thương nổi trên đầu bác nông dân (ai ghé cũng thấy)
+  if (view.couple) {
+    const [fx, fy] = pt(8.9, 11.3);
+    const who =
+      view.couple.partner.display_name || view.couple.partner.username;
+    const text = `💞 ${who.length > 14 ? who.slice(0, 13) + "…" : who}`;
+    const w = Math.max(70, text.length * 7.2 + 26);
+    hud.push(
+      <g
+        key="couple"
+        className="iso-sign is-love"
+        transform={`translate(${fx}, ${fy - 88})`}
+      >
+        <title>{`Người thương · thân mật cấp ${view.couple.level} (${view.couple.level_name})`}</title>
+        {/* chạy sang phải từ đầu bác nông dân: bác đứng sát mép trái màn hình điện thoại */}
+        <rect x={-22} y={-14} width={w} height={25} rx={12.5} />
+        <SvgLabel text={text} x={w / 2 - 22} y={4} />
+      </g>,
+    );
+  }
   // biển "Kho" của nhà kho: vẽ ở lớp trên cùng, không bị tháp silo che mất
   if (me) {
     const [bx, by] = pt(13, 2.1);

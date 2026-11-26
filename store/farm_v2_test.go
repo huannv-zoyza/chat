@@ -1024,7 +1024,7 @@ func TestFarmBuildingSpots(t *testing.T) {
 		at  store.Spot
 		err error
 	}{
-		{store.Spot{X: 10, Y: 7}, store.ErrFarmSpotBlocked}, // giữa ruộng
+		{store.Spot{X: 10, Y: 7}, store.ErrFarmSpotBlocked},  // giữa ruộng
 		{store.Spot{X: 18, Y: 10}, store.ErrFarmSpotBlocked}, // ao
 		{store.Spot{X: 22, Y: 5}, store.ErrFarmSpotOut},      // lố mép phải
 		{store.Spot{X: -1, Y: 5}, store.ErrFarmSpotOut},

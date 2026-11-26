@@ -24,6 +24,7 @@ import {
   type Plot,
   type PlotState,
   type Quest,
+  type Item,
   type Recipe,
   type Spot,
   spotProblem,
@@ -126,7 +127,7 @@ type Pop = {
   id: number;
   plot: number;
   text: string;
-  tone: "xu" | "xp" | "bad" | "info";
+  tone: "xu" | "xp" | "bad" | "info" | "love";
 };
 let popSeq = 0;
 
@@ -146,6 +147,7 @@ function Farm() {
   const [newLogs, setNewLogs] = useState(0);
   // mua / xây từ bản đồ phải hỏi lại: chạm nhầm trên bản đồ dễ hơn bấm nút trong cửa hàng
   const [confirm, setConfirm] = useState<ConfirmBuy | null>(null);
+  const [giftOpen, setGiftOpen] = useState(false);
   // đang chọn chỗ xây / dời công trình tự do (xưởng...) trên bản đồ
   const [placing, setPlacing] = useState<{
     id: string;
@@ -238,8 +240,8 @@ function Farm() {
         void loadMine();
         setNewLogs((n) => n + 1);
         showToast(
-          logText(l, mine?.crops ?? []),
-          l.action === "steal" ? "bad" : "good",
+          logText(l, mine?.crops ?? [], mine?.items),
+          l.action === "steal" || l.action === "breakup" ? "bad" : "good",
         );
       }),
     [loadMine, showToast, mine?.crops],
@@ -288,9 +290,16 @@ function Farm() {
         if (g.xu)
           pop(at, `${g.xu > 0 ? "+" : ""}${g.xu} 🪙`, g.xu > 0 ? "xu" : "bad");
         if (g.xp) pop(at, `+${g.xp} XP`, "xp", 180);
+        if (g.love) pop(at, `+${g.love} 💗`, "love", 320);
         if (g.xu > 0) playCoinSound();
       }
-      if (g?.level_up)
+      if (g?.love_up) {
+        const c = f.couple ?? mine?.couple;
+        showToast(
+          `💞 Thân mật lên cấp ${g.love_up}${c ? `: ${c.level_name}` : ""}! Cả hai cùng nhận ${30 * g.love_up} xu.`,
+          "level",
+        );
+      } else if (g?.level_up)
         showToast(
           `🎉 Lên cấp ${g.level_up}! Mở khoá cây mới trong cửa hàng hạt.`,
           "level",
@@ -612,6 +621,27 @@ function Farm() {
                       ô chín: trộm · ô đang lớn: tưới giúp
                     </span>
                   )}
+                  {!view.me && view.couple_state && (
+                    <CoupleButton
+                      state={view.couple_state}
+                      busy={busy}
+                      onPropose={() =>
+                        void act(
+                          -1,
+                          () => api.farmPropose(view.user.id),
+                          `Đã ngỏ lời với ${displayName(view.user)} 💌 Chờ người ta trả lời nhé.`,
+                        )
+                      }
+                      onAccept={() =>
+                        void act(
+                          -1,
+                          () => api.farmCoupleRespond(view.user.id, true),
+                          `💞 Bạn và ${displayName(view.user)} đã thành một đôi!`,
+                        )
+                      }
+                      onGift={() => setGiftOpen(true)}
+                    />
+                  )}
                 </div>
                 )}
                 <FarmWorld
@@ -750,6 +780,22 @@ function Farm() {
               )}
               {tab === "neighbors" && (
                 <NeighborsPanel
+                  farm={mine}
+                  busy={busy}
+                  onGift={() => setGiftOpen(true)}
+                  onRespond={(id, accept) =>
+                    void act(
+                      -1,
+                      () => api.farmCoupleRespond(id, accept),
+                      accept ? "💞 Hai bạn đã thành một đôi!" : "Đã từ chối lời ngỏ.",
+                    )
+                  }
+                  onCancelPropose={() =>
+                    void act(-1, () => api.farmCancelPropose(), "Đã rút lại lời ngỏ.")
+                  }
+                  onBreakUp={() =>
+                    void act(-1, () => api.farmBreakUp(), "Đã chia tay 💔")
+                  }
                   onVisit={goVisit}
                   onHome={() => setVisit(null)}
                   me={mine?.user ?? null}
@@ -885,6 +931,21 @@ function Farm() {
         </div>
       </div>
 
+      {giftOpen && mine?.couple && (
+        <GiftDialog
+          farm={mine}
+          busy={busy}
+          onClose={() => setGiftOpen(false)}
+          onGift={async (item, qty) => {
+            const ok = await act(
+              -1,
+              () => api.farmGift(item, qty),
+              `Đã gửi quà cho ${displayName(mine.couple!.partner)} 🎁`,
+            );
+            if (ok) setGiftOpen(false);
+          }}
+        />
+      )}
       {confirm && mine && (
         <ConfirmBuyDialog
           c={confirm}
@@ -1350,12 +1411,24 @@ function DailyCheckin() {
    ========================================================= */
 
 function NeighborsPanel({
+  farm,
+  busy,
+  onGift,
+  onRespond,
+  onCancelPropose,
+  onBreakUp,
   onVisit,
   onHome,
   me,
   myLevel,
   visiting,
 }: {
+  farm: FarmView | null;
+  busy: boolean;
+  onGift: () => void;
+  onRespond: (id: number, accept: boolean) => void;
+  onCancelPropose: () => void;
+  onBreakUp: () => void;
   onVisit: (id: number) => void;
   onHome: () => void;
   me: FarmView["user"] | null;
@@ -1372,6 +1445,7 @@ function NeighborsPanel({
         setList(
           [...l].sort(
             (a, b) =>
+              Number(!!b.partner) - Number(!!a.partner) ||
               b.stealable - a.stealable ||
               b.needs_help - a.needs_help ||
               b.xp - a.xp,
@@ -1379,7 +1453,8 @@ function NeighborsPanel({
         ),
       )
       .catch((e) => setErr(errMsg(e)));
-  }, [api]);
+    // thành đôi / chia tay thì tải lại để người thương lên đầu danh sách
+  }, [api, farm?.couple?.partner.id]);
   if (err) return <p className="form-error">{err}</p>;
   if (!list) return <p className="muted">Đang tải…</p>;
   if (list.length === 0)
@@ -1390,6 +1465,17 @@ function NeighborsPanel({
     );
   return (
     <div className="farm-section">
+      {farm && (
+        <LoveCard
+          farm={farm}
+          busy={busy}
+          onGift={onGift}
+          onRespond={onRespond}
+          onCancelPropose={onCancelPropose}
+          onBreakUp={onBreakUp}
+          onVisit={onVisit}
+        />
+      )}
       <p className="farm-foot">
         Ghé vườn hàng xóm để tưới giúp, bắt sâu… hoặc trộm rau khi họ quên hái
         <Emo e="🫣" />
@@ -1421,6 +1507,11 @@ function NeighborsPanel({
               <span className="neighbor-main">
                 <b>{displayName(n.user)}</b>
                 <small>
+                  {n.partner && (
+                    <>
+                      <Emo e="💞" /> Người thương ·{" "}
+                    </>
+                  )}
                   Cấp {n.level}
                   {n.dog && emo(" · 🐕 có chó")}
                 </small>
@@ -1442,6 +1533,282 @@ function NeighborsPanel({
         ))}
       </ul>
     </div>
+  );
+}
+
+/* =========================================================
+   Kết đôi
+   ========================================================= */
+
+/** Nút trên dải gợi ý khi đi thăm vườn: ngỏ lời / nhận lời / tặng quà người thương. */
+function CoupleButton({
+  state,
+  busy,
+  onPropose,
+  onAccept,
+  onGift,
+}: {
+  state: NonNullable<FarmView["couple_state"]>;
+  busy: boolean;
+  onPropose: () => void;
+  onAccept: () => void;
+  onGift: () => void;
+}) {
+  if (state === "sent")
+    return (
+      <span className="farm-tip farm-couple-btn is-sent">
+        <Emo e="💌" /> Đã ngỏ lời
+      </span>
+    );
+  const [icon, label, run] =
+    state === "partner"
+      ? ["🎁", "Tặng quà", onGift]
+      : state === "incoming"
+        ? ["💞", "Nhận lời kết đôi", onAccept]
+        : ["💌", "Ngỏ lời kết đôi", onPropose];
+  return (
+    <button
+      type="button"
+      className="farm-couple-btn"
+      disabled={busy}
+      onClick={run}
+    >
+      <Emo e={icon} /> {label}
+    </button>
+  );
+}
+
+/** Thẻ tình yêu đầu tab Hàng xóm: cặp đôi + độ thân mật, lời ngỏ đến / đi, hoặc cách kết đôi. */
+function LoveCard({
+  farm,
+  busy,
+  onGift,
+  onRespond,
+  onCancelPropose,
+  onBreakUp,
+  onVisit,
+}: {
+  farm: FarmView;
+  busy: boolean;
+  onGift: () => void;
+  onRespond: (id: number, accept: boolean) => void;
+  onCancelPropose: () => void;
+  onBreakUp: () => void;
+  onVisit: (id: number) => void;
+}) {
+  const [sure, setSure] = useState(false);
+  useEffect(() => {
+    if (!sure) return;
+    const t = window.setTimeout(() => setSure(false), 4000);
+    return () => window.clearTimeout(t);
+  }, [sure]);
+  const c = farm.couple;
+  const reqs = farm.couple_requests ?? [];
+  if (c) {
+    const span = (c.next_love ?? c.love) - c.level_love;
+    const pct = c.next_love
+      ? Math.min(100, ((c.love - c.level_love) / Math.max(1, span)) * 100)
+      : 100;
+    return (
+      <div className="love-card">
+        <div className="love-pair">
+          <Avatar user={farm.user} size={40} />
+          <span className="love-heart" aria-hidden>
+            <Emo e="💞" />
+          </span>
+          <Avatar user={c.partner} size={40} />
+        </div>
+        <b className="love-names">
+          Bạn & {displayName(c.partner)}
+        </b>
+        <span className="love-level">
+          Cấp {c.level} · {c.level_name}
+        </span>
+        <span className="quest-bar love-bar" title={`${c.love} điểm thân mật`}>
+          <i style={{ width: `${pct}%` }} />
+        </span>
+        <small className="love-hint">
+          {c.next_love
+            ? `${c.love}/${c.next_love} thân mật · lên cấp cả hai nhận ${30 * (c.level + 1)} xu`
+            : `${c.love} thân mật · cấp cao nhất rồi 💍`}
+        </small>
+        <small className="love-hint">
+          Tưới giúp +2 · bắt sâu +3 · ghé vườn +2/ngày · tặng quà (còn{" "}
+          {c.gifts_left ?? 0} lần hôm nay)
+        </small>
+        <div className="love-actions">
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            onClick={() => onVisit(c.partner.id)}
+          >
+            Ghé vườn
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={busy || !c.gifts_left}
+            onClick={onGift}
+          >
+            <Emo e="🎁" /> Tặng quà
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm${sure ? " btn-danger" : ""}`}
+            disabled={busy}
+            onClick={() => (sure ? onBreakUp() : setSure(true))}
+          >
+            {sure ? "Chắc chưa? Bấm lần nữa" : "Chia tay"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="love-card is-single">
+      {reqs.map((r) => (
+        <div key={r.user.id} className="love-request">
+          <Avatar user={r.user} size={34} />
+          <span>
+            <b>{displayName(r.user)}</b> ngỏ lời kết đôi với bạn <Emo e="💌" />
+          </span>
+          <div className="love-actions">
+            <button
+              type="button"
+              className="btn btn-sm btn-primary"
+              disabled={busy}
+              onClick={() => onRespond(r.user.id, true)}
+            >
+              Nhận lời
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={busy}
+              onClick={() => onRespond(r.user.id, false)}
+            >
+              Từ chối
+            </button>
+          </div>
+        </div>
+      ))}
+      {farm.couple_sent && (
+        <div className="love-request">
+          <Avatar user={farm.couple_sent.user} size={34} />
+          <span>
+            Đang chờ <b>{displayName(farm.couple_sent.user)}</b> trả lời{" "}
+            <Emo e="💌" />
+          </span>
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={busy}
+            onClick={onCancelPropose}
+          >
+            Rút lời
+          </button>
+        </div>
+      )}
+      {reqs.length === 0 && !farm.couple_sent && (
+        <p className="love-empty">
+          <Emo e="💞" /> <b>Kết đôi:</b> ghé vườn một người rồi bấm{" "}
+          <b>Ngỏ lời</b>. Chăm vườn, tặng quà cho người thương để tăng thân
+          mật, lên cấp cả hai cùng nhận xu.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Tặng nông sản / sản phẩm trong kho cho người thương. */
+function GiftDialog({
+  farm,
+  busy,
+  onClose,
+  onGift,
+}: {
+  farm: FarmView;
+  busy: boolean;
+  onClose: () => void;
+  onGift: (item: string, qty: number) => void;
+}) {
+  const stock = farm.storage?.stock ?? {};
+  const items = (farm.items ?? []).filter((i) => (stock[i.id] ?? 0) > 0);
+  const [pick, setPick] = useState<string | null>(items[0]?.id ?? null);
+  const [qty, setQty] = useState(1);
+  const it = items.find((i) => i.id === pick);
+  const have = it ? (stock[it.id] ?? 0) : 0;
+  const n = Math.min(qty, have, 10);
+  const love = it ? Math.min(10, Math.max(1, Math.ceil((it.price * n) / 20))) : 0;
+  const partner = farm.couple?.partner;
+  return (
+    <Dialog
+      title={`Tặng quà cho ${partner ? displayName(partner) : "người thương"}`}
+      onClose={onClose}
+      className="farm-gift-dialog"
+    >
+      {items.length === 0 ? (
+        <p className="muted">
+          Kho đang trống. Thu hoạch hoặc nấu món ở xưởng rồi quay lại tặng nhé.
+        </p>
+      ) : (
+        <>
+          <ul className="gift-grid">
+            {items.map((i) => (
+              <li key={i.id}>
+                <button
+                  type="button"
+                  className={`gift-item${pick === i.id ? " is-on" : ""}`}
+                  onClick={() => {
+                    setPick(i.id);
+                    setQty((q) => Math.min(q, stock[i.id] ?? 1));
+                  }}
+                  title={i.name}
+                >
+                  <Emo e={i.emoji} />
+                  <small>×{stock[i.id]}</small>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {it && (
+            <div className="gift-qty">
+              <b>{it.name}</b>
+              <div className="gift-qty-btns">
+                {[1, 5, 10].map((q) => (
+                  <button
+                    key={q}
+                    type="button"
+                    className={`btn btn-sm${n === Math.min(q, have) && qty === q ? " btn-primary" : ""}`}
+                    disabled={q > have && q !== 1}
+                    onClick={() => setQty(q)}
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <p className="gift-note">
+            +{love} <Emo e="💗" /> thân mật · còn {farm.couple?.gifts_left ?? 0}{" "}
+            lần tặng hôm nay
+          </p>
+          <div className="farm-confirm-actions">
+            <button type="button" className="btn" onClick={onClose}>
+              Để sau
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy || !it || n < 1 || !farm.couple?.gifts_left}
+              onClick={() => it && onGift(it.id, n)}
+            >
+              Tặng {n} <Emo e={it?.emoji} />
+            </button>
+          </div>
+        </>
+      )}
+    </Dialog>
   );
 }
 
@@ -2160,7 +2527,7 @@ function MarketList({
    Nhật ký & xếp hạng
    ========================================================= */
 
-function logText(l: FarmLog, crops: Crop[]): string {
+function logText(l: FarmLog, crops: Crop[], items: Item[] = []): string {
   const who = displayName(l.actor);
   const crop = crops.find((c) => c.id === l.crop);
   const name = crop ? crop.name.toLowerCase() : "cây";
@@ -2170,9 +2537,19 @@ function logText(l: FarmLog, crops: Crop[]): string {
     case "bug":
       return `🐛 ${who} bắt sâu cho ${name} của bạn`;
     case "steal":
-      return `🫣 ${who} trộm ${l.xu ?? 0} xu ${name} của bạn`;
+      return `🫣 ${who} trộm 1 ${crop?.emoji ?? ""} ${name} của bạn`;
     case "dog":
       return `🐕 Chó đuổi ${who} chạy mất dép, bạn được ${l.xu ?? 10} xu`;
+    case "propose":
+      return `💌 ${who} ngỏ lời kết đôi với bạn`;
+    case "couple":
+      return `💞 ${who} và bạn đã thành một đôi`;
+    case "breakup":
+      return `💔 ${who} đã chia tay bạn`;
+    case "gift": {
+      const it = items.find((i) => i.id === l.crop);
+      return `🎁 ${who} tặng bạn ${l.xu ?? 1} ${it?.emoji ?? "📦"} ${it?.name.toLowerCase() ?? ""}`.trim();
+    }
   }
 }
 
@@ -2214,7 +2591,7 @@ function LogPanel({
             <Avatar user={l.actor} size={28} />
           </button>
           <span>
-            {emo(logText(l, farm.crops))}
+            {emo(logText(l, farm.crops, farm.items))}
             <small>{ago(l.at, now)}</small>
           </span>
         </li>

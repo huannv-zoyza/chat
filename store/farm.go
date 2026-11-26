@@ -232,6 +232,8 @@ type Gained struct {
 	XP      int64            `json:"xp"`
 	LevelUp int              `json:"level_up,omitempty"`
 	Items   map[string]int64 `json:"items,omitempty"`
+	Love    int64            `json:"love,omitempty"`    // điểm thân mật vừa cộng (kết đôi)
+	LoveUp  int              `json:"love_up,omitempty"` // cấp thân mật mới nếu vừa lên cấp
 }
 
 type FarmView struct {
@@ -270,6 +272,13 @@ type FarmView struct {
 	Recipes []Recipe `json:"recipes,omitempty"`
 	// Vùng cố định không xây đè được (chỉ khi me), để chọn chỗ đặt công trình.
 	Blocked []Rect `json:"blocked,omitempty"`
+
+	// Kết đôi (farm_couple.go): couple ai xem cũng thấy; couple_requests / couple_sent chỉ khi me;
+	// couple_state chỉ khi xem vườn người khác: partner | can_propose | sent | incoming | "" (đã có đôi).
+	Couple         *Couple         `json:"couple,omitempty"`
+	CoupleRequests []CoupleRequest `json:"couple_requests,omitempty"`
+	CoupleSent     *CoupleRequest  `json:"couple_sent,omitempty"`
+	CoupleState    string          `json:"couple_state,omitempty"`
 }
 
 type Neighbor struct {
@@ -280,6 +289,7 @@ type Neighbor struct {
 	Stealable int              `json:"stealable"`
 	NeedsHelp int              `json:"needs_help"`
 	Dog       bool             `json:"dog"`
+	Partner   bool             `json:"partner,omitempty"` // người thương của người xem
 }
 
 type LeaderRow struct {
@@ -290,7 +300,8 @@ type LeaderRow struct {
 
 // FarmResult: kết quả một hành động, để controller dựng FarmView và bắn sự kiện.
 type FarmResult struct {
-	OwnerID int64     // nông trại vừa bị tác động
+	OwnerID int64     // nông trại vừa bị tác động (trả FarmView của vườn này)
+	Notify  int64     // người nhận farm.updated {log} nếu khác OwnerID (vd. tặng quà cho người thương)
 	Gained  *Gained   // nil nếu hành động không đem lại gì
 	Dog     *bool     // chỉ có khi trộm
 	Log     *LogEntry // có khi người khác tác động lên nông trại của OwnerID
@@ -881,6 +892,11 @@ func (s *Store) FarmWater(ctx context.Context, actorID, ownerID int64, idx int) 
 			return err
 		}
 		res.Gained = &Gained{Xu: FarmHelpWaterXu, XP: FarmHelpXP, LevelUp: lv}
+		love, up, err := op.addLove(actorID, ownerID, LoveWater)
+		if err != nil {
+			return err
+		}
+		gainLove(&res.Gained, love, up)
 		actor, err := farmUser(ctx, op.tx, actorID)
 		if err != nil {
 			return err
@@ -930,6 +946,11 @@ func (s *Store) FarmBug(ctx context.Context, actorID, ownerID int64, idx int) (F
 			return err
 		}
 		res.Gained = &Gained{Xu: FarmHelpBugXu, XP: FarmHelpXP, LevelUp: lv}
+		love, up, err := op.addLove(actorID, ownerID, LoveBug)
+		if err != nil {
+			return err
+		}
+		gainLove(&res.Gained, love, up)
 		actor, err := farmUser(ctx, op.tx, actorID)
 		if err != nil {
 			return err
@@ -948,6 +969,11 @@ func (s *Store) FarmSteal(ctx context.Context, thiefID, ownerID int64, idx int) 
 	res.Wallets, err = s.farmTx(ctx, func(op *farmOp) error {
 		if thiefID == ownerID {
 			return ErrFarmOwnSteal
+		}
+		if ok, err := partners(ctx, op.tx, thiefID, ownerID); err != nil {
+			return err
+		} else if ok {
+			return ErrFarmStealPartner
 		}
 		owner, err := farmUser(ctx, op.tx, ownerID)
 		if err != nil {
@@ -1160,6 +1186,9 @@ func (s *Store) FarmVisit(ctx context.Context, viewerID, ownerID int64) (FarmVie
 				return err
 			}
 			if n, _ := r.RowsAffected(); n > 0 {
+				if _, _, err := op.addLove(viewerID, ownerID, LoveVisit); err != nil {
+					return err
+				}
 				return op.bump(viewerID, "visit", 1)
 			}
 			return nil
@@ -1229,6 +1258,14 @@ func (s *Store) GetFarm(ctx context.Context, ownerID, viewerID int64) (FarmView,
 	}
 	if err := s.fillFarmV2(ctx, &v, ownerID, f, now); err != nil {
 		return FarmView{}, err
+	}
+	if err := s.fillCouple(ctx, &v, ownerID, viewerID, day); err != nil {
+		return FarmView{}, err
+	}
+	if v.CoupleState == "partner" { // không trộm vườn người thương
+		for i := range v.Plots {
+			v.Plots[i].CanSteal = false
+		}
 	}
 	if !me {
 		return v, nil
@@ -1350,6 +1387,10 @@ func (s *Store) FarmNeighbors(ctx context.Context, viewerID int64) ([]Neighbor, 
 		return nil, err
 	}
 	stealsLeft := int(max(0, FarmStealsPerDay-tries))
+	couple, coupled, err := coupleOf(ctx, s.db, viewerID)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.db.QueryContext(ctx, `SELECT user_id, `+plotColumns+` FROM farm_plots`)
 	if err != nil {
 		return nil, err
@@ -1375,7 +1416,8 @@ func (s *Store) FarmNeighbors(ctx context.Context, viewerID int64) ([]Neighbor, 
 		if u.ID == viewerID {
 			continue
 		}
-		n := Neighbor{User: u, Level: levelFor(farms[i].XP), XP: farms[i].XP, Dog: farms[i].DogUntil > now}
+		n := Neighbor{User: u, Level: levelFor(farms[i].XP), XP: farms[i].XP, Dog: farms[i].DogUntil > now,
+			Partner: coupled && couple.Partner == u.ID}
 		for j := range plots[u.ID] {
 			p := &plots[u.ID][j]
 			if p.Idx >= farms[i].Plots {
@@ -1385,7 +1427,7 @@ func (s *Store) FarmNeighbors(ctx context.Context, viewerID int64) ([]Neighbor, 
 			if v.State == stateRipe {
 				n.Ripe++
 			}
-			if v.CanSteal {
+			if v.CanSteal && !n.Partner {
 				n.Stealable++
 			}
 			if v.CanWater || v.CanBug {

@@ -313,3 +313,26 @@ khói bếp) và `recipes: {id, name, emoji, inputs: {item, qty}[], time_sec, pr
   FarmView thêm `blocked: {x, y, w, d}[]` (chỉ khi `me`) để giao diện tô xanh / đỏ lúc chọn chỗ.
 - Giao diện: bấm xây hoặc "Đổi chỗ" thì hiện bản nháp công trình trên bản đồ; kéo bản nháp hoặc chạm chỗ khác để
   dời, rồi bấm "Xây ở đây" / "Đặt ở đây".
+
+# Phần 4: Kết đôi
+
+## 11. Kết đôi và độ thân mật
+
+- Hai người dùng thật **độc thân** kết đôi được. Ghé vườn người kia, bấm "Ngỏ lời" (`POST /api/farm/couple/propose
+  {user_id}`); mỗi người chỉ có **một** lời ngỏ đang chờ (ngỏ người mới thì thay lời cũ); người kia đã ngỏ lời
+  với mình trước thì **thành đôi luôn**. Người nhận trả lời `POST /api/farm/couple/respond {user_id, accept}`.
+  Rút lời ngỏ: `DELETE /api/farm/couple/propose`. Thành đôi thì mọi lời ngỏ liên quan tới hai người bị xoá.
+- Mỗi người **một đôi**. Chia tay (`DELETE /api/farm/couple`): điểm thân mật mất hết, cả hai độc thân lại.
+- **Điểm thân mật** (của cả cặp) tăng khi: tưới giúp người thương **+2**, bắt sâu giúp **+3**, ghé vườn người
+  thương lần đầu trong ngày **+2**, tặng quà (`POST /api/farm/couple/gift {item, qty}`): chuyển 1–10 đơn vị một
+  món trong kho mình sang kho người thương (kho người kia phải đủ chỗ), tối đa **3 lần/ngày**, điểm =
+  `ceil(giá trị / 20)` trong khoảng 1..10.
+- **Cấp thân mật** theo điểm `[0, 20, 60, 120, 200, 320, 480, 700, 1000]`: Mới quen, Cảm nắng, Hẹn hò, Thân thiết,
+  Yêu nhau, Gắn bó, Tri kỷ, Vợ chồng son, Bách niên giai lão. Lên cấp n: **mỗi người** nhận `30 × n` xu.
+- Không trộm được vườn người thương ("Ai nỡ trộm vườn người thương 💕").
+- Nhật ký / farm.updated: `propose` (ai đó ngỏ lời), `couple` (thành đôi), `breakup`, `gift` (`crop` = món, `xu` =
+  số lượng).
+- FarmView: `couple: {partner, love, level, level_name, level_love, next_love, since, gifts_left?}` (ai xem cũng
+  thấy; `gifts_left` chỉ chủ vườn); chủ vườn có thêm `couple_requests: {user, at}[]` và `couple_sent`; xem vườn
+  người khác có `couple_state`: `partner` | `can_propose` | `sent` | `incoming` | không có (một trong hai đã có
+  đôi). `gained` thêm `love`, `love_up`. `neighbors[].partner`.

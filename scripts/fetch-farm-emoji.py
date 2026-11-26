@@ -25,6 +25,8 @@ EMOJI = (
     " 🏚️ 📦 🪧 🔨 📋 🛒 🏡 🏠 📜 🏆 🔒 🧺 🫣 🎉 👀 😅 ⏱️ 📭 🎁 🔥 🟫 🛖 🗑️ 💨 🥇 🥈 🥉"
     # xưởng chế biến: món và biểu tượng
     " 🥗 🍿 🍙 🍮 🥤 🍕 🍧 🧥 🥧 🍲 🍳 🏭 ♨️"
+    # kết đôi, chọn chỗ xây
+    " 💞 💌 💔 💗 💍 🚧 👆 🌱"
 ).split()
 
 # Tên thư mục trong repo khác tên Unicode
@@ -51,6 +53,13 @@ NAMES = {
     "💨": "Dashing away",
     "🍕": "Pizza",
     "♨️": "Hot springs",
+    "💞": "Revolving hearts",
+    "💌": "Love letter",
+    "💔": "Broken heart",
+    "💗": "Growing heart",
+    "💍": "Ring",
+    "🚧": "Construction",
+    "👆": "Backhand index pointing up",
 }
 
 REPO = "https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets/"

@@ -16499,3 +16499,202 @@ button.villager:focus-visible .villager-name {
   justify-content: center;
   text-align: center;
 }
+
+/* ---------- kết đôi ---------- */
+.iso-sign.is-love rect {
+  fill: #ffe3ee;
+  stroke: #b8326a;
+  filter: drop-shadow(0 3px 0 #b8326a);
+}
+.iso-sign.is-love text {
+  fill: #8a1f4c;
+}
+.farm-pop.is-love {
+  color: #ffd1e3;
+  text-shadow:
+    0 2px 0 #8a1f4c,
+    2px 0 0 #8a1f4c,
+    -2px 0 0 #8a1f4c,
+    0 -2px 0 #8a1f4c;
+}
+.farm-couple-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  align-self: center;
+  margin-left: 0.5rem;
+  padding: 0.4rem 0.9rem;
+  border: 3px solid #8a1f4c;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ff8fb8, #e8508a);
+  box-shadow: 0 3px 0 #8a1f4c;
+  color: #fff;
+  font-size: var(--step--1);
+  font-weight: 900;
+  text-shadow: 0 1px 0 rgb(0 0 0 / 0.25);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.farm-couple-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.farm-couple-btn.is-sent {
+  border-color: #c98aa5;
+  background: #fff0f6;
+  box-shadow: none;
+  color: #8a1f4c;
+  text-shadow: none;
+  cursor: default;
+}
+@media (max-width: 960px) {
+  .farm-banner {
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+  .farm-couple-btn {
+    margin-left: 0;
+    padding: 0.3rem 0.75rem;
+    border-width: 2px;
+    font-size: var(--step--2);
+  }
+}
+.love-card {
+  display: grid;
+  justify-items: center;
+  gap: 0.35rem;
+  padding: 0.9rem 0.8rem;
+  border: 2px solid #f2b3cb;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #fff0f6, #fffdf6);
+  box-shadow: 0 3px 0 #f2b3cb;
+  text-align: center;
+}
+.love-card.is-single {
+  justify-items: stretch;
+  text-align: left;
+}
+.love-pair {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.love-heart {
+  font-size: 1.6rem;
+  animation: love-beat 1.4s ease-in-out infinite;
+}
+@keyframes love-beat {
+  0%,
+  100% {
+    scale: 1;
+  }
+  15% {
+    scale: 1.18;
+  }
+  30% {
+    scale: 0.96;
+  }
+}
+.love-names {
+  color: var(--ink-brown);
+  font-weight: 900;
+}
+.love-level {
+  padding: 0.1rem 0.6rem;
+  border-radius: 999px;
+  background: #e8508a;
+  color: #fff;
+  font-size: var(--step--2);
+  font-weight: 900;
+}
+.love-bar {
+  width: 100%;
+}
+.love-bar i {
+  background: linear-gradient(180deg, #ff9cc2, #e8508a);
+}
+.love-hint {
+  color: var(--muted);
+  font-size: var(--step--2);
+  font-weight: 600;
+}
+.love-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.35rem;
+}
+.love-request {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.love-request > span {
+  flex: 1 1 9rem;
+  min-width: 0;
+  font-size: var(--step--1);
+}
+.love-request + .love-request {
+  padding-top: 0.5rem;
+  border-top: 1px dashed #f2b3cb;
+}
+.love-empty {
+  margin: 0;
+  color: var(--ink-brown);
+  font-size: var(--step--1);
+  line-height: 1.5;
+}
+.gift-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(3.6rem, 1fr));
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.gift-item {
+  display: grid;
+  justify-items: center;
+  gap: 0.1rem;
+  width: 100%;
+  padding: 0.4rem 0.2rem;
+  border: 2px solid #ead7b0;
+  border-radius: 12px;
+  background: #fffdf6;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+.gift-item small {
+  color: var(--muted);
+  font-size: var(--step--2);
+  font-weight: 800;
+}
+.gift-item.is-on {
+  border-color: #e8508a;
+  background: #fff0f6;
+  box-shadow: 0 0 0 2px #ffc2d9;
+}
+.gift-qty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.gift-qty-btns {
+  display: flex;
+  gap: 0.3rem;
+}
+.gift-note {
+  margin: 0.6rem 0 0;
+  color: #8a1f4c;
+  font-size: var(--step--1);
+  font-weight: 800;
+}
+@media (prefers-reduced-motion: reduce) {
+  .love-heart {
+    animation: none;
+  }
+}

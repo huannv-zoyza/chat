@@ -16187,12 +16187,6 @@ button.villager:focus-visible .villager-name {
 .farm-panel {
   scroll-margin-top: calc(var(--farm-hud-h, 0px) + 0.5rem);
 }
-.iso-lot {
-  fill: rgb(150 100 50 / 0.28);
-  stroke: rgb(255 255 255 / 0.8);
-  stroke-width: 3;
-  stroke-dasharray: 10 7;
-}
 .iso-sign.is-locked rect {
   fill: #f1e6cf;
 }

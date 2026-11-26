@@ -1498,17 +1498,6 @@ export function FarmWorld({
         {/* nền chuồng */}
         <Pen r={COOP} fill="#d8bf86" />
         <Pen r={PASTURE} fill="#9fd36a" />
-        {me && !placing && !kitchenOn && (
-          <polygon
-            className="iso-lot"
-            points={poly([
-              pt(KITCHEN.gx - 0.2, KITCHEN.gy - 0.2),
-              pt(KITCHEN.gx + KITCHEN.w + 0.2, KITCHEN.gy - 0.2),
-              pt(KITCHEN.gx + KITCHEN.w + 0.2, KITCHEN.gy + KITCHEN.d + 0.2),
-              pt(KITCHEN.gx - 0.2, KITCHEN.gy + KITCHEN.d + 0.2),
-            ])}
-          />
-        )}
         {/* ao */}
         <Pond />
         <g>{path}</g>

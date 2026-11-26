@@ -329,16 +329,26 @@ function MessageList({ channel }: { channel: Channel }) {
     prev.current = { channelId: channel.id, firstKey, lastKey, height: el.scrollHeight };
   });
 
-  // Ảnh không rõ kích thước (webp…) tải xong làm danh sách cao lên: đang ở cuối thì bám theo.
-  // Sự kiện "load" không nổi bọt nên phải bắt ở pha capture bằng listener gốc.
+  // Nội dung tự cao lên sau khi đã cuộn xuống cuối mà danh sách không vẽ lại: xem trước link, video
+  // nhúng, ảnh không rõ kích thước, thẻ ván game, phông chữ… Đang ở cuối thì bám theo xuống cuối.
+  // (Trước chỉ bắt sự kiện "load" của ảnh nên mở kênh có link ở cuối là bị kẹt giữa chừng.)
+  const contentRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el) return;
-    const onLoad = () => {
+    const content = contentRef.current;
+    if (!el || !content) return;
+    const follow = () => {
       if (atBottom.current) el.scrollTop = el.scrollHeight;
+      if (prev.current) prev.current.height = el.scrollHeight;
     };
-    el.addEventListener("load", onLoad, true);
-    return () => el.removeEventListener("load", onLoad, true);
+    const ro = new ResizeObserver(follow);
+    ro.observe(content);
+    // sự kiện "load" không nổi bọt nên bắt ở pha capture (ảnh trong khung cố định không đổi cỡ khối)
+    el.addEventListener("load", follow, true);
+    return () => {
+      ro.disconnect();
+      el.removeEventListener("load", follow, true);
+    };
   }, []);
 
   const onScroll = () => {
@@ -383,8 +393,9 @@ function MessageList({ channel }: { channel: Channel }) {
         aria-live="polite"
         aria-relevant="additions"
       >
-        <div ref={topRef} />
-        {!cm.loaded ? (
+        <div ref={contentRef}>
+          <div ref={topRef} />
+          {!cm.loaded ? (
           <MessagesSkeleton />
         ) : (
           <>
@@ -457,6 +468,7 @@ function MessageList({ channel }: { channel: Channel }) {
             })}
           </>
         )}
+        </div>
       </div>
 
       {showJump && (

@@ -175,12 +175,18 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
     return stateRef.current.activeId === channelId && document.hasFocus() && !document.hidden;
   }, []);
 
-  const markActiveRead = useCallback(() => {
+  /**
+   * Đánh dấu đã đọc kênh đang mở tới tin mới nhất. latestId: tin mới nhất vừa tải về. Ngay sau
+   * dispatch "messages.loaded", stateRef vẫn là trạng thái cũ (chưa vẽ lại) nên danh sách còn rỗng:
+   * không truyền latestId thì không gửi "đã đọc" lên máy chủ, chỉ xoá số chưa đọc trên máy mình, và
+   * tải lại trang là kênh hiện chưa đọc lại.
+   */
+  const markActiveRead = useCallback((latestId?: number) => {
     const s = stateRef.current;
     if (s.activeId === null) return;
     const items = channelMessages(s, s.activeId).items;
-    const last = items[items.length - 1];
-    if (last) socketRef.current?.markRead(s.activeId, last.id);
+    const last = Math.max(latestId ?? 0, items[items.length - 1]?.id ?? 0);
+    if (last > 0) socketRef.current?.markRead(s.activeId, last);
     dispatch({ type: "channel.read", channelId: s.activeId });
   }, []);
 
@@ -190,7 +196,7 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
         const res = await api.messages(channelId);
         dispatch({ type: "messages.loaded", channelId, messages: res.messages, hasMore: res.has_more, older: false });
         if (res.reads) dispatch({ type: "reads.set", channelId, reads: res.reads });
-        if (isViewing(channelId)) markActiveRead();
+        if (isViewing(channelId)) markActiveRead(res.messages.reduce((mx, m) => Math.max(mx, m.id), 0));
       } catch (err) {
         console.error("tải tin nhắn:", err);
       }

@@ -173,6 +173,8 @@ export class ChatSocket {
   private outbox: Extract<ClientRequest, { type: "message.send" }>[] = [];
   /** Tin đã gửi, đang chờ server xác nhận: client_id -> timer. */
   private awaitingAck = new Map<string, number>();
+  /** "đã đọc" chưa gửi được (socket chưa mở): kênh → tin mới nhất đã đọc */
+  private pendingReads = new Map<number, number>();
 
   constructor(private url: string) {}
 
@@ -315,8 +317,24 @@ export class ChatSocket {
     }
   }
 
+  /**
+   * Báo đã đọc tới messageId. Chưa kết nối xong (vừa tải lại trang: tin nhắn thường về trước socket)
+   * thì giữ lại và gửi ngay khi kết nối mở, không thì máy chủ không bao giờ biết là đã đọc và lần tải
+   * trang sau kênh lại hiện chưa đọc.
+   */
   markRead(channelId: number, messageId: number) {
-    if (this.status === "open") this.rawSend({ type: "read", channel_id: channelId, message_id: messageId });
+    if (this.status === "open" && this.rawSend({ type: "read", channel_id: channelId, message_id: messageId })) {
+      this.pendingReads.delete(channelId);
+      return;
+    }
+    this.pendingReads.set(channelId, Math.max(messageId, this.pendingReads.get(channelId) ?? 0));
+  }
+
+  private flushReads() {
+    for (const [channelId, messageId] of this.pendingReads) {
+      if (!this.rawSend({ type: "read", channel_id: channelId, message_id: messageId })) return;
+      this.pendingReads.delete(channelId);
+    }
   }
 
   /* ---------- Nội bộ ---------- */
@@ -359,6 +377,7 @@ export class ChatSocket {
         this.attempt = 0;
         this.setStatus("open");
         this.flushOutbox();
+        this.flushReads();
       } else if (ev.type === "message.new" && ev.client_id) {
         this.resolveAck(ev.client_id);
       } else if (ev.type === "error" && ev.client_id) {

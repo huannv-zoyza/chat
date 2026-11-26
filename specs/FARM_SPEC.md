@@ -266,3 +266,35 @@ type Order = { slot: number; id?: number; items?: {item:string; qty:number}[]; x
 
 `gained` có thêm `items?: Record<string, number>` khi vật vào kho (thu hoạch / thu sản phẩm / trộm).
 `crops[].sell` giữ nguyên (giá cả vụ); giá đơn vị lấy từ `items[].price`.
+
+# Phần 3: Xưởng chế biến
+
+Tham khảo Hay Day (tiệm bánh, máy làm bơ...): nguyên liệu trong kho → món giá cao hơn, có thời gian chờ.
+
+## 9. Xưởng chế biến
+
+- Công trình `kitchen` "Xưởng chế biến" trong danh sách chuồng trại: giá xây **500**, cần **cấp 4**; có **2 lò**,
+  nâng cấp (**1200** xu) lên **4 lò**. `buildings[].cap` của xưởng là số lò.
+- Mỗi lò nấu một món một lúc. **Bắt đầu** (`POST /api/farm/craft {recipe}`): đủ cấp, đã xây xưởng, còn lò trống
+  (lấy lò trống có số nhỏ nhất), đủ nguyên liệu trong kho thì trừ nguyên liệu ngay, lò bận tới `ready_at`.
+  Thiếu thì lỗi "Thiếu 1 rau muống, 1 cà rốt trong kho để làm Salad rau." (liệt kê mọi thứ thiếu).
+- **Lấy món** (`POST /api/farm/craft/collect {slot} | {all:true}`): món đã xong vào kho (1 đơn vị, cần chỗ
+  trong kho; `all` lấy lần lượt tới khi kho đầy) và cộng XP của món. Lò trống lại.
+- Món làm ra là `Item` kind `goods` (cùng id với món), bán ở kho theo `price`, không mua ở chợ được.
+- Đơn hàng xe tải chỉ đòi món chế biến khi đã xây xưởng; mỗi đơn nhiều nhất **một** loại món, 1–2 món.
+
+| id | Món | emoji | Nguyên liệu | Thời gian | Giá | XP | Cấp |
+|---|---|---|---|---|---|---|---|
+| `salad` | Salad rau | 🥗 | 2 rau muống, 1 cà rốt, 1 cà chua | 15 phút | 60 | 4 | 4 |
+| `bap_rang` | Bắp rang | 🍿 | 2 ngô | 30 phút | 88 | 6 | 4 |
+| `com_nam` | Cơm nắm | 🍙 | 2 lúa | 45 phút | 148 | 9 | 5 |
+| `banh_flan` | Bánh flan | 🍮 | 2 trứng, 1 sữa | 1 giờ | 180 | 11 | 5 |
+| `sinh_to` | Sinh tố dâu | 🥤 | 2 dâu tây, 1 sữa | 1,5 giờ | 345 | 18 | 6 |
+| `pizza` | Pizza | 🍕 | 1 lúa, 2 cà chua, 1 phô mai | 2 giờ | 275 | 16 | 6 |
+| `kem_dua` | Kem dưa hấu | 🍧 | 1 dưa hấu, 2 sữa | 2 giờ | 425 | 22 | 7 |
+| `ao_len` | Áo len | 🧥 | 3 len | 3 giờ | 495 | 26 | 7 |
+| `banh_bi_ngo` | Bánh bí ngô | 🥧 | 1 bí ngô, 2 trứng, 1 sữa | 4 giờ | 500 | 30 | 8 |
+| `sup_nam` | Súp nấm | 🍲 | 1 nấm truffle, 1 sữa, 2 cà rốt | 3 giờ | 475 | 28 | 9 |
+
+FarmView thêm: `jobs: {slot, recipe, ready_at, state: "working"|"ready"}[]` (luôn có, hàng xóm cũng thấy để vẽ
+khói bếp) và `recipes: {id, name, emoji, inputs: {item, qty}[], time_sec, price, xp, level}[]` (chỉ khi `me`).

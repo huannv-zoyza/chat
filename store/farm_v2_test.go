@@ -201,7 +201,7 @@ func TestFarmBuildingsAndAnimals(t *testing.T) {
 	e := newFarmEnv(t)
 	alice, bob := e.user("alice"), e.user("bob")
 	v := e.view(alice.ID, alice.ID)
-	if len(v.Buildings) != 2 || v.Buildings[0].ID != "coop" || v.Buildings[0].Built || v.Buildings[0].Cap != 4 ||
+	if len(v.Buildings) != 3 || v.Buildings[0].ID != "coop" || v.Buildings[0].Built || v.Buildings[0].Cap != 4 ||
 		v.Buildings[0].Price != 200 || v.Buildings[0].Level != 2 || v.Buildings[0].UpgradePrice != nil ||
 		v.Buildings[1].ID != "pasture" || v.Buildings[1].Cap != 3 || v.Buildings[1].Price != 600 || v.Buildings[1].Level != 3 ||
 		v.Animals == nil || len(v.Animals) != 0 || len(v.AnimalKinds) != 5 {
@@ -423,10 +423,31 @@ func TestFarmCatalogItems(t *testing.T) {
 		"rau_muong": {5, 1}, "ca_rot": {10, 1}, "ca_chua": {19, 2}, "bi_ngo": {214, 8},
 		"trung": {22, 2}, "sua": {75, 3}, "pho_mai": {95, 5}, "len": {110, 4}, "nam": {220, 6},
 	}
-	if len(store.Items) != 13 {
+	if len(store.Items) != 13+len(store.Recipes) {
 		t.Fatalf("items: %d", len(store.Items))
 	}
+	byID := map[string]store.Item{}
 	for _, it := range store.Items {
+		byID[it.ID] = it
+	}
+	// món chế biến: nguyên liệu có thật, mở trước món, và món đáng giá ≥ 1,4 lần nguyên liệu
+	for _, r := range store.Recipes {
+		var cost int64
+		for _, in := range r.Inputs {
+			it, ok := byID[in.Item]
+			if !ok || it.Kind == "goods" || it.Level > r.Level {
+				t.Fatalf("recipe %s input %+v", r.ID, in)
+			}
+			cost += it.Price * in.Qty
+		}
+		if g := byID[r.ID]; g.Kind != "goods" || g.Price != r.Price || r.Price*10 < cost*14 {
+			t.Fatalf("recipe %s: price %d, inputs %d", r.ID, r.Price, cost)
+		}
+	}
+	for _, it := range store.Items {
+		if it.Kind == "goods" {
+			continue
+		}
 		if w, ok := want[it.ID]; ok && (it.Price != w[0] || int64(it.Level) != w[1]) {
 			t.Fatalf("item %+v, want %v", it, w)
 		}
@@ -830,5 +851,158 @@ func TestFarmStarterFeedAndMarketBuy(t *testing.T) {
 	}
 	if _, err := st.FarmBuyItem(ctx, u.ID, "ca_rot", 50); err == nil {
 		t.Fatal("bought more than the wallet holds")
+	}
+}
+
+// Xưởng chế biến (§9): xây ở cấp 4, 2 lò, nguyên liệu trừ ngay, món vào kho khi lấy, nâng cấp 4 lò.
+func TestFarmKitchen(t *testing.T) {
+	e := newFarmEnv(t)
+	alice, bob := e.user("alice"), e.user("bob")
+	_, err := e.st.FarmCraft(e.ctx, alice.ID, "salad")
+	wantErr(t, err, store.ErrFarmNoKitchen)
+	_, err = e.st.FarmBuild(e.ctx, alice.ID, "kitchen")
+	wantMsg(t, err, "Cần đạt cấp 4 mới xây được Xưởng chế biến.")
+	e.setXP(alice.ID, 160) // cấp 4
+	if _, err := e.st.FarmBuild(e.ctx, alice.ID, "kitchen"); err != nil {
+		t.Fatal(err)
+	}
+	v := e.view(alice.ID, alice.ID)
+	if b := v.Buildings[2]; b.ID != "kitchen" || !b.Built || b.Cap != 2 || b.UpgradePrice == nil || *b.UpgradePrice != 1200 {
+		t.Fatalf("kitchen: %+v", b)
+	}
+	if len(v.Recipes) != len(store.Recipes) || v.Jobs == nil || len(v.Jobs) != 0 {
+		t.Fatalf("recipes %d jobs %v", len(v.Recipes), v.Jobs)
+	}
+	_, err = e.st.FarmCraft(e.ctx, alice.ID, "banh_mi_que")
+	wantErr(t, err, store.ErrFarmUnknownRecipe)
+	_, err = e.st.FarmCraft(e.ctx, alice.ID, "com_nam")
+	wantMsg(t, err, "Cần đạt cấp 5 mới làm được Cơm nắm.")
+	e.setStock(alice.ID, "rau_muong", 1)
+	_, err = e.st.FarmCraft(e.ctx, alice.ID, "salad")
+	wantMsg(t, err, "Thiếu 1 rau muống, 1 cà rốt, 1 cà chua trong kho để làm Salad rau.")
+	if e.storage(alice.ID).Stock["rau_muong"] != 1 {
+		t.Fatal("failed craft took stock")
+	}
+
+	e.setStock(alice.ID, "rau_muong", 4)
+	e.setStock(alice.ID, "ca_rot", 2)
+	e.setStock(alice.ID, "ca_chua", 2)
+	e.setStock(alice.ID, "ngo", 2)
+	for _, r := range []string{"salad", "bap_rang"} {
+		if _, err := e.st.FarmCraft(e.ctx, alice.ID, r); err != nil {
+			t.Fatal(r, err)
+		}
+	}
+	_, err = e.st.FarmCraft(e.ctx, alice.ID, "salad")
+	wantErr(t, err, store.ErrFarmKitchenBusy)
+	if st := e.storage(alice.ID); st.Used != 4 || st.Stock["ngo"] != 0 || st.Stock["rau_muong"] != 2 {
+		t.Fatalf("stock after craft: %+v", st)
+	}
+	v = e.view(alice.ID, alice.ID)
+	if len(v.Jobs) != 2 || v.Jobs[0].Recipe != "salad" || v.Jobs[0].State != "working" || v.Jobs[1].Slot != 1 {
+		t.Fatalf("jobs: %+v", v.Jobs)
+	}
+	// hàng xóm thấy lò đang nấu nhưng không thấy danh mục món
+	if nv := e.view(alice.ID, bob.ID); len(nv.Jobs) != 2 || nv.Recipes != nil {
+		t.Fatalf("neighbour view: %+v %+v", nv.Jobs, nv.Recipes)
+	}
+	_, err = e.st.FarmCraftCollect(e.ctx, alice.ID, 0, false)
+	wantErr(t, err, store.ErrFarmJobNotReady)
+	_, err = e.st.FarmCraftCollect(e.ctx, alice.ID, 0, true)
+	wantErr(t, err, store.ErrFarmNothingCraft)
+
+	e.advance(15 * time.Minute) // salad xong, bắp rang chưa
+	if v := e.view(alice.ID, alice.ID); v.Jobs[0].State != "ready" || v.Jobs[1].State != "working" {
+		t.Fatalf("jobs after 15m: %+v", v.Jobs)
+	}
+	res, err := e.st.FarmCraftCollect(e.ctx, alice.ID, 0, true)
+	if err != nil || res.Gained.Items["salad"] != 1 || res.Gained.XP != 4 {
+		t.Fatalf("collect: %v %+v", err, res.Gained)
+	}
+	_, err = e.st.FarmCraftCollect(e.ctx, alice.ID, 0, false)
+	wantErr(t, err, store.ErrFarmNoJob)
+	// lò 0 trống lại: nấu tiếp được
+	if _, err := e.st.FarmCraft(e.ctx, alice.ID, "salad"); err != nil {
+		t.Fatal(err)
+	}
+	if v := e.view(alice.ID, alice.ID); len(v.Jobs) != 2 || v.Jobs[0].Slot != 0 || v.Jobs[0].Recipe != "salad" {
+		t.Fatalf("refilled: %+v", v.Jobs)
+	}
+
+	// kho đầy: không lấy được món
+	e.advance(30 * time.Minute)
+	e.setStock(alice.ID, "lua", 60-e.storage(alice.ID).Used)
+	_, err = e.st.FarmCraftCollect(e.ctx, alice.ID, 1, false)
+	wantErr(t, err, store.ErrFarmStorageFull)
+	e.setStock(alice.ID, "lua", 0)
+	res, err = e.st.FarmCraftCollect(e.ctx, alice.ID, 0, true)
+	if err != nil || res.Gained.Items["salad"] != 1 || res.Gained.Items["bap_rang"] != 1 || res.Gained.XP != 10 {
+		t.Fatalf("collect all: %v %+v", err, res.Gained)
+	}
+	// món bán được ở kho theo giá món
+	before := e.balance(alice.ID)
+	if _, err := e.st.FarmSell(e.ctx, alice.ID, "bap_rang", 1, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.balance(alice.ID) - before; got != 88 {
+		t.Fatalf("sold popcorn for %d", got)
+	}
+
+	// nâng cấp: 4 lò
+	e.st.TransferCoins(e.ctx, bob.ID, alice.ID, 900, "")
+	if _, err := e.st.FarmUpgradeBuilding(e.ctx, alice.ID, "kitchen"); err != nil {
+		t.Fatal(err)
+	}
+	if b := e.view(alice.ID, alice.ID).Buildings[2]; b.Cap != 4 || b.UpgradePrice != nil {
+		t.Fatalf("upgraded kitchen: %+v", b)
+	}
+}
+
+// Món chế biến chỉ vào đơn hàng khi đã có xưởng, mỗi đơn nhiều nhất một loại món.
+func TestFarmOrdersGoods(t *testing.T) {
+	e := newFarmEnv(t)
+	alice := e.user("alice")
+	e.setXP(alice.ID, 1900) // cấp 10: mọi món đã mở
+	goodsIn := func() (lines, orders int) {
+		for _, o := range e.view(alice.ID, alice.ID).Orders {
+			n := 0
+			for _, it := range o.Items {
+				for _, r := range store.Recipes {
+					if r.ID == it.Item {
+						n++
+					}
+				}
+			}
+			if n > 1 {
+				t.Fatalf("order with %d goods: %+v", n, o.Items)
+			}
+			lines += n
+			if n > 0 {
+				orders++
+			}
+		}
+		return
+	}
+	reroll := func() {
+		for _, o := range e.view(alice.ID, alice.ID).Orders {
+			if o.ID != 0 {
+				if _, err := e.st.FarmDiscardOrder(e.ctx, alice.ID, o.ID); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		e.advance(store.FarmOrderAfterDiscard)
+	}
+	// cuộn cuối danh mục (0.99) luôn trúng món cuối cùng: súp nấm nếu có xưởng
+	e.setRoll(0.99)
+	if n, _ := goodsIn(); n != 0 {
+		t.Fatal("goods in orders without a kitchen")
+	}
+	if _, err := e.st.FarmBuild(e.ctx, alice.ID, "kitchen"); err != nil {
+		t.Fatal(err)
+	}
+	reroll()
+	if n, o := goodsIn(); n != 3 || o != 3 {
+		t.Fatalf("goods lines %d in %d orders", n, o)
 	}
 }

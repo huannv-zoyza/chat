@@ -24,6 +24,7 @@ import {
   type Plot,
   type PlotState,
   type Quest,
+  type Recipe,
 } from "../lib/farm";
 import { playCoinSound } from "../lib/sound";
 import { useChat } from "../state/ChatProvider";
@@ -100,11 +101,19 @@ export function FarmOverlay() {
 }
 
 type Tab =
-  "quests" | "orders" | "storage" | "shop" | "neighbors" | "log" | "top";
+  | "quests"
+  | "orders"
+  | "storage"
+  | "kitchen"
+  | "shop"
+  | "neighbors"
+  | "log"
+  | "top";
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "quests", label: "Nhiệm vụ", icon: "📋" },
   { id: "orders", label: "Đơn hàng", icon: "🚚" },
   { id: "storage", label: "Kho", icon: "🏚️" },
+  { id: "kitchen", label: "Xưởng", icon: "🍳" },
   { id: "shop", label: "Cửa hàng", icon: "🛒" },
   { id: "neighbors", label: "Hàng xóm", icon: "🏡" },
   { id: "log", label: "Nhật ký", icon: "📜" },
@@ -379,6 +388,44 @@ function Farm() {
     );
   };
 
+  /** Điện thoại: bảng mục nằm dưới cánh đồng, bấm nhà kho / xe tải / xưởng thì cuộn xuống cho thấy. */
+  const scrollToPanel = () => {
+    if (window.innerWidth > 960) return;
+    window.setTimeout(
+      () =>
+        document
+          .querySelector(".farm-panel")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      30,
+    );
+  };
+  const openTab = (t: Tab) => {
+    setTab(t);
+    scrollToPanel();
+  };
+
+  /** Bấm xưởng trên bản đồ: có món xong thì lấy hết, chưa xây thì xây (đủ cấp), còn lại mở tab Xưởng. */
+  const onKitchen = () => {
+    if (!view?.me || busy) return;
+    const k = view.buildings?.find((b) => b.id === "kitchen");
+    const done = (view.jobs ?? []).filter(
+      (j) => new Date(j.ready_at).getTime() <= now,
+    ).length;
+    setTab("kitchen");
+    if (done > 0) return void act(-1, () => api.farmCraftCollect("all"));
+    if (k && !k.built && view.level >= k.level)
+      return void act(
+        -1,
+        () => api.farmBuild("kitchen"),
+        "Đã xây xưởng chế biến 🍳 Chọn món để nấu nhé!",
+      );
+    if (k && !k.built)
+      return showToast(
+        `Lên cấp ${k.level} để xây xưởng chế biến: biến rau củ, trứng, sữa thành món giá cao.`,
+      );
+    scrollToPanel();
+  };
+
   const tod = timeOfDay(new Date(now));
   const ripeCount = view
     ? view.plots.filter((p) => liveState(p, now).state === "ripe").length
@@ -497,8 +544,9 @@ function Farm() {
                   onExpand={() =>
                     void act(-1, () => api.farmExpand(), "Đã mở rộng ruộng 🌱")
                   }
-                  onStorage={() => setTab("storage")}
-                  onOrders={() => setTab("orders")}
+                  onStorage={() => openTab("storage")}
+                  onOrders={() => openTab("orders")}
+                  onKitchen={onKitchen}
                 />
                 <div className="farm-pops" aria-hidden>
                   {pops.map((x) => (
@@ -556,6 +604,9 @@ function Farm() {
                   )}
                   {t.id === "quests" && mine && questsReady(mine) > 0 && (
                     <i className="farm-tab-count">{questsReady(mine)}</i>
+                  )}
+                  {t.id === "kitchen" && mine && jobsReady(mine, now) > 0 && (
+                    <i className="farm-tab-count">{jobsReady(mine, now)}</i>
                   )}
                 </button>
               ))}
@@ -617,6 +668,37 @@ function Farm() {
                   }
                 />
               )}
+              {tab === "kitchen" && mine && (
+                <KitchenPanel
+                  farm={mine}
+                  now={now}
+                  busy={busy}
+                  onBuild={() =>
+                    void act(
+                      -1,
+                      () => api.farmBuild("kitchen"),
+                      "Đã xây xưởng chế biến 🍳",
+                    )
+                  }
+                  onUpgrade={() =>
+                    void act(
+                      -1,
+                      () => api.farmUpgradeBuilding("kitchen"),
+                      "Xưởng có thêm lò 🔥",
+                    )
+                  }
+                  onCraft={(r) =>
+                    void act(
+                      -1,
+                      () => api.farmCraft(r.id),
+                      `Đang làm ${r.name.toLowerCase()} ${r.emoji}`,
+                    )
+                  }
+                  onCollect={(slot) =>
+                    void act(-1, () => api.farmCraftCollect(slot))
+                  }
+                />
+              )}
               {tab === "shop" && mine && (
                 <ShopPanel
                   farm={mine}
@@ -629,7 +711,9 @@ function Farm() {
                     void act(
                       -1,
                       () => api.farmUpgradeBuilding(id),
-                      "Chuồng đã rộng hơn 🔨",
+                      id === "kitchen"
+                        ? "Xưởng có thêm lò 🔥"
+                        : "Chuồng đã rộng hơn 🔨",
                     )
                   }
                   onBuyAnimal={(k) =>
@@ -871,6 +955,10 @@ const QUEST_ICON: Record<string, string> = {
   earn: "🪙",
   visit: "🏡",
 };
+
+/** Số lò của xưởng đã nấu xong, chờ lấy. */
+const jobsReady = (f: FarmView, now: number) =>
+  (f.jobs ?? []).filter((j) => new Date(j.ready_at).getTime() <= now).length;
 
 const questsReady = (f: FarmView) =>
   (f.quests ?? []).filter((q) => q.done && !q.claimed).length +
@@ -1237,15 +1325,21 @@ function ShopPanel({
         return (
           <div key={b.id} className="shop-card">
             <span className="shop-icon" aria-hidden>
-              <Emo e={b.id === "coop" ? "🛖" : "🌿"} />
+              <Emo
+                e={b.id === "coop" ? "🛖" : b.id === "kitchen" ? "🍳" : "🌿"}
+              />
             </span>
             <div>
               <b>{b.name}</b>
               <small>
                 {emo(
-                  b.built
-                    ? `Đang nuôi ${count}/${b.cap} con${b.upgrade_price ? ` · nới chuồng ${b.upgrade_price} 🪙` : ""}`
-                    : `Xây để nuôi ${b.id === "coop" ? "gà" : "bò, dê, cừu, heo"} · cần cấp ${b.level}`,
+                  b.id === "kitchen"
+                    ? b.built
+                      ? `${b.cap} lò nấu${b.upgrade_price ? ` · thêm 2 lò ${b.upgrade_price} 🪙` : ""}`
+                      : `Nấu món giá cao từ nông sản, trứng, sữa · cần cấp ${b.level}`
+                    : b.built
+                      ? `Đang nuôi ${count}/${b.cap} con${b.upgrade_price ? ` · nới chuồng ${b.upgrade_price} 🪙` : ""}`
+                      : `Xây để nuôi ${b.id === "coop" ? "gà" : "bò, dê, cừu, heo"} · cần cấp ${b.level}`,
                 )}
               </small>
             </div>
@@ -1257,7 +1351,8 @@ function ShopPanel({
                   disabled={busy || balance < b.upgrade_price}
                   onClick={() => onUpgradeBuilding(b.id)}
                 >
-                  Nới · {b.upgrade_price} <Emo e="🪙" />
+                  {b.id === "kitchen" ? "+2 lò" : "Nới"} · {b.upgrade_price}{" "}
+                  <Emo e="🪙" />
                 </button>
               ) : (
                 <span className="quest-claimed">Tối đa</span>
@@ -1379,6 +1474,214 @@ function ShopPanel({
             ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/* =========================================================
+   Xưởng chế biến
+   ========================================================= */
+
+function KitchenPanel({
+  farm,
+  now,
+  busy,
+  onBuild,
+  onUpgrade,
+  onCraft,
+  onCollect,
+}: {
+  farm: FarmView;
+  now: number;
+  busy: boolean;
+  onBuild: () => void;
+  onUpgrade: () => void;
+  onCraft: (r: Recipe) => void;
+  onCollect: (slot: number | "all") => void;
+}) {
+  const k = farm.buildings?.find((b) => b.id === "kitchen");
+  const recipes = farm.recipes ?? [];
+  if (!k || recipes.length === 0)
+    return (
+      <EmptyState icon="clock" title="Xưởng chưa mở">
+        Xưởng chế biến sẽ có sau khi máy chủ cập nhật.
+      </EmptyState>
+    );
+  const balance = farm.wallet?.balance ?? 0;
+  const stock = farm.storage?.stock ?? {};
+  const items = new Map((farm.items ?? []).map((i) => [i.id, i]));
+  const byRecipe = new Map(recipes.map((r) => [r.id, r]));
+  const jobs = new Map((farm.jobs ?? []).map((j) => [j.slot, j]));
+  const free = k.built ? k.cap - jobs.size : 0;
+  const done = jobsReady(farm, now);
+  const sorted = [...recipes].sort(
+    (a, b) =>
+      Number(a.level > farm.level) - Number(b.level > farm.level) ||
+      a.level - b.level ||
+      a.time_sec - b.time_sec,
+  );
+  const buildBlock =
+    farm.level < k.level
+      ? `Cần cấp ${k.level}`
+      : balance < k.price
+        ? "Thiếu xu"
+        : null;
+  return (
+    <div className="farm-section">
+      {!k.built ? (
+        <div className="shop-card kitchen-intro">
+          <span className="shop-icon" aria-hidden>
+            <Emo e="🍳" />
+          </span>
+          <div>
+            <b>Xưởng chế biến</b>
+            <small>
+              Biến rau củ, trứng, sữa trong kho thành món ngon bán giá gấp
+              rưỡi, xe tải còn đặt mua giá cao hơn. Có 2 lò, nâng lên 4 lò.
+            </small>
+          </div>
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            disabled={!!buildBlock || busy}
+            onClick={onBuild}
+          >
+            {emo(buildBlock ?? `Xây · ${k.price} 🪙`)}
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="kitchen-head">
+            <b>
+              Lò nấu · {jobs.size}/{k.cap} đang dùng
+            </b>
+            {done > 0 ? (
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                disabled={busy}
+                onClick={() => onCollect("all")}
+              >
+                Lấy hết {done} món
+              </button>
+            ) : k.upgrade_price ? (
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={busy || balance < k.upgrade_price}
+                onClick={onUpgrade}
+              >
+                +2 lò · {k.upgrade_price} <Emo e="🪙" />
+              </button>
+            ) : null}
+          </div>
+          <ul className="kitchen-slots">
+            {Array.from({ length: k.cap }, (_, slot) => {
+              const j = jobs.get(slot);
+              const r = j && byRecipe.get(j.recipe);
+              if (!j || !r)
+                return (
+                  <li key={slot} className="kitchen-slot is-empty">
+                    <span aria-hidden>
+                      <Emo e="♨️" />
+                    </span>
+                    <small>Lò trống</small>
+                  </li>
+                );
+              const left = new Date(j.ready_at).getTime() - now;
+              const pct = Math.min(
+                100,
+                Math.max(0, 100 - (left / (r.time_sec * 1000)) * 100),
+              );
+              return left <= 0 ? (
+                <li key={slot} className="kitchen-slot is-ready">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => onCollect(slot)}
+                    title={`Lấy ${r.name.toLowerCase()} vào kho`}
+                  >
+                    <span aria-hidden>
+                      <Emo e={r.emoji} />
+                    </span>
+                    <small>Lấy</small>
+                  </button>
+                </li>
+              ) : (
+                <li key={slot} className="kitchen-slot" title={r.name}>
+                  <span aria-hidden>
+                    <Emo e={r.emoji} />
+                  </span>
+                  <span className="quest-bar">
+                    <i style={{ width: `${pct}%` }} />
+                  </span>
+                  <small>{formatLeft(left)}</small>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+
+      <h3 className="farm-h">Món chế biến</h3>
+      <ul className="recipe-list">
+        {sorted.map((r) => {
+          const locked = farm.level < r.level;
+          const short = r.inputs.some((i) => (stock[i.item] ?? 0) < i.qty);
+          const block = locked
+            ? `Cấp ${r.level}`
+            : !k.built
+              ? "Chưa có xưởng"
+              : short
+                ? "Thiếu"
+                : free <= 0
+                  ? "Lò bận"
+                  : null;
+          return (
+            <li
+              key={r.id}
+              className={`recipe-card${locked ? " is-locked" : ""}${!block ? " is-ready" : ""}`}
+            >
+              <span className="stock-emoji" aria-hidden>
+                <Emo e={r.emoji} />
+              </span>
+              <div className="recipe-main">
+                <b>{r.name}</b>
+                <ul className="recipe-inputs">
+                  {r.inputs.map((i) => {
+                    const have = stock[i.item] ?? 0;
+                    const it = items.get(i.item);
+                    return (
+                      <li
+                        key={i.item}
+                        className={have >= i.qty ? "is-ok" : ""}
+                        title={it?.name}
+                      >
+                        <Emo e={it?.emoji ?? "📦"} />
+                        <b>
+                          {Math.min(have, i.qty)}/{i.qty}
+                        </b>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <small>
+                  <Emo e="⏱️" /> {formatGrow(r.time_sec)} · {r.price}{" "}
+                  <Emo e="🪙" /> · +{r.xp} XP
+                </small>
+              </div>
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                disabled={!!block || busy}
+                onClick={() => onCraft(r)}
+              >
+                {block ?? "Nấu"}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

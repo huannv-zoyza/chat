@@ -43,6 +43,7 @@ const TIERS: { cols: number; rows: number }[] = [
 ];
 const COOP = { gx: 2, gy: 2, w: 5, d: 4.4 };
 const PASTURE = { gx: 2, gy: 9, w: 5.4, d: 5.6 };
+const KITCHEN = { gx: 12.6, gy: 12.4, w: 2.6, d: 1.9 }; // xưởng chế biến, dưới ruộng
 
 /** Danh mục vật nuôi dự phòng: xem vườn hàng xóm máy chủ không gửi animal_kinds. */
 const ANIMAL_FALLBACK: Record<
@@ -864,6 +865,7 @@ export type WorldHandlers = {
   onPlot: (p: Plot) => void;
   onAnimal: (a: Animal) => void;
   onBuild: (id: "coop" | "pasture") => void;
+  onKitchen: () => void;
   onExpand: () => void;
   onStorage: () => void;
   onOrders: () => void;
@@ -895,6 +897,13 @@ export function FarmWorld({
   );
   const coop = view.buildings?.find((b) => b.id === "coop");
   const pasture = view.buildings?.find((b) => b.id === "pasture");
+  const kitchen = view.buildings?.find((b) => b.id === "kitchen");
+  const jobs = view.jobs ?? [];
+  const kitchenOn = (kitchen?.built ?? false) || jobs.length > 0;
+  const jobDone = jobs.filter(
+    (j) => j.state === "ready" || new Date(j.ready_at).getTime() <= now,
+  );
+  const jobWorking = jobs.length > jobDone.length;
 
   // ô ruộng theo bậc mở rộng; bậc kế tiếp hiện thành vùng đất "chờ mở"
   const owned = view.plots.length;
@@ -1085,13 +1094,7 @@ export function FarmWorld({
   add(
     11.5,
     2.2,
-    <Barn
-      key="barn"
-      x={10}
-      y={1}
-      onClick={me ? h.onStorage : undefined}
-      label={me ? "🏚️ Kho" : undefined}
-    />,
+    <Barn key="barn" x={10} y={1} onClick={me ? h.onStorage : undefined} />,
   );
   add(14.2, 2.4, <Silo key="silo" x={14.2} y={2.4} />);
   // xe tải đơn hàng
@@ -1243,6 +1246,19 @@ export function FarmWorld({
     <Fence key="pasF" {...PASTURE} part="front" />,
   );
 
+  // xưởng chế biến (chưa xây: chỉ có nền đất chờ xây ở vườn mình)
+  if (kitchenOn)
+    add(
+      KITCHEN.gx + KITCHEN.w,
+      KITCHEN.gy + KITCHEN.d,
+      <Workshop
+        key="kitchen"
+        working={jobWorking}
+        onClick={me ? h.onKitchen : undefined}
+        label={me ? "🍳 Xưởng" : undefined}
+      />,
+    );
+
   things.sort((a, b) => a.depth - b.depth);
 
   // nhãn đồng hồ / "Trộm!" và bong bóng vật nuôi: vẽ sau cùng để không vật nào che
@@ -1283,6 +1299,69 @@ export function FarmWorld({
       />,
     ),
   );
+
+  // biển "Kho" của nhà kho: vẽ ở lớp trên cùng, không bị tháp silo che mất
+  if (me) {
+    const [bx, by] = pt(13, 2.1);
+    hud.push(
+      <g
+        key="barn-label"
+        className="iso-click"
+        onClick={h.onStorage}
+        transform={`translate(${bx + 46}, ${by - 70})`}
+      >
+        <rect
+          x={-34}
+          y={-14}
+          width={68}
+          height={24}
+          rx={12}
+          fill="#fff8e6"
+          stroke="#7a4b22"
+          strokeWidth={2.5}
+        />
+        <SvgLabel
+          text="🏚️ Kho"
+          y={3}
+          fontSize={12}
+          fontWeight={800}
+          fill="#4a2f14"
+        />
+      </g>,
+    );
+  }
+  if (kitchenOn && jobDone.length > 0) {
+    const [bx, by] = pt(
+      KITCHEN.gx + KITCHEN.w / 2,
+      KITCHEN.gy + KITCHEN.d / 2,
+      100,
+    );
+    const r = jobDone[0].recipe;
+    hud.push(
+      <g
+        key="kitchen-ready"
+        className={`iso-bubble is-ready${me ? " iso-click" : ""}`}
+        transform={`translate(${bx}, ${by})`}
+        onClick={me ? h.onKitchen : undefined}
+      >
+        <circle r={18} />
+        <SvgEmo
+          e={view.recipes?.find((x) => x.id === r)?.emoji ?? "🍳"}
+          x={0}
+          y={7}
+          size={20}
+        />
+        {jobDone.length > 1 && (
+          <g transform="translate(15, -13)" className="iso-count">
+            <circle r={9} />
+            <text y={4} textAnchor="middle">
+              {jobDone.length}
+            </text>
+          </g>
+        )}
+      </g>,
+    );
+  }
 
   /* ---- mặt đất ---- */
   const ground: ReactNode[] = [];
@@ -1370,6 +1449,17 @@ export function FarmWorld({
         {/* nền chuồng */}
         <Pen r={COOP} fill="#d8bf86" />
         <Pen r={PASTURE} fill="#9fd36a" />
+        {me && !kitchenOn && (
+          <polygon
+            className="iso-lot"
+            points={poly([
+              pt(KITCHEN.gx - 0.2, KITCHEN.gy - 0.2),
+              pt(KITCHEN.gx + KITCHEN.w + 0.2, KITCHEN.gy - 0.2),
+              pt(KITCHEN.gx + KITCHEN.w + 0.2, KITCHEN.gy + KITCHEN.d + 0.2),
+              pt(KITCHEN.gx - 0.2, KITCHEN.gy + KITCHEN.d + 0.2),
+            ])}
+          />
+        )}
         {/* ao */}
         <Pond />
         <g>{path}</g>
@@ -1402,6 +1492,18 @@ export function FarmWorld({
             r={PASTURE}
             text={`Xây đồng cỏ · ${pasture?.price ?? 600}🪙`}
             onClick={() => h.onBuild("pasture")}
+          />
+        )}
+        {me && !kitchenOn && (
+          <BuildSign
+            r={KITCHEN}
+            text={
+              view.level < (kitchen?.level ?? 4)
+                ? `Xưởng chế biến · cấp ${kitchen?.level ?? 4}`
+                : `Xây xưởng · ${kitchen?.price ?? 500}🪙`
+            }
+            locked={view.level < (kitchen?.level ?? 4)}
+            onClick={h.onKitchen}
           />
         )}
         {expandArea && view.expansion?.next && (
@@ -1438,6 +1540,145 @@ export function FarmWorld({
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * Xưởng chế biến: nhà tường kem mái cam, có ống khói. Lò đang nấu thì khói bay; có món xong thì bong
+ * bóng món nảy trên mái (vẽ ở lớp hud).
+ */
+function Workshop({
+  working,
+  onClick,
+  label,
+}: {
+  working: boolean;
+  onClick?: () => void;
+  label?: string;
+}) {
+  const { gx: x, gy: y, w, d } = KITCHEN;
+  const h = 40;
+  const rh = 28;
+  const P = (a: number, b: number, z: number) => pt(x + a, y + b, z);
+  // ống khói trên mảng mái sau
+  const ch = P(w * 0.72, d * 0.3, h + rh * 0.55);
+  return (
+    <g className={onClick ? "iso-click" : undefined} onClick={onClick}>
+      <Shadow x={x + w * 0.55} y={y + d * 0.65} r={1.45} o={0.2} />
+      <Box
+        x={x}
+        y={y}
+        w={w}
+        d={d}
+        h={h}
+        top="#f6e7c8"
+        left="#f3dfb6"
+        right="#dcc193"
+        stroke="#9a7444"
+      />
+      {/* cửa sổ có rèm, mặt trước-trái */}
+      {[0.25, 0.7].map((a) => (
+        <polygon
+          key={a}
+          points={poly([
+            P(w * a - 0.22, d, 14),
+            P(w * a + 0.22, d, 14),
+            P(w * a + 0.22, d, 30),
+            P(w * a - 0.22, d, 30),
+          ])}
+          fill={working ? "#ffd56b" : "#a9d8f2"}
+          stroke="#9a7444"
+          strokeWidth={1.5}
+        />
+      ))}
+      {/* cửa ra vào mặt phải */}
+      <polygon
+        points={poly([
+          P(w, d * 0.32, 0),
+          P(w, d * 0.68, 0),
+          P(w, d * 0.68, 26),
+          P(w, d * 0.32, 26),
+        ])}
+        fill="#8a5a2b"
+        stroke="#5e3b18"
+        strokeWidth={1.5}
+      />
+      {/* ống khói (sau mái) */}
+      <rect
+        x={ch[0] - 7}
+        y={ch[1] - 26}
+        width={14}
+        height={30}
+        fill="#b5503a"
+        stroke="#7b2f20"
+        strokeWidth={1.2}
+      />
+      {/* mái: mảng sau, đầu hồi, mảng trước */}
+      <polygon
+        points={poly([
+          P(-0.1, -0.1, h),
+          P(w + 0.1, -0.1, h),
+          P(w + 0.1, d / 2, h + rh),
+          P(-0.1, d / 2, h + rh),
+        ])}
+        fill="#c4562e"
+      />
+      <polygon
+        points={poly([
+          P(w + 0.1, -0.1, h),
+          P(w + 0.1, d + 0.1, h),
+          P(w + 0.1, d / 2, h + rh),
+        ])}
+        fill="#f0d9ac"
+        stroke="#9a7444"
+        strokeWidth={1.2}
+      />
+      <polygon
+        points={poly([
+          P(-0.1, d + 0.1, h),
+          P(w + 0.1, d + 0.1, h),
+          P(w + 0.1, d / 2, h + rh),
+          P(-0.1, d / 2, h + rh),
+        ])}
+        fill="#e06b3a"
+        stroke="#a8431f"
+        strokeWidth={1.2}
+      />
+      {working && (
+        <g className="iso-smoke" aria-hidden>
+          {[0, 1, 2].map((i) => (
+            <circle
+              key={i}
+              cx={ch[0]}
+              cy={ch[1] - 30}
+              r={7 + i * 2}
+              style={{ animationDelay: `${i * 0.9}s` }}
+            />
+          ))}
+        </g>
+      )}
+      {label && (
+        <g transform={`translate(${P(w, d, 0)[0] + 30}, ${P(w, d, 0)[1] - 6})`}>
+          <rect
+            x={-40}
+            y={-14}
+            width={80}
+            height={24}
+            rx={12}
+            fill="#fff8e6"
+            stroke="#7a4b22"
+            strokeWidth={2.5}
+          />
+          <SvgLabel
+            text={label}
+            y={3}
+            fontSize={12}
+            fontWeight={800}
+            fill="#4a2f14"
+          />
+        </g>
+      )}
+    </g>
   );
 }
 
@@ -1502,20 +1743,22 @@ function BuildSign({
   r,
   text,
   onClick,
+  locked = false,
 }: {
   r: { gx: number; gy: number; w: number; d: number };
   text: string;
   onClick: () => void;
+  locked?: boolean;
 }) {
   const [cx, cy] = pt(r.gx + r.w / 2, r.gy + r.d / 2);
   return (
     <g
-      className="iso-click iso-sign is-build"
+      className={`iso-click iso-sign is-build${locked ? " is-locked" : ""}`}
       transform={`translate(${cx}, ${cy})`}
       onClick={onClick}
     >
       <rect x={-78} y={-15} width={156} height={28} rx={14} />
-      <SvgLabel text={`🔨 ${text}`} y={4} />
+      <SvgLabel text={`${locked ? "🔒" : "🔨"} ${text}`} y={4} />
     </g>
   );
 }

@@ -82,6 +82,28 @@ export type FarmView = {
   animals?: Animal[];
   orders?: Order[];
   expansion?: { tier: number; plots: number; next?: { plots: number; price: number; level: number } | null };
+  // phần 3: xưởng chế biến (jobs ai xem cũng có, recipes chỉ chủ vườn)
+  jobs?: Job[];
+  recipes?: Recipe[];
+};
+
+export type Recipe = {
+  id: string;
+  name: string;
+  emoji: string;
+  inputs: { item: string; qty: number }[];
+  time_sec: number;
+  price: number;
+  xp: number;
+  level: number;
+};
+
+/** Một lò của xưởng đang nấu / đã xong (lò trống không có trong danh sách). */
+export type Job = {
+  slot: number;
+  recipe: string;
+  ready_at: string;
+  state: "working" | "ready";
 };
 
 export type Item = {
@@ -89,14 +111,14 @@ export type Item = {
   name: string;
   emoji: string;
   price: number;
-  kind: "crop" | "product";
+  kind: "crop" | "product" | "goods";
   level: number;
   /** Giá mua 1 đơn vị ở chợ (nông sản làm thức ăn); không có: không bán ở chợ. */
   buy_price?: number;
 };
 
 export type Building = {
-  id: "coop" | "pasture";
+  id: "coop" | "pasture" | "kitchen";
   name: string;
   built: boolean;
   cap: number;

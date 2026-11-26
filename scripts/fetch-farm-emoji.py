@@ -23,6 +23,8 @@ EMOJI = (
     " 🥬 🥕 🍅 🌽 🍓 🍉 🎃 🥚 🥛 🧀 🧶 🍄 🌱 🌿 🥀 🐛 💧 ⭐ 🍽️"
     # biển, nhãn, giao diện
     " 🏚️ 📦 🪧 🔨 📋 🛒 🏡 🏠 📜 🏆 🔒 🧺 🫣 🎉 👀 😅 ⏱️ 📭 🎁 🔥 🟫 🛖 🗑️ 💨 🥇 🥈 🥉"
+    # xưởng chế biến: món và biểu tượng
+    " 🥗 🍿 🍙 🍮 🥤 🍕 🍧 🧥 🥧 🍲 🍳 🏭 ♨️"
 ).split()
 
 # Tên thư mục trong repo khác tên Unicode
@@ -47,6 +49,8 @@ NAMES = {
     "🎁": "Wrapped gift",
     "🟫": "Brown square",
     "💨": "Dashing away",
+    "🍕": "Pizza",
+    "♨️": "Hot springs",
 }
 
 REPO = "https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets/"
@@ -84,7 +88,12 @@ def main() -> int:
         if not p:
             missing.append(f"{e} ({name})")
             continue
-        img = Image.open(io.BytesIO(get(REPO + urllib.request.quote(p[len("assets/"):]))))
+        url = REPO + urllib.request.quote(p[len("assets/"):])
+        try:
+            img = Image.open(io.BytesIO(get(url)))
+        except Exception as err:  # noqa: BLE001 — một hình lỗi thì báo, vẫn tải các hình khác
+            missing.append(f"{e} ({url}: {err})")
+            continue
         img = img.convert("RGBA").resize((SIZE, SIZE), Image.LANCZOS)
         dst = os.path.join(OUT, code(e) + ".webp")
         img.save(dst, "WEBP", quality=88, method=6)

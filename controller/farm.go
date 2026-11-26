@@ -30,6 +30,8 @@ import (
 //	POST /api/farm/animals    {kind}       mua con vật
 //	POST /api/farm/animals/feed    {id} | {all: true}
 //	POST /api/farm/animals/collect {id} | {all: true}
+//	POST /api/farm/craft      {recipe}     nấu một món ở lò trống của xưởng
+//	POST /api/farm/craft/collect {slot} | {all: true}
 //	POST /api/farm/orders/{id}/deliver
 //	DELETE /api/farm/orders/{id}           huỷ đơn
 //
@@ -292,6 +294,29 @@ func (a *API) farmCollect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := a.store.FarmCollect(r.Context(), currentUser(r).ID, req.ID, req.All)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmCraft(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Recipe string `json:"recipe"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	res, err := a.store.FarmCraft(r.Context(), currentUser(r).ID, req.Recipe)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmCraftCollect(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Slot int  `json:"slot"`
+		All  bool `json:"all"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	res, err := a.store.FarmCraftCollect(r.Context(), currentUser(r).ID, req.Slot, req.All)
 	a.farmRespond(w, r, res, err)
 }
 

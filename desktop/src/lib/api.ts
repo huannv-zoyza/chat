@@ -615,6 +615,9 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
       request<import("./farm").FarmView>("POST", "/api/farm/animals/feed", id === "all" ? { all: true } : { id }),
     farmCollect: (id: number | "all") =>
       request<import("./farm").FarmView>("POST", "/api/farm/animals/collect", id === "all" ? { all: true } : { id }),
+    farmCraft: (recipe: string) => request<import("./farm").FarmView>("POST", "/api/farm/craft", { recipe }),
+    farmCraftCollect: (slot: number | "all") =>
+      request<import("./farm").FarmView>("POST", "/api/farm/craft/collect", slot === "all" ? { all: true } : { slot }),
     farmDeliver: (orderId: number) => request<import("./farm").FarmView>("POST", `/api/farm/orders/${orderId}/deliver`),
     farmDiscard: (orderId: number) => request<import("./farm").FarmView>("DELETE", `/api/farm/orders/${orderId}`),
     listIntegrations: (channelId: number) => request<Integration[]>("GET", `/api/channels/${channelId}/integrations`),

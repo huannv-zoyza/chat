@@ -15597,7 +15597,7 @@ button.villager:focus-visible .villager-name {
   top: 0;
 }
 
-/* bảng: 7 tab xếp 2 hàng */
+/* bảng: 8 tab xếp 2 hàng × 4 */
 .farm-tabs {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   row-gap: 0.15rem;
@@ -16179,5 +16179,201 @@ button.villager:focus-visible .villager-name {
   }
   .farm-home .emo {
     margin: 0;
+  }
+}
+
+/* ---------- xưởng chế biến ---------- */
+/* điện thoại: bấm xưởng / xe tải / nhà kho thì cuộn tới bảng, không để thanh HUD dính trên che mất */
+.farm-panel {
+  scroll-margin-top: calc(var(--farm-hud-h, 0px) + 0.5rem);
+}
+.iso-lot {
+  fill: rgb(150 100 50 / 0.28);
+  stroke: rgb(255 255 255 / 0.8);
+  stroke-width: 3;
+  stroke-dasharray: 10 7;
+}
+.iso-sign.is-locked rect {
+  fill: #f1e6cf;
+}
+.iso-sign.is-locked text {
+  fill: #7a6146;
+}
+.iso-smoke circle {
+  fill: rgb(240 240 240 / 0.85);
+  opacity: 0;
+  animation: iso-smoke 2.7s ease-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@keyframes iso-smoke {
+  0% {
+    opacity: 0;
+    translate: 0 6px;
+    scale: 0.5;
+  }
+  25% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    translate: 10px -46px;
+    scale: 1.5;
+  }
+}
+.iso-count circle {
+  fill: #e53935;
+  stroke: #fff;
+  stroke-width: 2;
+}
+.iso-count text {
+  fill: #fff;
+  font: 900 11px var(--font);
+}
+.kitchen-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: var(--ink-brown);
+}
+.kitchen-head b {
+  font-weight: 900;
+}
+.kitchen-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(4.6rem, 1fr));
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.kitchen-slot,
+.kitchen-slot.is-ready button {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 0.25rem;
+  min-height: 5.2rem;
+  padding: 0.45rem 0.4rem;
+  border: 2px solid #ead7b0;
+  border-radius: 14px;
+  background: #fffdf6;
+  font-size: 1.7rem;
+  line-height: 1;
+}
+.kitchen-slot small {
+  color: var(--muted);
+  font-size: var(--step--2);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.kitchen-slot .quest-bar {
+  width: 100%;
+  height: 0.5rem;
+}
+.kitchen-slot.is-empty {
+  border-style: dashed;
+  opacity: 0.75;
+}
+.kitchen-slot.is-empty .emo {
+  filter: grayscale(0.6);
+}
+.kitchen-slot.is-ready {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.kitchen-slot.is-ready button {
+  width: 100%;
+  height: 100%;
+  border-color: #e0a526;
+  background: #fff6c9;
+  box-shadow: 0 3px 0 #e0a526;
+  cursor: pointer;
+  animation: iso-bubble 1.2s ease-in-out infinite;
+}
+.kitchen-slot.is-ready small {
+  color: #8a5a00;
+}
+.recipe-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.recipe-card {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.6rem;
+  border: 2px solid #ead7b0;
+  border-radius: 14px;
+  background: #fffdf6;
+}
+.recipe-card.is-ready {
+  border-color: #9fd38a;
+  background: #f6fcf0;
+}
+.recipe-card.is-locked {
+  opacity: 0.6;
+}
+.recipe-main {
+  display: grid;
+  flex: 1;
+  gap: 0.2rem;
+  min-width: 0;
+}
+.recipe-main > b {
+  font-weight: 900;
+}
+.recipe-main > small {
+  color: var(--muted);
+  font-size: var(--step--2);
+  font-weight: 600;
+}
+.recipe-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.recipe-inputs li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.05rem 0.35rem 0.05rem 0.2rem;
+  border: 1.5px solid #f0c2b6;
+  border-radius: 999px;
+  background: #fff;
+  font-size: var(--step--2);
+}
+.recipe-inputs li b {
+  color: #c0392b;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+.recipe-inputs li.is-ok {
+  border-color: #b9e0a5;
+}
+.recipe-inputs li.is-ok b {
+  color: var(--leaf-dk);
+}
+.recipe-card .btn {
+  flex-shrink: 0;
+  min-width: 3.6rem;
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .iso-smoke circle,
+  .kitchen-slot.is-ready button {
+    animation: none;
+  }
+  .iso-smoke circle {
+    opacity: 0.6;
   }
 }

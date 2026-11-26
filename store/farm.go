@@ -264,6 +264,10 @@ type FarmView struct {
 	Animals     []Animal       `json:"animals"`
 	Orders      []Order        `json:"orders,omitempty"`
 	Expansion   Expansion      `json:"expansion"`
+
+	// Xưởng chế biến: jobs luôn có (lò đang nấu / đã xong), recipes chỉ khi me.
+	Jobs    []Job    `json:"jobs"`
+	Recipes []Recipe `json:"recipes,omitempty"`
 }
 
 type Neighbor struct {

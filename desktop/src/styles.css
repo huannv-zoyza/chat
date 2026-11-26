@@ -16484,13 +16484,18 @@ button.villager:focus-visible .villager-name {
     padding-inline: 0.55rem;
   }
 }
-/* thẻ giới thiệu xưởng: nút "Chọn chỗ xây" xuống dòng riêng, chữ không bị ép thành cột hẹp */
-.kitchen-intro {
+/* thẻ cửa hàng (mở rộng ruộng, chuồng, xưởng, chó): bảng bên hẹp, nút giá để bên phải ép chữ thành
+   cột 1–2 chữ mỗi dòng. Nút xuống dòng riêng, rộng hết thẻ. */
+.shop-card {
   flex-wrap: wrap;
+  row-gap: 0.55rem;
 }
-.kitchen-intro > div {
-  flex: 1 1 12rem;
+.shop-card > div {
+  flex: 1 1 10rem;
 }
-.kitchen-intro .btn {
+.shop-card > .btn,
+.shop-card > .quest-claimed {
   flex: 1 0 100%;
+  justify-content: center;
+  text-align: center;
 }

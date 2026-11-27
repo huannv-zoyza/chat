@@ -208,6 +208,69 @@ export type BauCuaState = {
   last_bust_amount?: number;
 };
 
+/* ---------- Poker Texas Hold'em (khớp game/poker.go) ---------- */
+
+/** Lá bài: hạng "23456789TJQKA" + chất "shdc", ví dụ "As", "Td". */
+export type PokerCard = string;
+
+export const POKER_BUY_INS = [100, 200, 500, 1000, 2000, 5000] as const;
+
+export type PokerPhase = "" | "preflop" | "flop" | "turn" | "river" | "showdown";
+
+export type PokerSeat = {
+  id: number;
+  stack: number;
+  bet: number;
+  in_hand: boolean;
+  folded: boolean;
+  all_in: boolean;
+  away: boolean;
+  out: boolean;
+  last?: string;
+  cards: number;
+  net: number;
+};
+
+export type PokerResult = {
+  pots: { amount: number; winners: number[]; hand?: string }[];
+  shown?: Record<string, PokerCard[]>;
+  hands?: Record<string, string>;
+  best?: Record<string, PokerCard[]>;
+  won: Record<string, number>;
+  showdown: boolean;
+  busted?: number[];
+};
+
+export type PokerState = {
+  opts: { buy_in: number; turn_seconds: number; blind_up: number };
+  phase: PokerPhase;
+  hand_no: number;
+  sb: number;
+  bb: number;
+  next_blinds: number;
+  button_id: number;
+  sb_id: number;
+  bb_id: number;
+  seats: PokerSeat[];
+  board: PokerCard[];
+  pot: number;
+  cur_bet: number;
+  turn_id: number;
+  result?: PokerResult;
+};
+
+export type PokerMe = {
+  hole: PokerCard[];
+  hand_name?: string;
+  to_call: number;
+  can_check: boolean;
+  can_call: boolean;
+  can_raise: boolean;
+  min_to: number;
+  max_to: number;
+  away: boolean;
+};
+
 export const GAME_INFO: Record<GameKind, { title: string; icon: string; players: string; blurb: string }> = {
   station: {
     title: "Trạm Vũ Trụ",
@@ -256,6 +319,12 @@ export const GAME_INFO: Record<GameKind, { title: string; icon: string; players:
     players: "2–10 người",
     blurb: "Đặt cược 6 con vật, cái xoay vòng, cháy túi thì vay ngân hàng. Cược bằng xu trong ví.",
   },
+  poker: {
+    title: "Poker Texas Hold'em",
+    icon: "🃏",
+    players: "2–9 người · cược xu",
+    blurb: "Hold'em không giới hạn, luật quốc tế. Mua vào bằng xu trong ví, ai giữ chip tới cuối ăn cả bàn. Có hướng dẫn cho người mới.",
+  },
 };
 
 /** Việc mình cần làm ngay trong ván (null nếu không có): dùng cho thông báo và nhãn "Tới lượt bạn". */
@@ -294,6 +363,12 @@ export function myTurn(g: GameView | undefined, meId: number): string | null {
       return s?.turn_player_id === meId ? "Tới lượt bạn đi" : null;
     }
 
+    case "poker": {
+      const s = g.state as PokerState | undefined;
+      const me = g.me as PokerMe | undefined;
+      if (me?.away) return "Bạn đang vắng mặt, bấm Quay lại";
+      return s?.turn_id === meId ? "Tới lượt bạn" : null;
+    }
     case "rps": {
       const i = g.players.findIndex((p) => p.id === meId);
       const s = g.state as RpsState | undefined;

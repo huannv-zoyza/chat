@@ -59,7 +59,7 @@ import {
   type FarmAutoSettings,
 } from "../lib/farmAuto";
 import { playCoinSound } from "../lib/sound";
-import { getXmasMusicPref, setXmasMusicPref, startXmasMusic, stopXmasMusic } from "../lib/xmasMusic";
+import { getXmasMusicPref, playXmasBell, setXmasMusicPref, startXmasMusic, stopXmasMusic } from "../lib/xmasMusic";
 import { useChat } from "../state/ChatProvider";
 import { Emo, emo } from "./Emoji";
 import { FarmWorld } from "./FarmWorld";
@@ -754,8 +754,15 @@ function Farm() {
                 className="farm-home"
                 aria-pressed={music}
                 onClick={() => {
-                  setMusic(!music);
-                  setXmasMusicPref(!music);
+                  const on = !music;
+                  setMusic(on);
+                  setXmasMusicPref(on);
+                  if (on) {
+                    // bắt đầu ngay trong cú bấm: Safari / iOS chỉ cho phát âm thanh trong thao tác của người dùng
+                    playXmasBell();
+                    startXmasMusic();
+                    showToast("🎵 Đã bật nhạc Noel. Không nghe thấy thì kiểm tra âm lượng máy hoặc tab trình duyệt.", "good");
+                  }
                 }}
                 title={music ? "Tắt nhạc Noel" : "Bật nhạc Noel"}
                 aria-label={music ? "Tắt nhạc Noel" : "Bật nhạc Noel"}

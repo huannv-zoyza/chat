@@ -21,7 +21,8 @@ const TUNE: [number, number][] = [
   [G, 1], [G, 1], [F, 1], [D, 1], [C, 4], [0, 4],
 ];
 const BEAT = 0.3; // giây mỗi phách
-const VOLUME = 0.05;
+// đo được đỉnh ~0,19 (các nốt chuông ngân chồng nhau), ngang tiếng xu 0,15; 0,05 trước đây quá nhỏ, loa laptop gần như không nghe thấy
+const VOLUME = 0.09;
 
 const hz = (midi: number) => 440 * 2 ** ((midi - 69) / 12);
 
@@ -38,17 +39,28 @@ function bell(ctx: AudioContext, out: AudioNode, midi: number, at: number, len: 
     o.frequency.value = hz(midi + 12) * mul;
     g.gain.setValueAtTime(0.0001, at);
     g.gain.exponentialRampToValueAtTime(gain, at + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001, at + Math.max(0.4, len * 1.6));
+    g.gain.exponentialRampToValueAtTime(0.0001, at + Math.max(0.8, len * 2.5)); // chuông ngân dài hơn
     o.connect(g).connect(out);
     o.start(at);
-    o.stop(at + Math.max(0.5, len * 1.7));
+    o.stop(at + Math.max(0.9, len * 2.6));
   }
 }
 
 let master: GainNode | null = null;
 let timer: number | null = null;
 
-/** Phát lặp giai điệu tới khi stopXmasMusic. */
+/** Một tiếng chuông xác nhận khi bật nhạc. */
+export function playXmasBell() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  const g = ctx.createGain();
+  g.gain.value = VOLUME;
+  g.connect(ctx.destination);
+  bell(ctx, g, 76, ctx.currentTime + 0.02, 0.6);
+  bell(ctx, g, 83, ctx.currentTime + 0.18, 0.8);
+}
+
+/** Phát lặp giai điệu tới khi stopXmasMusic. Gọi ngay trong cú bấm nút để Safari / iOS cho phát. */
 export function startXmasMusic() {
   if (timer !== null) return;
   const ctx = getAudioContext();

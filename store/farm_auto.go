@@ -23,6 +23,7 @@ type AutoOpts struct {
 type AutoReport struct {
 	Harvested int      `json:"harvested"`
 	Planted   int      `json:"planted"`
+	Watered   int      `json:"watered"`
 	Fed       int      `json:"fed"`
 	Fruits    int      `json:"fruits"`
 	Crafted   int      `json:"crafted"`
@@ -163,7 +164,19 @@ func (s *Store) FarmAuto(ctx context.Context, userID int64, o AutoOpts) (FarmRes
 			}
 		}
 
-		// 3. chăm chuồng gà rồi đồng cỏ
+		// 3. tưới mọi ô đang lớn (kể cả ô vừa gieo)
+		if err := op.step("Tưới", &r.Skipped, []error{ErrFarmNothingWater}, func() error {
+			n, err := op.waterAll(userID)
+			if err != nil {
+				return err
+			}
+			r.Watered += n
+			return nil
+		}); err != nil {
+			return err
+		}
+
+		// 4. chăm chuồng gà rồi đồng cỏ
 		for _, b := range []struct{ id, label string }{{"coop", "Chuồng gà"}, {"pasture", "Đồng cỏ"}} {
 			if err := op.step(b.label, &r.Skipped, []error{ErrFarmNothingTend, ErrFarmNoFeedStock}, func() error {
 				tg, err := op.tendBuilding(userID, b.id, o.BuyFeed)
@@ -180,7 +193,7 @@ func (s *Store) FarmAuto(ctx context.Context, userID int64, o AutoOpts) (FarmRes
 			}
 		}
 
-		// 4. hái cả vườn cây
+		// 5. hái cả vườn cây
 		if err := op.step("Vườn cây", &r.Skipped, nil, func() error {
 			items, xp, lv, err := op.harvestTrees(userID, now)
 			if err != nil {
@@ -195,7 +208,7 @@ func (s *Store) FarmAuto(ctx context.Context, userID int64, o AutoOpts) (FarmRes
 			return err
 		}
 
-		// 5. thu mọi món đã xong của xưởng và máy ép
+		// 6. thu mọi món đã xong của xưởng và máy ép
 		if err := op.step("Thu món", &r.Skipped, nil, func() error {
 			items, xp, lv, err := op.collectJobs(userID, "")
 			if err != nil {
@@ -210,7 +223,7 @@ func (s *Store) FarmAuto(ctx context.Context, userID int64, o AutoOpts) (FarmRes
 			return err
 		}
 
-		// 6. lấp lò theo công thức đã chọn
+		// 7. lấp lò theo công thức đã chọn
 		for _, f := range []struct{ recipe, building, label string }{
 			{o.KitchenRecipe, kitchenID, "Xưởng"}, {o.JuicerRecipe, juicerID, "Máy ép"}} {
 			if f.recipe == "" {
@@ -231,10 +244,11 @@ func (s *Store) FarmAuto(ctx context.Context, userID int64, o AutoOpts) (FarmRes
 			}
 		}
 
-		if r.Harvested+r.Planted+r.Fed+r.Fruits+r.Crafted+r.Collected == 0 {
+		if r.Harvested+r.Planted+r.Watered+r.Fed+r.Fruits+r.Crafted+r.Collected == 0 {
 			return ErrFarmNothingAuto
 		}
 		g.Planted = r.Planted
+		g.Watered = r.Watered
 		g.Xu = -r.Spent
 		g.Auto = r
 		res.Gained = g

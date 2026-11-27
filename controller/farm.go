@@ -194,11 +194,20 @@ func (a *API) farmClear(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) farmWater(w http.ResponseWriter, r *http.Request) {
-	req, ok := decodePlotReq(w, r, false)
+	req, ok := decodePlotReq(w, r, true)
 	if !ok {
 		return
 	}
 	me := currentUser(r).ID
+	if req.All {
+		if req.UserID > 0 && req.UserID != me {
+			writeError(w, http.StatusBadRequest, store.ErrFarmWaterAllOwn.Error())
+			return
+		}
+		res, err := a.store.FarmWaterAll(r.Context(), me)
+		a.farmRespond(w, r, res, err)
+		return
+	}
 	res, err := a.store.FarmWater(r.Context(), me, ownerOrMe(req.UserID, me), *req.Plot)
 	a.farmRespond(w, r, res, err)
 }

@@ -3,6 +3,7 @@ package controller_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -30,6 +31,7 @@ func TestMain(m *testing.M) {
 type env struct {
 	api *controller.API
 	st  *store.Store
+	db  *sql.DB
 	t   *testing.T
 	srv *httptest.Server
 }
@@ -50,7 +52,7 @@ func newEnv(t *testing.T) *env {
 	api.SetNewAccountHold(0) // test chuyển xu ngay sau khi tạo tài khoản; antiabuse_test bật lại
 	srv := httptest.NewServer(api.Handler(nil))
 	t.Cleanup(func() { hub.Shutdown(); srv.Close() })
-	return &env{t: t, srv: srv, api: api, st: st}
+	return &env{t: t, srv: srv, api: api, st: st, db: db}
 }
 
 // do gửi request và decode JSON vào out (nếu khác nil), trả về status code.

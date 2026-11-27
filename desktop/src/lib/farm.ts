@@ -123,6 +123,34 @@ export type FarmView = {
   couple_requests?: CoupleRequest[];
   couple_sent?: CoupleRequest | null;
   couple_state?: "partner" | "can_propose" | "sent" | "incoming";
+  // vườn cây ăn quả: trees và orchard_spots ai xem cũng có, tree_kinds chỉ vườn mình
+  trees?: TreeView[];
+  tree_kinds?: FruitTree[];
+  orchard_spots?: number;
+};
+
+/** Một cây trong vườn: growing (đang lớn) | fruiting (đang ra quả) | ready (có quả để hái). */
+export type TreeView = {
+  spot: number;
+  tree: string;
+  state: "growing" | "fruiting" | "ready";
+  /** RFC3339 */
+  ready_at: string;
+};
+
+export type FruitTree = {
+  id: string;
+  name: string;
+  emoji: string;
+  fruit: string;
+  fruit_name: string;
+  fruit_emoji: string;
+  price: number;
+  level: number;
+  mature_sec: number;
+  cycle_sec: number;
+  fruit_price: number;
+  xp: number;
 };
 
 export type Couple = {
@@ -204,7 +232,7 @@ export type Item = {
   name: string;
   emoji: string;
   price: number;
-  kind: "crop" | "product" | "goods";
+  kind: "crop" | "product" | "fruit" | "goods";
   level: number;
   /** Giá mua 1 đơn vị ở chợ (nông sản làm thức ăn); không có: không bán ở chợ. */
   buy_price?: number;
@@ -336,7 +364,7 @@ export function effAnimalSec(sec: number, p?: Perks) {
   return p ? Math.floor((sec * (100 - p.animal_pct)) / 100) : sec;
 }
 
-/** Chỉ nông sản và sản phẩm chăn nuôi được thưởng giá bán; món chế biến (goods) giữ giá gốc. */
+/** Chỉ nông sản, sản phẩm chăn nuôi và quả được thưởng giá bán; món chế biến (goods) giữ giá gốc. */
 function sellPerks(kind: string, p?: Perks) {
   return kind === "goods" ? undefined : p;
 }

@@ -618,6 +618,11 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
       request<import("./farm").FarmView>("POST", "/api/farm/animals/feed", id === "all" ? { all: true } : { id }),
     farmCollect: (id: number | "all") =>
       request<import("./farm").FarmView>("POST", "/api/farm/animals/collect", id === "all" ? { all: true } : { id }),
+    farmPlantTree: (spot: number, tree: string) =>
+      request<import("./farm").FarmView>("POST", "/api/farm/orchard/plant", { spot, tree }),
+    farmHarvestTree: (spot: number | "all") =>
+      request<import("./farm").FarmView>("POST", "/api/farm/orchard/harvest", spot === "all" ? { all: true } : { spot }),
+    farmRemoveTree: (spot: number) => request<import("./farm").FarmView>("DELETE", `/api/farm/orchard/${spot}`),
     farmTend: (building: "coop" | "pasture") =>
       request<import("./farm").FarmView>("POST", `/api/farm/buildings/${building}/tend`),
     farmPropose: (userId: number) =>

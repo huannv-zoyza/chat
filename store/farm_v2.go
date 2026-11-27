@@ -21,7 +21,7 @@ type Item struct {
 	Name  string `json:"name"`
 	Emoji string `json:"emoji"`
 	Price int64  `json:"price"`
-	Kind  string `json:"kind"` // crop | product | goods (món chế biến, xem farm_craft.go)
+	Kind  string `json:"kind"` // crop | product | fruit (quả, farm_orchard.go) | goods (món chế biến, xem farm_craft.go)
 	Level int    `json:"level"`
 	// BuyPrice: giá mua một đơn vị ở chợ (chỉ nông sản, để có thức ăn cho vật nuôi). Đắt hơn giá bán
 	// 50% để không mua đi bán lại kiếm lời được. 0: không bán ở chợ.
@@ -63,16 +63,19 @@ var products = []struct {
 	{"nam", "Nấm truffle", "🍄", 220},
 }
 
-// Items: mọi món vào được kho: nông sản (giá đơn vị = ceil(sell / 3)), sản phẩm chăn nuôi, rồi món
-// chế biến ở xưởng.
+// Items: mọi món vào được kho: nông sản (giá đơn vị = ceil(sell / 3)), sản phẩm chăn nuôi, quả của
+// cây ăn quả, rồi món chế biến ở xưởng.
 var Items = func() []Item {
-	out := make([]Item, 0, len(Crops)+len(products)+len(Recipes))
+	out := make([]Item, 0, len(Crops)+len(products)+len(FruitTrees)+len(Recipes))
 	for _, c := range Crops {
 		price := (c.Sell + FarmHarvestUnits - 1) / FarmHarvestUnits
 		out = append(out, Item{c.ID, c.Name, c.Emoji, price, "crop", c.Level, (price*3 + 1) / 2})
 	}
 	for i, p := range products {
 		out = append(out, Item{p.ID, p.Name, p.Emoji, p.Price, "product", AnimalKinds[i].Level, 0})
+	}
+	for _, t := range FruitTrees {
+		out = append(out, Item{t.Fruit, t.FruitName, t.FruitEmoji, t.FruitPrice, "fruit", t.Level, 0})
 	}
 	for _, r := range Recipes {
 		out = append(out, Item{r.ID, r.Name, r.Emoji, r.Price, "goods", r.Level, 0})
@@ -326,10 +329,10 @@ func (op *farmOp) takeStock(userID int64, item string, qty int64) (bool, error) 
 	return true, err
 }
 
-// sellValue: tiền bán qty đơn vị it với pct (100 + sell_pct). Chỉ nông sản và sản phẩm chăn nuôi được
-// thưởng giá; món chế biến (goods) bán đúng giá gốc để không mua nguyên liệu → chế biến → bán có lãi.
+// sellValue: tiền bán qty đơn vị it với pct (100 + sell_pct). Chỉ nông sản, sản phẩm chăn nuôi và quả
+// được thưởng giá; món chế biến (goods) bán đúng giá gốc để không mua nguyên liệu → chế biến → bán có lãi.
 func sellValue(it Item, qty, pct int64) int64 {
-	if it.Kind != "crop" && it.Kind != "product" {
+	if it.Kind != "crop" && it.Kind != "product" && it.Kind != "fruit" {
 		pct = 100
 	}
 	return it.Price * qty * pct / 100
@@ -1010,11 +1013,11 @@ func (s *Store) randN(n int) int {
 
 // newOrder: đơn 1–3 loại hàng đã mở khoá ở cấp level (nông sản theo cấp cây, sản phẩm theo cấp con
 // vật, món chế biến theo cấp món nếu goods = đã có xưởng), mỗi loại 1–4 đơn vị (món chế biến: một
-// loại mỗi đơn, 1–2 món). Thưởng xu = ceil(1.35 × tổng giá đơn vị), XP = ceil(xu / 10).
-func (s *Store) newOrder(level int, goods bool) ([]OrderItem, int64, int64) {
+// loại mỗi đơn, 1–2 món; quả chỉ có khi fruits[id] = người chơi đang có cây loại đó). Thưởng xu = ceil(1.35 × tổng giá đơn vị), XP = ceil(xu / 10).
+func (s *Store) newOrder(level int, goods bool, fruits map[string]bool) ([]OrderItem, int64, int64) {
 	var pool []Item
 	for _, it := range Items {
-		if it.Level <= level && (it.Kind != "goods" || goods) {
+		if it.Level <= level && (it.Kind != "goods" || goods) && (it.Kind != "fruit" || fruits[it.ID]) {
 			pool = append(pool, it)
 		}
 	}
@@ -1051,6 +1054,11 @@ func (op *farmOp) fillOrders(userID int64) error {
 	if err != nil {
 		return err
 	}
+	trees, err := loadTrees(op.ctx, op.tx, userID)
+	if err != nil {
+		return err
+	}
+	fruits := treeFruitSet(trees)
 	for slot := range FarmOrderSlots {
 		o, ok := orders[slot]
 		if ok && (len(o.Items) > 0 || o.NextAt > op.unix()) {
@@ -1061,7 +1069,7 @@ func (op *farmOp) fillOrders(userID int64) error {
 				return err
 			}
 		}
-		items, xu, xp := op.s.newOrder(levelFor(f.XP), built[kitchenID] > 0)
+		items, xu, xp := op.s.newOrder(levelFor(f.XP), built[kitchenID] > 0, fruits)
 		raw, _ := json.Marshal(items)
 		if _, err := op.tx.ExecContext(op.ctx,
 			`INSERT INTO farm_orders (user_id, slot, items, xu, xp) VALUES (?, ?, ?, ?, ?)`,
@@ -1219,6 +1227,9 @@ func (s *Store) fillFarmV2(ctx context.Context, v *FarmView, ownerID int64, f fa
 		v.Animals[i] = av
 	}
 	if err := s.fillKitchen(ctx, v, ownerID, now); err != nil {
+		return err
+	}
+	if err := s.fillOrchard(ctx, v, ownerID, f, now); err != nil {
 		return err
 	}
 	if !v.Me {

@@ -38,20 +38,20 @@ func (a Rect) overlaps(b Rect) bool {
 
 // FarmBlocked: vùng cố định không xây đè được, khớp cách vẽ ở desktop/src/components/FarmWorld.tsx.
 var FarmBlocked = []Rect{
-	{0, 0, FarmMapW, 1},  // hàng cây phía sau
-	{0, 0, 1, FarmMapH},  // hàng cây bên trái
-	{1.5, 1.5, 6, 5.4},   // chuồng gà
-	{1.5, 8.5, 6.4, 6.6}, // đồng cỏ
-	{9, 6, 6, 5},         // ruộng (cỡ lớn nhất) và biển mở rộng
-	{9.5, 0.5, 7, 3},     // nhà kho, silo, đống rơm
-	{15.5, 2.5, 4.5, 3},  // vườn cây ăn quả
-	{17, 9.5, 4.5, 3.5},  // ao vịt
-	{14.5, 10, 1, 1},     // chó giữ nhà
-	{8, 0, 1, 16},        // đường đá dọc
-	{0, 16, FarmMapW, 1}, // đường đá ngang
-	{8, 10.5, 1.5, 1.5},  // bác nông dân
-	{19.5, 15.5, 2, 2},   // xe tải đơn hàng
-	{9, 17, 6.5, 1.5},    // luống hoa
+	{0, 0, FarmMapW, 1},   // hàng cây phía sau
+	{0, 0, 1, FarmMapH},   // hàng cây bên trái
+	{1.5, 1.5, 6, 5.4},    // chuồng gà
+	{1.5, 8.5, 6.4, 6.6},  // đồng cỏ
+	{9, 6, 6, 5},          // ruộng (cỡ lớn nhất) và biển mở rộng
+	{9.5, 0.5, 7, 3},      // nhà kho, silo, đống rơm
+	{15.5, 2.5, 6.5, 4.8}, // vườn cây ăn quả (lưới 4×3 chỗ trồng, farm_orchard.go)
+	{17, 9.5, 4.5, 3.5},   // ao vịt
+	{14.5, 10, 1, 1},      // chó giữ nhà
+	{8, 0, 1, 16},         // đường đá dọc
+	{0, 16, FarmMapW, 1},  // đường đá ngang
+	{8, 10.5, 1.5, 1.5},   // bác nông dân
+	{19.5, 15.5, 2, 2},    // xe tải đơn hàng
+	{9, 17, 6.5, 1.5},     // luống hoa
 }
 
 var (

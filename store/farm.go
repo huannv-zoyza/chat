@@ -273,6 +273,19 @@ type FarmView struct {
 	CoupleRequests []CoupleRequest `json:"couple_requests,omitempty"`
 	CoupleSent     *CoupleRequest  `json:"couple_sent,omitempty"`
 	CoupleState    string          `json:"couple_state,omitempty"`
+
+	// Vườn cây ăn quả (farm_orchard.go): trees và orchard_spots ai xem cũng thấy, tree_kinds chỉ khi me.
+	Trees        []TreeView  `json:"trees"`
+	TreeKinds    []FruitTree `json:"tree_kinds,omitempty"`
+	OrchardSpots int         `json:"orchard_spots"`
+}
+
+// TreeView: một cây trong vườn. State: growing | fruiting | ready.
+type TreeView struct {
+	Spot    int    `json:"spot"`
+	Tree    string `json:"tree"`
+	State   string `json:"state"`
+	ReadyAt string `json:"ready_at"` // RFC3339
 }
 
 type Neighbor struct {

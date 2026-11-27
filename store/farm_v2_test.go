@@ -155,7 +155,7 @@ func TestFarmSell(t *testing.T) {
 	e.setStock(alice.ID, "ca_rot", 5) // 10 / đơn vị
 	e.setStock(alice.ID, "trung", 2)  // 22
 	e.setStock(alice.ID, "bi_ngo", 1) // ceil(640 / 3) = 214
-	_, err := e.st.FarmSell(e.ctx, alice.ID, "xoai", 1, false)
+	_, err := e.st.FarmSell(e.ctx, alice.ID, "xyz", 1, false)
 	wantErr(t, err, store.ErrFarmUnknownItem)
 	_, err = e.st.FarmSell(e.ctx, alice.ID, "ca_rot", 0, false)
 	wantErr(t, err, store.ErrFarmBadQty)
@@ -423,7 +423,7 @@ func TestFarmCatalogItems(t *testing.T) {
 		"rau_muong": {5, 1}, "ca_rot": {10, 1}, "ca_chua": {19, 2}, "bi_ngo": {214, 8},
 		"trung": {22, 2}, "sua": {75, 3}, "pho_mai": {95, 5}, "len": {110, 4}, "nam": {220, 6},
 	}
-	if len(store.Items) != 13+len(store.Recipes) {
+	if len(store.Items) != 13+len(store.FruitTrees)+len(store.Recipes) {
 		t.Fatalf("items: %d", len(store.Items))
 	}
 	byID := map[string]store.Item{}
@@ -450,6 +450,9 @@ func TestFarmCatalogItems(t *testing.T) {
 		}
 		if w, ok := want[it.ID]; ok && (it.Price != w[0] || int64(it.Level) != w[1]) {
 			t.Fatalf("item %+v, want %v", it, w)
+		}
+		if it.Kind == "fruit" {
+			continue
 		}
 		if (it.Kind == "crop") != (it.ID != "trung" && it.ID != "sua" && it.ID != "pho_mai" && it.ID != "len" && it.ID != "nam") {
 			t.Fatalf("item kind: %+v", it)
@@ -1035,7 +1038,7 @@ func TestFarmBuildingSpots(t *testing.T) {
 	if e.balance(alice.ID) != before {
 		t.Fatal("rejected spot still charged")
 	}
-	at := store.Spot{X: 20, Y: 6}
+	at := store.Spot{X: 18, Y: 13}
 	if _, err := e.st.FarmBuildAt(e.ctx, alice.ID, "kitchen", &at); err != nil {
 		t.Fatal(err)
 	}

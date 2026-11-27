@@ -36,6 +36,9 @@ import (
 //	POST /api/farm/animals/collect {id} | {all: true}
 //	POST /api/farm/craft      {recipe}     nấu một món ở lò trống của xưởng
 //	POST /api/farm/craft/collect {slot} | {all: true}
+//	POST /api/farm/orchard/plant   {spot, tree}       trồng cây ăn quả vào chỗ trống
+//	POST /api/farm/orchard/harvest {spot} | {all: true}  hái quả
+//	DELETE /api/farm/orchard/{spot}                   chặt cây
 //	POST /api/farm/couple/propose  {user_id}          ngỏ lời kết đôi
 //	POST /api/farm/couple/respond  {user_id, accept}  trả lời lời ngỏ
 //	DELETE /api/farm/couple/propose                   rút lại lời ngỏ của mình
@@ -421,5 +424,51 @@ func (a *API) farmDeliverOrder(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) farmDiscardOrder(w http.ResponseWriter, r *http.Request) {
 	res, err := a.store.FarmDiscardOrder(r.Context(), currentUser(r).ID, orderID(r))
+	a.farmRespond(w, r, res, err)
+}
+
+type farmTreeReq struct {
+	Spot *int   `json:"spot"`
+	Tree string `json:"tree"`
+	All  bool   `json:"all"`
+}
+
+func (a *API) farmPlantTree(w http.ResponseWriter, r *http.Request) {
+	var req farmTreeReq
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.Spot == nil {
+		writeError(w, http.StatusBadRequest, "Thiếu chỗ trồng cây.")
+		return
+	}
+	res, err := a.store.FarmPlantTree(r.Context(), currentUser(r).ID, *req.Spot, req.Tree)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmHarvestTree(w http.ResponseWriter, r *http.Request) {
+	var req farmTreeReq
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.Spot == nil && !req.All {
+		writeError(w, http.StatusBadRequest, "Thiếu chỗ trồng cây.")
+		return
+	}
+	spot := 0
+	if req.Spot != nil {
+		spot = *req.Spot
+	}
+	res, err := a.store.FarmHarvestTree(r.Context(), currentUser(r).ID, spot, req.All)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmRemoveTree(w http.ResponseWriter, r *http.Request) {
+	spot, err := strconv.Atoi(r.PathValue("spot"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Chỗ trồng cây không hợp lệ.")
+		return
+	}
+	res, err := a.store.FarmRemoveTree(r.Context(), currentUser(r).ID, spot)
 	a.farmRespond(w, r, res, err)
 }

@@ -200,7 +200,7 @@ func TestFarmJuiceNoArbitrage(t *testing.T) {
 	if checked != 7 {
 		t.Fatalf("juice recipes = %d, want 7", checked)
 	}
-	// phần đối chiếu giá mua nằm ở test nội bộ (sellValue, buyPrice)
+	// kiểm tra giá mua/bán (không lãi khi mua chợ rồi chế) nằm ở TestFarmJuiceNoArbitrageInternal
 }
 
 func TestFarmJuicerMigrationKeepsKitchenJobs(t *testing.T) {

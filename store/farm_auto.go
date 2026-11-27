@@ -221,8 +221,11 @@ func (s *Store) FarmAuto(ctx context.Context, userID int64, o AutoOpts) (FarmRes
 					return farmErr("Món %s không làm ở đây.", rc.Name)
 				}
 				n, err := op.fillSlots(userID, f.recipe)
+				if err != nil {
+					return err
+				}
 				r.Crafted += n
-				return err
+				return nil
 			}); err != nil {
 				return err
 			}

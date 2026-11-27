@@ -194,7 +194,7 @@ func (op *farmOp) harvestRows(userID int64, rows []*treeRow, level int) (map[str
 }
 
 // harvestTrees hái mọi cây đã chín mà cả lượt quả còn vừa kho, theo thứ tự chỗ (cây nào không vừa thì
-// dừng, vì mọi cây cho cùng số quả). Không có cây nào hái được thì trả items rỗng, XP 0. Cộng XP ở đây.
+// bỏ qua). Không có cây nào hái được thì trả items rỗng, XP 0. Cộng XP ở đây.
 func (op *farmOp) harvestTrees(userID int64, now int64) (map[string]int64, int64, int, error) {
 	f, err := ensureFarm(op.ctx, op.tx, userID)
 	if err != nil {

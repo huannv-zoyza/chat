@@ -26,23 +26,17 @@ func TestFarmJuicerDefaultSpot(t *testing.T) {
 }
 
 func TestFarmJuiceNoArbitrageInternal(t *testing.T) {
-	pct := int64(100 + farmPerks(1000).SellPct)
-	loops := 0
+	juice, pure := 0, 0
 	for _, r := range Recipes {
-		if r.Building != juicerID {
-			continue
-		}
-		loops++
 		var buy int64
-		ok := true
+		allBuyable := true
 		for _, in := range r.Inputs {
 			it, found := itemByID(in.Item)
 			if !found {
 				t.Fatalf("%s: unknown ingredient %s", r.ID, in.Item)
 			}
 			if it.BuyPrice <= 0 {
-				ok = false
-				break
+				allBuyable = false
 			}
 			buy += it.BuyPrice * in.Qty
 		}
@@ -50,12 +44,28 @@ func TestFarmJuiceNoArbitrageInternal(t *testing.T) {
 		if !found || out.Kind != "goods" {
 			t.Fatalf("recipe %s: item %+v", r.ID, out)
 		}
-		if ok && sellValue(out, 1, pct) > buy {
-			t.Fatalf("%s: sells above ingredient buy cost", r.ID)
+		if r.Building == juicerID {
+			juice++
+			if allBuyable {
+				t.Fatalf("%s: juice must need at least one non-buyable (own-produced) ingredient", r.ID)
+			}
+		}
+		if !allBuyable {
+			continue
+		}
+		pure++
+		for lv := 1; lv <= 60; lv++ {
+			pct := int64(100 + farmPerks(lv).SellPct)
+			if got := sellValue(out, 1, pct); got > buy {
+				t.Fatalf("%s level %d: sells %d > ingredient buy cost %d", r.ID, lv, got, buy)
+			}
 		}
 	}
-	if loops != 7 {
-		t.Fatalf("looped %d juice recipes, want 7", loops)
+	if juice != 7 {
+		t.Fatalf("looped %d juice recipes, want 7", juice)
+	}
+	if pure == 0 {
+		t.Fatal("no all-buyable recipe checked")
 	}
 }
 

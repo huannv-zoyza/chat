@@ -211,7 +211,7 @@ type Chest struct {
 type LogEntry struct {
 	At     time.Time        `json:"at"`
 	Actor  model.PublicUser `json:"actor"`
-	Action string           `json:"action"` // water | bug | steal | dog
+	Action string           `json:"action"` // water | bug | steal | dog | gift | market_sold | market_expired ...
 	Crop   string           `json:"crop,omitempty"`
 	Xu     int64            `json:"xu,omitempty"`
 }
@@ -288,6 +288,9 @@ type FarmView struct {
 	Trees        []TreeView  `json:"trees"`
 	TreeKinds    []FruitTree `json:"tree_kinds,omitempty"`
 	OrchardSpots int         `json:"orchard_spots"`
+
+	// Chợ đen (farm_market.go), chung toàn server; chỉ khi me.
+	Market *MarketView `json:"market,omitempty"`
 }
 
 // TreeView: một cây trong vườn. State: growing | fruiting | ready.
@@ -323,6 +326,7 @@ type FarmResult struct {
 	Dog     *bool     // chỉ có khi trộm
 	Log     *LogEntry // có khi người khác tác động lên nông trại của OwnerID
 	Wallets []Wallet  // ví đã đổi
+	Market  bool      // chợ đen vừa đổi: báo mọi người tải lại (farm.market)
 }
 
 /* ---------- Đọc dữ liệu thô ---------- */
@@ -1438,8 +1442,11 @@ func (s *Store) GetFarm(ctx context.Context, ownerID, viewerID int64) (FarmView,
 	if err != nil {
 		return FarmView{}, err
 	}
-	if me { // ô đơn hàng đã tới giờ thì sinh đơn mới trước khi đọc
+	if me { // ô đơn hàng đã tới giờ thì sinh đơn mới, lô chợ đen quá hạn thì trả về kho, trước khi đọc
 		if err := s.refillOrders(ctx, ownerID); err != nil {
+			return FarmView{}, err
+		}
+		if err := s.FarmMarketExpire(ctx); err != nil {
 			return FarmView{}, err
 		}
 	}
@@ -1522,6 +1529,9 @@ func (s *Store) GetFarm(ctx context.Context, ownerID, viewerID int64) (FarmView,
 		return FarmView{}, err
 	}
 	v.Log = &log
+	if v.Market, err = s.marketView(ctx, ownerID); err != nil {
+		return FarmView{}, err
+	}
 	return v, nil
 }
 

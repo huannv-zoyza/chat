@@ -15797,6 +15797,30 @@ button.villager:focus-visible .villager-name {
 .animal-card.is-locked {
   opacity: 0.6;
 }
+/* Chợ đen: lô của mình viền tối, tên người bán bấm được để ghé vườn */
+.market-list li.is-mine {
+  border-color: #3b3346;
+  background: #f6f3fa;
+}
+.market-seller {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline dotted;
+  cursor: pointer;
+}
+.market-seller:disabled {
+  text-decoration: none;
+  cursor: default;
+}
+.market-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
 @media (max-width: 960px) {
   .farm-field {
     height: 70vh;

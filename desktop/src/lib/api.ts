@@ -639,6 +639,10 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     farmBreakUp: () => request<import("./farm").FarmView>("DELETE", "/api/farm/couple"),
     farmGift: (item: string, qty: number) =>
       request<import("./farm").FarmView>("POST", "/api/farm/couple/gift", { item, qty }),
+    farmMarketList: (item: string, qty: number, price: number) =>
+      request<import("./farm").FarmView>("POST", "/api/farm/market", { item, qty, price }),
+    farmMarketBuy: (id: number) => request<import("./farm").FarmView>("POST", `/api/farm/market/${id}/buy`),
+    farmMarketCancel: (id: number) => request<import("./farm").FarmView>("DELETE", `/api/farm/market/${id}`),
     farmCraft: (recipe: string) => request<import("./farm").FarmView>("POST", "/api/farm/craft", { recipe }),
     farmCraftFill: (recipe: string) =>
       request<import("./farm").FarmView>("POST", "/api/farm/craft", { recipe, fill: true }),

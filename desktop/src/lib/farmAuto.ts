@@ -41,6 +41,7 @@ export function autoPending(view: FarmView, now: number, s: FarmAutoSettings): b
     if (p.index >= view.plot_count) continue;
     const st = liveState(p, now).state;
     if (st === "ripe") return true;
+    if (st === "growing" && p.can_water) return true;
     if ((st === "empty" || st === "withered") && s.crop) return true;
   }
   for (const a of view.animals ?? []) {
@@ -73,16 +74,25 @@ export function emptyPlots(view: FarmView, now: number): number {
   return view.plots.filter((p) => p.index < view.plot_count && liveState(p, now).state === "empty").length;
 }
 
+/** Số ô của mình đang lớn và còn tưới được, cho nút "Tưới tất cả". */
+export function waterablePlots(view: FarmView, now: number): number {
+  return view.plots.filter(
+    (p) => p.index < view.plot_count && p.can_water && liveState(p, now).state === "growing",
+  ).length;
+}
+
 /** Lời báo một lượt tự động, chỉ liệt kê phần khác 0. */
 export function autoSummary(a: NonNullable<NonNullable<FarmView["gained"]>["auto"]>, prefix: string): string {
   const parts: string[] = [];
   if (a.harvested) parts.push(`Thu ${a.harvested} ô`);
   if (a.planted) parts.push(`gieo ${a.planted}`);
+  if (a.watered) parts.push(`tưới ${a.watered} ô`);
   if (a.fed) parts.push(`cho ${a.fed} con ăn`);
   if (a.fruits) parts.push(`hái ${a.fruits} quả`);
   if (a.collected) parts.push(`thu ${a.collected} món`);
   if (a.crafted) parts.push(`nấu ${a.crafted} món`);
   let t = parts.join(", ");
   if (a.spent > 0) t += `${t ? ", " : ""}tiêu ${a.spent} xu`;
-  return `${prefix} ${t || "Xong"}`;
+  t = t || "Xong";
+  return `${prefix} ${t.charAt(0).toUpperCase()}${t.slice(1)}`;
 }

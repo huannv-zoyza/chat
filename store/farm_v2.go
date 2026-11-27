@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"sort"
 	"time"
 )
 
@@ -866,6 +867,7 @@ func (s *Store) FarmTend(ctx context.Context, userID int64, building string) (Fa
 		bought := map[string]int64{}
 		var spent int64
 		var blocked error // lý do đầu tiên một con không được cho ăn vì cấp
+		var notSold error // lý do đầu tiên một con không được cho ăn vì chợ không bán thức ăn
 		for _, a := range animals {
 			if a.Ready != 0 {
 				continue
@@ -876,6 +878,13 @@ func (s *Store) FarmTend(ctx context.Context, userID int64, building string) (Fa
 			if buy > 0 {
 				it, ok := itemByID(k.Feed)
 				if !ok || it.BuyPrice <= 0 {
+					if notSold == nil {
+						name := k.Feed
+						if ok {
+							name = it.Name
+						}
+						notSold = farmErr("Chợ không bán %s.", name)
+					}
 					continue
 				}
 				if level < it.Level {
@@ -905,7 +914,13 @@ func (s *Store) FarmTend(ctx context.Context, userID int64, building string) (Fa
 			}
 			g.Fed++
 		}
-		for id, qty := range bought {
+		boughtIDs := make([]string, 0, len(bought))
+		for id := range bought {
+			boughtIDs = append(boughtIDs, id)
+		}
+		sort.Strings(boughtIDs)
+		for _, id := range boughtIDs {
+			qty := bought[id]
 			it, _ := itemByID(id)
 			if err := op.spend(userID, it.BuyPrice*qty, fmt.Sprintf("Mua %d %s cho vật nuôi", qty, it.Name)); err != nil {
 				return err
@@ -919,6 +934,9 @@ func (s *Store) FarmTend(ctx context.Context, userID int64, building string) (Fa
 		if g.Fed == 0 && len(g.Items) == 0 {
 			if blocked != nil {
 				return blocked
+			}
+			if notSold != nil {
+				return notSold
 			}
 			return ErrFarmNoXuFeed
 		}

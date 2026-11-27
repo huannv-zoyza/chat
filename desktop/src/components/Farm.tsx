@@ -293,21 +293,27 @@ function Farm() {
         if (g.love) pop(at, `+${g.love} 💗`, "love", 320);
         if (g.xu > 0) playCoinSound();
       }
+      const okMsg = okText
+        ? typeof okText === "function"
+          ? okText(f)
+          : okText
+        : undefined;
+      // showToast thay toast cũ, nên khi lên cấp thì nối kết quả hành động vào cùng một toast
+      const withOk = (t: string) => (okMsg ? `${t} ${okMsg}` : t);
       if (g?.love_up) {
         const c = f.couple ?? mine?.couple;
         showToast(
-          `💞 Thân mật lên cấp ${g.love_up}${c ? `: ${c.level_name}` : ""}! Cả hai cùng nhận ${30 * g.love_up} xu.`,
+          withOk(
+            `💞 Thân mật lên cấp ${g.love_up}${c ? `: ${c.level_name}` : ""}! Cả hai cùng nhận ${30 * g.love_up} xu.`,
+          ),
           "level",
         );
       } else if (g?.level_up)
         showToast(
-          `🎉 Lên cấp ${g.level_up}! Mở khoá cây mới trong cửa hàng hạt.`,
+          withOk(`🎉 Lên cấp ${g.level_up}! Mở khoá cây mới trong cửa hàng hạt.`),
           "level",
         );
-      else if (okText) {
-        const t = typeof okText === "function" ? okText(f) : okText;
-        if (t) showToast(t, g?.hungry ? "bad" : "good");
-      }
+      else if (okMsg) showToast(okMsg, g?.hungry ? "bad" : "good");
       return true;
     } catch (err) {
       setError(errMsg(err));
@@ -1225,11 +1231,17 @@ function tendToast(f: FarmView, before: FarmView | null): string | undefined {
         `${n}${catalog.find((x) => x.id === id)?.emoji ?? f.crops.find((c) => c.id === id)?.emoji ?? "📦"}`,
     )
     .join(" ");
-  let t = `Đã thu ${collected} sản phẩm, cho ${g.fed ?? 0} con ăn`;
-  if (bought) t += ` (mua thêm ${bought})`;
-  if (g.hungry)
-    t = `${t}. Còn ${g.hungry} con đói: không đủ xu hoặc chưa đủ cấp mua thức ăn.`;
-  return t;
+  const fed = g.fed ?? 0;
+  const parts: string[] = [];
+  if (collected > 0) parts.push(`Đã thu ${collected} sản phẩm`);
+  if (fed > 0) parts.push(`${collected > 0 ? "cho" : "Đã cho"} ${fed} con ăn`);
+  let t = parts.join(", ");
+  if (bought) t += `${t ? " " : "Đã "}(mua thêm ${bought})`;
+  if (g.hungry) {
+    const warn = `Còn ${g.hungry} con đói: không đủ xu hoặc chưa đủ cấp mua thức ăn.`;
+    t = t ? `${t}. ${warn}` : warn;
+  }
+  return t || undefined;
 }
 
 const QUEST_ICON: Record<string, string> = {

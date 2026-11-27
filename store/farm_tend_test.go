@@ -221,6 +221,51 @@ func TestFarmTendLevelGate(t *testing.T) {
 	if item.Level <= 1 {
 		t.Fatalf("dau_tay level %d", item.Level)
 	}
+	e.setStock(id, "ca_rot", 1) // thiếu thức ăn: kho không đủ, phải mua mà chưa đủ cấp
+	bal := e.balance(id)
 	_, err := e.st.FarmTend(e.ctx, id, "pasture")
 	wantMsg(t, err, fmt.Sprintf("Cần đạt cấp %d mới mua được %s.", item.Level, item.Name))
+	if e.balance(id) != bal {
+		t.Fatalf("balance changed: %d -> %d", bal, e.balance(id))
+	}
+	if st := e.storage(id); st.Stock["ca_rot"] != 1 {
+		t.Fatalf("stock touched: %+v", st)
+	}
+	if got := e.states(id); len(got) != 1 || got[0] != "hungry" {
+		t.Fatalf("states: %v", got)
+	}
+}
+
+func TestFarmTendStorageRoomCapsCollect(t *testing.T) {
+	e, id := tendFarm(t, 400)
+	e.buyAnimals(id, "ga", "ga")
+	e.setStock(id, "rau_muong", 2)
+	if _, err := e.st.FarmTend(e.ctx, id, "coop"); err != nil {
+		t.Fatal(err)
+	}
+	e.advance(20 * time.Minute) // cả hai ready
+	e.setStock(id, "trung", e.storage(id).Cap-1)
+	price := e.buyPrice("rau_muong")
+
+	res, err := e.st.FarmTend(e.ctx, id, "coop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := res.Gained
+	if g.Items["trung"] != 1 || g.Fed != 1 || g.Hungry != 0 || g.Bought["rau_muong"] != 1 || g.Xu != -price {
+		t.Fatalf("capped tend: %+v", g)
+	}
+	got := e.states(id)
+	producing, ready := 0, 0
+	for _, s := range got {
+		switch s {
+		case "producing":
+			producing++
+		case "ready":
+			ready++
+		}
+	}
+	if producing != 1 || ready != 1 {
+		t.Fatalf("states: %v (con chưa thu phải còn ready, không được cho ăn)", got)
+	}
 }

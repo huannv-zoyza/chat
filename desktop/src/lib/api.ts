@@ -590,6 +590,10 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     farmLeaderboard: () => request<import("./farm").LeaderRow[]>("GET", "/api/farm/leaderboard"),
     farmPlant: (plot: number, crop: string) =>
       request<import("./farm").FarmView>("POST", "/api/farm/plant", { plot, crop }),
+    farmPlantAll: (crop: string) =>
+      request<import("./farm").FarmView>("POST", "/api/farm/plant", { all: true, crop }),
+    farmAuto: (opts: { crop?: string; kitchen_recipe?: string; juicer_recipe?: string; buy_feed: boolean }) =>
+      request<import("./farm").FarmView>("POST", "/api/farm/auto", opts),
     farmHarvest: (plot: number | "all") =>
       request<import("./farm").FarmView>("POST", "/api/farm/harvest", plot === "all" ? { all: true } : { plot }),
     farmClear: (plot: number) => request<import("./farm").FarmView>("POST", "/api/farm/clear", { plot }),

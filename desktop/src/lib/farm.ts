@@ -103,6 +103,19 @@ export type FarmView = {
     fed?: number;
     bought?: Record<string, number>;
     hungry?: number;
+    /** gieo tất cả: số ô vừa gieo */
+    planted?: number;
+    /** một lượt /auto */
+    auto?: {
+      harvested: number;
+      planted: number;
+      fed: number;
+      fruits: number;
+      crafted: number;
+      collected: number;
+      spent: number;
+      skipped: string[];
+    };
   };
   dog?: boolean;
   // phần 2: kho, chăn nuôi, đơn hàng, mở rộng đất (máy chủ cũ không có: để tuỳ chọn)

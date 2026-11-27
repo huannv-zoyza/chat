@@ -122,6 +122,7 @@ func (a *API) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("GET /api/farm/neighbors", a.requireAuth(a.farmNeighbors))
 	mux.HandleFunc("GET /api/farm/leaderboard", a.requireAuth(a.farmLeaderboard))
 	mux.HandleFunc("POST /api/farm/plant", a.requireAuth(a.farmPlant))
+	mux.HandleFunc("POST /api/farm/auto", a.requireAuth(a.farmAuto))
 	mux.HandleFunc("POST /api/farm/harvest", a.requireAuth(a.farmHarvest))
 	mux.HandleFunc("POST /api/farm/clear", a.requireAuth(a.farmClear))
 	mux.HandleFunc("POST /api/farm/water", a.requireAuth(a.farmWater))

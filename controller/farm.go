@@ -16,7 +16,6 @@ import (
 //	GET  /api/farm/users/{userId}          nông trại người khác (tính nhiệm vụ "visit")
 //	GET  /api/farm/neighbors               hàng xóm: mọi người dùng thật trừ mình, bot, AI
 //	GET  /api/farm/leaderboard             top 20 theo XP
-//	POST /api/farm/plant      {plot, crop}
 //	POST /api/farm/harvest    {plot} | {all: true}
 //	POST /api/farm/clear      {plot}
 //	POST /api/farm/water      {user_id, plot}
@@ -36,6 +35,8 @@ import (
 //	POST /api/farm/animals/collect {id} | {all: true}
 //	POST /api/farm/craft      {recipe, fill?} nấu một món ở lò trống của công trình của món (fill: mọi lò trống)
 //	POST /api/farm/craft/collect {building?, slot} | {all: true, building?}  (building mặc định: xưởng khi có slot)
+//	POST /api/farm/plant           {plot, crop} | {all: true, crop}  gieo một ô / mọi ô trống (dọn ô héo, tới khi hết xu)
+//	POST /api/farm/auto            {crop?, kitchen_recipe?, juicer_recipe?, buy_feed}  làm hết mọi việc một lần
 //	POST /api/farm/orchard/plant   {spot, tree}       trồng cây ăn quả vào chỗ trống
 //	POST /api/farm/orchard/harvest {spot} | {all: true}  hái quả
 //	DELETE /api/farm/orchard/{spot}                   chặt cây
@@ -161,8 +162,13 @@ func decodePlotReq(w http.ResponseWriter, r *http.Request, allowAll bool) (farmP
 }
 
 func (a *API) farmPlant(w http.ResponseWriter, r *http.Request) {
-	req, ok := decodePlotReq(w, r, false)
+	req, ok := decodePlotReq(w, r, true)
 	if !ok {
+		return
+	}
+	if req.All {
+		res, err := a.store.FarmPlantAll(r.Context(), currentUser(r).ID, req.Crop)
+		a.farmRespond(w, r, res, err)
 		return
 	}
 	res, err := a.store.FarmPlant(r.Context(), currentUser(r).ID, *req.Plot, req.Crop)
@@ -339,6 +345,21 @@ func (a *API) farmCollect(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) farmTend(w http.ResponseWriter, r *http.Request) {
 	res, err := a.store.FarmTend(r.Context(), currentUser(r).ID, r.PathValue("id"))
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmAuto(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Crop          string `json:"crop"`
+		KitchenRecipe string `json:"kitchen_recipe"`
+		JuicerRecipe  string `json:"juicer_recipe"`
+		BuyFeed       bool   `json:"buy_feed"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	res, err := a.store.FarmAuto(r.Context(), currentUser(r).ID, store.AutoOpts{
+		Crop: req.Crop, KitchenRecipe: req.KitchenRecipe, JuicerRecipe: req.JuicerRecipe, BuyFeed: req.BuyFeed})
 	a.farmRespond(w, r, res, err)
 }
 

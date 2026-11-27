@@ -5938,7 +5938,7 @@ button.game-player:disabled {
   font-size: var(--step--1);
 }
 .rps-bet-badge {
-  color: var(--ink);
+  color: var(--text);
 }
 .rps-refund-note {
   margin: 0 0 0.5rem;

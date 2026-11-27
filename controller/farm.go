@@ -19,7 +19,7 @@ import (
 //	POST /api/farm/harvest    {plot} | {all: true}
 //	POST /api/farm/clear      {plot}
 //	POST /api/farm/water      {user_id, plot}
-//	POST /api/farm/bug        {user_id, plot}
+//	POST /api/farm/bug        {user_id, plot} | {all:true}
 //	POST /api/farm/steal      {user_id, plot}
 //	POST /api/farm/expand                  (bí danh cũ: /api/farm/buy-plot)
 //	POST /api/farm/buy-dog
@@ -213,11 +213,20 @@ func (a *API) farmWater(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) farmBug(w http.ResponseWriter, r *http.Request) {
-	req, ok := decodePlotReq(w, r, false)
+	req, ok := decodePlotReq(w, r, true)
 	if !ok {
 		return
 	}
 	me := currentUser(r).ID
+	if req.All {
+		if req.UserID > 0 && req.UserID != me {
+			writeError(w, http.StatusBadRequest, store.ErrFarmBugAllOwn.Error())
+			return
+		}
+		res, err := a.store.FarmBugAll(r.Context(), me)
+		a.farmRespond(w, r, res, err)
+		return
+	}
 	res, err := a.store.FarmBug(r.Context(), me, ownerOrMe(req.UserID, me), *req.Plot)
 	a.farmRespond(w, r, res, err)
 }

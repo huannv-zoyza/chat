@@ -43,7 +43,7 @@ func TestFarmAutoAPI(t *testing.T) {
 	g, _ := raw["gained"].(map[string]any)
 	a, _ := g["auto"].(map[string]any)
 	if a == nil || a["harvested"] != float64(6) || a["planted"] != float64(6) || a["spent"] != float64(60) ||
-		keys(a) != "collected,crafted,fed,fruits,harvested,planted,skipped,spent,watered" {
+		keys(a) != "bugs,collected,crafted,fed,fruits,harvested,planted,skipped,spent,watered" {
 		t.Fatalf("auto report: %v", g)
 	}
 }
@@ -79,5 +79,41 @@ func TestFarmWaterAllAPI(t *testing.T) {
 	}
 	if code, _ := e.farm("POST", "/api/farm/water", bob.Token, map[string]any{"user_id": alice.User.ID, "plot": 1}); code != 200 {
 		t.Fatalf("single water: %d", code)
+	}
+}
+
+func TestFarmBugAllAPI(t *testing.T) {
+	e := newEnv(t)
+	e.clock(time.Date(2026, 11, 24, 18, 0, 0, 0, time.UTC))
+	e.st.SetRand(func() float64 { return 0.1 }) // mọi vụ đều có sâu
+	alice := e.register("alice", "Alice")
+	bob := e.register("bob", "Bob")
+
+	if code, v := e.farm("POST", "/api/farm/bug", alice.Token, map[string]any{"all": true}); code != 400 ||
+		v.Error != store.ErrFarmNothingBug.Error() {
+		t.Fatalf("nothing: %d %q", code, v.Error)
+	}
+	if code, _ := e.farm("POST", "/api/farm/plant", alice.Token, map[string]any{"plot": 0, "crop": "rau_muong"}); code != 200 {
+		t.Fatalf("plant: %d", code)
+	}
+	e.clock(time.Date(2026, 11, 24, 18, 3, 0, 0, time.UTC)) // 60%: sâu lộ ra
+	if code, v := e.farm("POST", "/api/farm/bug", alice.Token, map[string]any{"all": true, "user_id": bob.User.ID}); code != 400 ||
+		v.Error != store.ErrFarmBugAllOwn.Error() {
+		t.Fatalf("neighbour: %d %q", code, v.Error)
+	}
+	var raw map[string]any
+	if code := e.do("POST", "/api/farm/bug", alice.Token, map[string]any{"all": true}, &raw); code != 200 {
+		t.Fatalf("bug all: %d %v", code, raw)
+	}
+	if g, _ := raw["gained"].(map[string]any); g == nil || g["bugs"] != float64(1) {
+		t.Fatalf("gained: %v", raw["gained"])
+	}
+	// đường cũ {user_id, plot} giữ nguyên
+	if code, _ := e.farm("POST", "/api/farm/plant", alice.Token, map[string]any{"plot": 1, "crop": "rau_muong"}); code != 200 {
+		t.Fatalf("plant 1: %d", code)
+	}
+	e.clock(time.Date(2026, 11, 24, 18, 6, 0, 0, time.UTC))
+	if code, _ := e.farm("POST", "/api/farm/bug", bob.Token, map[string]any{"user_id": alice.User.ID, "plot": 1}); code != 200 {
+		t.Fatalf("single bug: %d", code)
 	}
 }

@@ -21,6 +21,7 @@ type AutoOpts struct {
 // AutoReport: những gì một lượt /auto đã làm. Spent: tổng xu đã trả (hạt giống + thức ăn), số dương.
 // Skipped: lý do các bước gặp lỗi nghiệp vụ nên bỏ qua.
 type AutoReport struct {
+	Bugs      int      `json:"bugs"`
 	Harvested int      `json:"harvested"`
 	Planted   int      `json:"planted"`
 	Watered   int      `json:"watered"`
@@ -110,7 +111,7 @@ func (g *Gained) addItems(items map[string]int64) {
 	}
 }
 
-// FarmAuto: làm lần lượt mọi việc có thể: thu hoạch ô chín, gieo Crop, chăm chuồng gà rồi đồng cỏ, hái
+// FarmAuto: làm lần lượt mọi việc có thể: bắt sâu, thu hoạch ô chín, gieo Crop, chăm chuồng gà rồi đồng cỏ, hái
 // vườn cây, thu món đã xong, lấp lò xưởng và máy ép theo công thức đã chọn. Tất cả trong một giao dịch;
 // mỗi bước chạy trong SAVEPOINT nên bước lỗi nghiệp vụ không để lại ghi chép dở và chỉ được ghi vào
 // Skipped. Lỗi DB thì dừng cả lượt. Không làm được gì thì ErrFarmNothingAuto.
@@ -122,7 +123,19 @@ func (s *Store) FarmAuto(ctx context.Context, userID int64, o AutoOpts) (FarmRes
 		r := &AutoReport{Skipped: []string{}}
 		now := op.unix()
 
-		// 1. thu hoạch mọi ô chín
+		// 1. bắt sâu đã lộ (trước khi thu để ô chín không bị trừ 30%)
+		if err := op.step("Bắt sâu", &r.Skipped, []error{ErrFarmNothingBug}, func() error {
+			n, err := op.bugAll(userID)
+			if err != nil {
+				return err
+			}
+			r.Bugs += n
+			return nil
+		}); err != nil {
+			return err
+		}
+
+		// 2. thu hoạch mọi ô chín
 		if err := op.step("Thu hoạch", &r.Skipped, nil, func() error {
 			plots, err := loadPlots(ctx, op.tx, userID)
 			if err != nil {
@@ -148,7 +161,7 @@ func (s *Store) FarmAuto(ctx context.Context, userID int64, o AutoOpts) (FarmRes
 			return err
 		}
 
-		// 2. gieo Crop
+		// 3. gieo Crop
 		if o.Crop != "" {
 			if err := op.step("Gieo", &r.Skipped, []error{ErrFarmNoEmptyPlot}, func() error {
 				n, err := op.plantAll(userID, o.Crop)
@@ -164,7 +177,7 @@ func (s *Store) FarmAuto(ctx context.Context, userID int64, o AutoOpts) (FarmRes
 			}
 		}
 
-		// 3. tưới mọi ô đang lớn (kể cả ô vừa gieo)
+		// 4. tưới mọi ô đang lớn (kể cả ô vừa gieo)
 		if err := op.step("Tưới", &r.Skipped, []error{ErrFarmNothingWater}, func() error {
 			n, err := op.waterAll(userID)
 			if err != nil {
@@ -176,7 +189,7 @@ func (s *Store) FarmAuto(ctx context.Context, userID int64, o AutoOpts) (FarmRes
 			return err
 		}
 
-		// 4. chăm chuồng gà rồi đồng cỏ
+		// 5. chăm chuồng gà rồi đồng cỏ
 		for _, b := range []struct{ id, label string }{{"coop", "Chuồng gà"}, {"pasture", "Đồng cỏ"}} {
 			if err := op.step(b.label, &r.Skipped, []error{ErrFarmNothingTend, ErrFarmNoFeedStock}, func() error {
 				tg, err := op.tendBuilding(userID, b.id, o.BuyFeed)
@@ -193,7 +206,7 @@ func (s *Store) FarmAuto(ctx context.Context, userID int64, o AutoOpts) (FarmRes
 			}
 		}
 
-		// 5. hái cả vườn cây
+		// 6. hái cả vườn cây
 		if err := op.step("Vườn cây", &r.Skipped, nil, func() error {
 			items, xp, lv, err := op.harvestTrees(userID, now)
 			if err != nil {
@@ -208,7 +221,7 @@ func (s *Store) FarmAuto(ctx context.Context, userID int64, o AutoOpts) (FarmRes
 			return err
 		}
 
-		// 6. thu mọi món đã xong của xưởng và máy ép
+		// 7. thu mọi món đã xong của xưởng và máy ép
 		if err := op.step("Thu món", &r.Skipped, nil, func() error {
 			items, xp, lv, err := op.collectJobs(userID, "")
 			if err != nil {
@@ -223,7 +236,7 @@ func (s *Store) FarmAuto(ctx context.Context, userID int64, o AutoOpts) (FarmRes
 			return err
 		}
 
-		// 7. lấp lò theo công thức đã chọn
+		// 8. lấp lò theo công thức đã chọn
 		for _, f := range []struct{ recipe, building, label string }{
 			{o.KitchenRecipe, kitchenID, "Xưởng"}, {o.JuicerRecipe, juicerID, "Máy ép"}} {
 			if f.recipe == "" {
@@ -244,11 +257,12 @@ func (s *Store) FarmAuto(ctx context.Context, userID int64, o AutoOpts) (FarmRes
 			}
 		}
 
-		if r.Harvested+r.Planted+r.Watered+r.Fed+r.Fruits+r.Crafted+r.Collected == 0 {
+		if r.Bugs+r.Harvested+r.Planted+r.Watered+r.Fed+r.Fruits+r.Crafted+r.Collected == 0 {
 			return ErrFarmNothingAuto
 		}
 		g.Planted = r.Planted
 		g.Watered = r.Watered
+		g.Bugs = r.Bugs
 		g.Xu = -r.Spent
 		g.Auto = r
 		res.Gained = g

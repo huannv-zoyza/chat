@@ -107,8 +107,11 @@ export type FarmView = {
     planted?: number;
     /** tưới tất cả: số ô vừa tưới */
     watered?: number;
+    /** bắt sâu tất cả: số con vừa bắt */
+    bugs?: number;
     /** một lượt /auto */
     auto?: {
+      bugs?: number;
       harvested: number;
       planted: number;
       watered?: number;

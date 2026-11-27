@@ -600,6 +600,7 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     farmWater: (userId: number, plot: number) =>
       request<import("./farm").FarmView>("POST", "/api/farm/water", { user_id: userId, plot }),
     farmWaterAll: () => request<import("./farm").FarmView>("POST", "/api/farm/water", { all: true }),
+    farmBugAll: () => request<import("./farm").FarmView>("POST", "/api/farm/bug", { all: true }),
     farmBug: (userId: number, plot: number) =>
       request<import("./farm").FarmView>("POST", "/api/farm/bug", { user_id: userId, plot }),
     farmSteal: (userId: number, plot: number) =>

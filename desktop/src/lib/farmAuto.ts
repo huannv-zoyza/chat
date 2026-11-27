@@ -41,6 +41,7 @@ export function autoPending(view: FarmView, now: number, s: FarmAutoSettings): b
     if (p.index >= view.plot_count) continue;
     const st = liveState(p, now).state;
     if (st === "ripe") return true;
+    if (p.bug && p.can_bug) return true;
     if (st === "growing" && p.can_water) return true;
     if ((st === "empty" || st === "withered") && s.crop) return true;
   }
@@ -74,6 +75,11 @@ export function emptyPlots(view: FarmView, now: number): number {
   return view.plots.filter((p) => p.index < view.plot_count && liveState(p, now).state === "empty").length;
 }
 
+/** Số ô của mình có sâu đã lộ, cho nút "Bắt sâu tất cả". */
+export function buggyPlots(view: FarmView): number {
+  return view.plots.filter((p) => p.index < view.plot_count && p.bug).length;
+}
+
 /** Số ô của mình đang lớn và còn tưới được, cho nút "Tưới tất cả". */
 export function waterablePlots(view: FarmView, now: number): number {
   return view.plots.filter(
@@ -84,7 +90,8 @@ export function waterablePlots(view: FarmView, now: number): number {
 /** Lời báo một lượt tự động, chỉ liệt kê phần khác 0. */
 export function autoSummary(a: NonNullable<NonNullable<FarmView["gained"]>["auto"]>, prefix: string): string {
   const parts: string[] = [];
-  if (a.harvested) parts.push(`Thu ${a.harvested} ô`);
+  if (a.bugs) parts.push(`bắt ${a.bugs} sâu`);
+  if (a.harvested) parts.push(`thu ${a.harvested} ô`);
   if (a.planted) parts.push(`gieo ${a.planted}`);
   if (a.watered) parts.push(`tưới ${a.watered} ô`);
   if (a.fed) parts.push(`cho ${a.fed} con ăn`);

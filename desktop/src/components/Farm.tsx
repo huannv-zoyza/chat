@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
@@ -12,6 +13,7 @@ import { displayName } from "../lib/format";
 import {
   farmEvents,
   farmMarketEvents,
+  farmXmasEvents,
   effAnimalSec,
   effGrowSec,
   effSellPrice,
@@ -42,6 +44,8 @@ import {
   type TreeView,
   type Spot,
   type MarketListing,
+  type XmasReward,
+  type XmasView,
   spotProblem,
 } from "../lib/farm";
 import {
@@ -116,6 +120,7 @@ type Tab =
   | "orchard"
   | "shop"
   | "market"
+  | "xmas"
   | "neighbors"
   | "log"
   | "top";
@@ -127,6 +132,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "orchard", label: "Vườn & Ép", icon: "🍊" },
   { id: "shop", label: "Cửa hàng", icon: "🛒" },
   { id: "market", label: "Chợ đen", icon: "🕶️" },
+  { id: "xmas", label: "Noel", icon: "🎄" },
   { id: "neighbors", label: "Hàng xóm", icon: "🏡" },
   { id: "log", label: "Nhật ký", icon: "📜" },
   { id: "top", label: "Xếp hạng", icon: "🏆" },
@@ -157,6 +163,60 @@ function Farm() {
   // mua / xây từ bản đồ phải hỏi lại: chạm nhầm trên bản đồ dễ hơn bấm nút trong cửa hàng
   const [confirm, setConfirm] = useState<ConfirmBuy | null>(null);
   const [giftOpen, setGiftOpen] = useState(false);
+  const [sockOpen, setSockOpen] = useState(false);
+  const [treeOpen, setTreeOpen] = useState(false);
+  const [santaOpen, setSantaOpen] = useState(false);
+  const eveGift = () =>
+    void act(-1, () => api.farmXmasEveGift(), (f) =>
+      showReveal({
+        box: "🛷",
+        title: "Quà đêm Noel của Ông già Noel 🎅",
+        rare: true,
+        prizes: [
+          { emoji: "🍬", label: `${f.gained?.candy ?? 0} Kẹo Noel` },
+          { emoji: "🪙", label: `${f.gained?.xu ?? 0} xu` },
+          { emoji: "🔔", label: "Chuông Đêm Thánh", sub: "Đồ trang trí chỉ có đêm Noel, đã treo trong vườn" },
+        ],
+      }),
+    );
+  // giới thiệu sự kiện Giáng sinh: tự mở lần đầu vào nông trại trong sự kiện (nhớ theo máy), mở lại ở tab Noel
+  const [introOpen, setIntroOpen] = useState(false);
+  const xmasIntroKey = mine?.xmas?.on ? `farm.xmas.intro.${mine.xmas.from}` : null;
+  useEffect(() => {
+    if (!xmasIntroKey) return;
+    let seen = false;
+    try {
+      seen = localStorage.getItem(xmasIntroKey) === "1";
+    } catch {
+      // không đọc được bộ nhớ: cứ hiện, đóng là xong
+    }
+    if (!seen) setIntroOpen(true);
+  }, [xmasIntroKey]);
+  const closeIntro = () => {
+    setIntroOpen(false);
+    try {
+      if (xmasIntroKey) localStorage.setItem(xmasIntroKey, "1");
+    } catch {
+      // bỏ qua: lần sau hiện lại
+    }
+  };
+  // popup mở quà (hộp bí ẩn, quà Ông già Noel, tất Noel); act không trả FarmView nên dựng popup trong okText
+  const [reveal, setReveal] = useState<Reveal | null>(null);
+  const showReveal = (r: Reveal | null) => {
+    if (r) setReveal(r);
+    return undefined; // không hiện toast: popup đã báo
+  };
+  const openSocks = () => void act(-1, () => api.farmXmasOpenSocks(), (f) => showReveal(socksReveal(f)));
+  const claimDrop = (id: number) =>
+    void act(-1, () => api.farmXmasClaimDrop(id), (f) => showReveal(dropReveal(f)));
+  const throwSnow = (id: number) =>
+    void act(-1, () => api.farmXmasSnowball(id), (f) =>
+      f.gained?.snow === "miss"
+        ? "Trượt mất rồi! ⛄"
+        : f.gained?.snow === "revenge"
+          ? "Ném trả trúng phóc! ⛄ +thưởng trả đũa"
+          : "Trúng rồi! ⛄",
+    );
   // chỗ trồng cây đang chọn (bấm chỗ trống trên bản đồ) và cây đang hỏi chặt
   const [treeSpot, setTreeSpot] = useState<number | null>(null);
   const [chop, setChop] = useState<TreeView | null>(null);
@@ -251,6 +311,8 @@ function Farm() {
       farmEvents.on((l) => {
         void loadMine();
         setNewLogs((n) => n + 1);
+        // tin Noel báo riêng đã có khung XmasNotice (kèm nút ném trả), không hiện trùng
+        if (l.action === "snowball" || l.action === "drop_claimed" || l.action === "sock_opened") return;
         showToast(
           logText(l, mine?.crops ?? [], mine?.items),
           l.action === "steal" || l.action === "breakup" ? "bad" : "good",
@@ -261,6 +323,8 @@ function Farm() {
 
   // chợ đen chung toàn server vừa đổi (ai đó treo / mua / gỡ hàng)
   useEffect(() => farmMarketEvents.on(() => void loadMine()), [loadMine]);
+  // tin Giáng sinh toàn server (quà vừa rơi / bị nhặt, cây chung lên mốc): tải lại để thấy quà mới
+  useEffect(() => farmXmasEvents.on(() => void loadMine()), [loadMine]);
 
   /** Gọi một hành động, áp kết quả, bay số "+xu" lên ô vừa làm. */
   const act = async (
@@ -308,6 +372,8 @@ function Farm() {
           pop(at, `${g.xu > 0 ? "+" : ""}${g.xu} 🪙`, g.xu > 0 ? "xu" : "bad");
         if (g.xp) pop(at, `+${g.xp} XP`, "xp", 180);
         if (g.love) pop(at, `+${g.love} 💗`, "love", 320);
+        if (g.candy)
+          pop(at, `${g.candy > 0 ? "+" : ""}${g.candy} 🍬`, g.candy > 0 ? "xu" : "bad", 260);
         if (g.xu > 0) playCoinSound();
       }
       const okMsg = okText
@@ -829,13 +895,64 @@ function Farm() {
                   ) : (
                     <span className="farm-tip is-visit">
                       <Emo e="🫣" />
-                      {view.steals_left !== undefined && (
+                      {view.xmas_snow ? (
+                        // mùa Noel không trộm được: gợi ý trò Noel thay vì lượt trộm
+                        <>Mùa Noel an lành: ném cầu tuyết, treo tất · ô đang lớn: tưới giúp</>
+                      ) : (
                         <>
-                          Còn <b>{view.steals_left}</b> lượt trộm ·{" "}
+                          {view.steals_left !== undefined && (
+                            <>
+                              Còn <b>{view.steals_left}</b> lượt trộm ·{" "}
+                            </>
+                          )}
+                          ô chín: trộm · ô đang lớn: tưới giúp
                         </>
                       )}
-                      ô chín: trộm · ô đang lớn: tưới giúp
                     </span>
+                  )}
+                  {!view.me && view.xmas_snow && (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={busy || view.xmas_snow !== "can"}
+                      title={
+                        view.xmas_snow === "cooldown"
+                          ? "Vừa ném vườn này, 30 phút nữa ném tiếp"
+                          : view.xmas_snow === "none_left"
+                            ? "Hôm nay hết cầu tuyết rồi"
+                            : "Trúng được kẹo, ném trả người vừa ném mình được thêm"
+                      }
+                      onClick={() => throwSnow(view.user.id)}
+                    >
+                      <Emo e="⛄" /> Ném cầu tuyết
+                    </button>
+                  )}
+                  {view.xmas_drop && (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-primary xmas-drop-btn"
+                      disabled={busy}
+                      onClick={() => claimDrop(view.xmas_drop!.id)}
+                    >
+                      <Emo e="🎁" /> Nhặt quà Ông già Noel!
+                    </button>
+                  )}
+                  {!view.me && view.xmas_sock && (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={busy || view.xmas_sock !== "can"}
+                      title={
+                        view.xmas_sock === "hung"
+                          ? "Hôm nay bạn đã treo tất ở vườn này"
+                          : view.xmas_sock === "none_left"
+                            ? "Hôm nay bạn đã treo đủ tất"
+                            : "Bỏ quà vào tất, mai chủ vườn mới mở"
+                      }
+                      onClick={() => setSockOpen(true)}
+                    >
+                      <Emo e="🧦" /> {view.xmas_sock === "hung" ? "Đã treo tất" : "Treo tất Noel"}
+                    </button>
                   )}
                   {!view.me && view.couple_state && (
                     <CoupleButton
@@ -928,6 +1045,18 @@ function Farm() {
                   }}
                   onStorage={() => openTab("storage")}
                   onOrders={() => openTab("orders")}
+                  onXmasDrop={claimDrop}
+                  onXmasOpenSocks={openSocks}
+                  onXmasEveGift={eveGift}
+                  onXmasDailyGift={() =>
+                    void act(-1, () => api.farmXmasDailyGift(), (f) =>
+                      showReveal(
+                        f.gained?.candy
+                          ? { box: "🎁", title: "Quà dưới gốc cây thông", prizes: [{ emoji: "🍬", label: `${f.gained.candy} Kẹo Noel`, sub: "Mai quay lại mở tiếp nhé!" }] }
+                          : null,
+                      ),
+                    )
+                  }
                   onKitchen={onKitchen}
                   onJuicer={onJuicer}
                   onTree={onTree}
@@ -969,7 +1098,7 @@ function Farm() {
               role="tablist"
               aria-label="Mục nông trại"
             >
-              {TABS.map((t) => (
+              {TABS.filter((t) => t.id !== "xmas" || mine?.xmas).map((t) => (
                 <button
                   key={t.id}
                   type="button"
@@ -993,6 +1122,9 @@ function Farm() {
                   )}
                   {t.id === "kitchen" && mine && jobsReady(mine, now) > 0 && (
                     <i className="farm-tab-count">{jobsReady(mine, now)}</i>
+                  )}
+                  {t.id === "xmas" && mine && xmasReady(mine) > 0 && (
+                    <i className="farm-tab-count">{xmasReady(mine)}</i>
                   )}
                   {t.id === "orchard" && mine && orchardReady(mine, now) > 0 && (
                     <i className="farm-tab-count">{orchardReady(mine, now)}</i>
@@ -1235,6 +1367,55 @@ function Farm() {
                   onVisit={goVisit}
                 />
               )}
+              {tab === "xmas" && mine?.xmas && (
+                <XmasPanel
+                  farm={mine}
+                  now={now}
+                  busy={busy}
+                  onDeliver={(slot) =>
+                    void act(-1, () => api.farmXmasDeliver(slot), "Ông già Noel đã nhận hàng 🎅")
+                  }
+                  onBuy={(r) =>
+                    void act(-1, () => api.farmXmasBuy(r.id), `Đã đổi ${r.name} 🎁`)
+                  }
+                  onClaimDrop={claimDrop}
+                  onVisit={goVisit}
+                  onBox={() =>
+                    void act(-1, () => api.farmXmasBox(), (f) => showReveal(boxReveal(f)))
+                  }
+                  onTree={() => setTreeOpen(true)}
+                  onRules={() => setIntroOpen(true)}
+                  onEveGift={eveGift}
+                  onSantaJoin={() =>
+                    void act(-1, () => api.farmXmasSantaJoin(), "Đã đăng ký Ông già Noel bí mật 🎅 Chờ bốc thăm nhé!")
+                  }
+                  onSantaSend={() => setSantaOpen(true)}
+                  onSantaOpen={() =>
+                    void act(-1, () => api.farmXmasSantaOpen(), (f) => {
+                      const r = socksReveal(f);
+                      return showReveal(
+                        r && {
+                          ...r,
+                          box: "🎅",
+                          title: "Quà Ông già Noel bí mật",
+                          rare: true,
+                          prizes: r.prizes.map((p) => (p.emoji === "🍬" ? { ...p, sub: "thưởng mở quà" } : p)),
+                        },
+                      );
+                    })
+                  }
+                  onMilestone={(n) =>
+                    void act(-1, () => api.farmXmasMilestone(n), (f) => {
+                      const r = boxReveal(f);
+                      return showReveal(r && { ...r, title: `Mốc ${f.xmas?.milestones[n - 1]?.need ?? ""} kẹo Noel` });
+                    })
+                  }
+                  onTreeClaim={(goal) =>
+                    void act(-1, () => api.farmXmasTreeClaim(goal), `Nhận thưởng mốc ${goal} cây thông chung 🎄`)
+                  }
+                  onOpenSocks={openSocks}
+                />
+              )}
               {tab === "log" && mine && (
                 <LogPanel farm={mine} now={now} onVisit={goVisit} />
               )}
@@ -1266,6 +1447,79 @@ function Farm() {
               `Đã gửi quà cho ${displayName(mine.couple!.partner)} 🎁`,
             );
             if (ok) setGiftOpen(false);
+          }}
+        />
+      )}
+      {sockOpen && mine && visit && (
+        <GiftDialog
+          farm={mine}
+          busy={busy}
+          title={`Treo tất Noel ở vườn ${displayName(visit.user)}`}
+          maxQty={mine.xmas?.sock_max_qty ?? 5}
+          note={
+            <>
+              Mai chủ vườn mới mở tất và biết bạn tặng · +2 <Emo e="🍬" /> · còn{" "}
+              {mine.xmas?.socks_left ?? 0} tất hôm nay
+            </>
+          }
+          canSend={(mine.xmas?.socks_left ?? 0) > 0}
+          sendLabel="Bỏ vào tất"
+          onClose={() => setSockOpen(false)}
+          onGift={async (item, qty) => {
+            const ok = await act(
+              -1,
+              () => api.farmXmasSock(visit.user.id, item, qty),
+              `Đã treo tất ở vườn ${displayName(visit.user)} 🧦`,
+            );
+            if (ok) setSockOpen(false);
+          }}
+        />
+      )}
+      {reveal && <XmasReveal reveal={reveal} onClose={() => setReveal(null)} />}
+      {introOpen && mine?.xmas && (
+        <XmasIntro
+          x={mine.xmas}
+          onClose={closeIntro}
+          onGo={() => {
+            closeIntro();
+            openTab("xmas");
+          }}
+        />
+      )}
+      {santaOpen && mine?.xmas?.santa.target && (
+        <GiftDialog
+          farm={mine}
+          busy={busy}
+          title={`Quà bí mật cho ${displayName(mine.xmas.santa.target)} 🤫`}
+          maxQty={mine.xmas.santa.max_qty}
+          note={<>Chỉ gửi được một lần. Đêm Noel {displayName(mine.xmas.santa.target)} mới mở và biết là bạn · +5 <Emo e="🍬" /></>}
+          canSend
+          sendLabel="Gửi quà"
+          onClose={() => setSantaOpen(false)}
+          onGift={async (item, qty) => {
+            const ok = await act(-1, () => api.farmXmasSantaSend(item, qty), "Đã gói quà bí mật 🎁 Giữ kín tới đêm Noel nhé!");
+            if (ok) setSantaOpen(false);
+          }}
+        />
+      )}
+      {treeOpen && mine?.xmas && (
+        <GiftDialog
+          farm={mine}
+          busy={busy}
+          title="Góp vào cây thông chung 🎄"
+          maxQty={50}
+          note={
+            <>
+              Mỗi 60 điểm (giá bán) được 1 <Emo e="🍬" />, hôm nay còn nhận được {mine.xmas.tree_candy_left} kẹo · góp đủ{" "}
+              {mine.xmas.tree_min_share} điểm để nhận thưởng mốc
+            </>
+          }
+          canSend
+          sendLabel="Góp"
+          onClose={() => setTreeOpen(false)}
+          onGift={async (item, qty) => {
+            const ok = await act(-1, () => api.farmXmasTree(item, qty), "Cảm ơn bạn đã góp vào cây thông chung 🎄");
+            if (ok) setTreeOpen(false);
           }}
         />
       )}
@@ -1641,6 +1895,10 @@ const jobsReady = (
 const orchardReady = (f: FarmView, now: number) =>
   (f.trees ?? []).filter((t) => treeLive(t, now).ready).length +
   jobsReady(f, now, "juicer");
+
+const xmasReady = (f: FarmView) =>
+  (f.xmas?.orders ?? []).filter((o) => o.can_deliver).length +
+  (f.xmas?.socks_ready ? 1 : 0);
 
 const questsReady = (f: FarmView) =>
   (f.quests ?? []).filter((q) => q.done && !q.claimed).length +
@@ -2144,17 +2402,28 @@ function LoveCard({
   );
 }
 
-/** Tặng nông sản / sản phẩm trong kho cho người thương. */
+/** Tặng nông sản / sản phẩm trong kho cho người thương (mặc định), hoặc bỏ vào tất Noel (truyền
+ *  title / maxQty / note / canSend / sendLabel). */
 function GiftDialog({
   farm,
   busy,
   onClose,
   onGift,
+  title,
+  maxQty = 10,
+  note,
+  canSend,
+  sendLabel = "Tặng",
 }: {
   farm: FarmView;
   busy: boolean;
   onClose: () => void;
   onGift: (item: string, qty: number) => void;
+  title?: string;
+  maxQty?: number;
+  note?: ReactNode;
+  canSend?: boolean;
+  sendLabel?: string;
 }) {
   const stock = farm.storage?.stock ?? {};
   const items = (farm.items ?? []).filter((i) => (stock[i.id] ?? 0) > 0);
@@ -2162,12 +2431,13 @@ function GiftDialog({
   const [qty, setQty] = useState(1);
   const it = items.find((i) => i.id === pick);
   const have = it ? (stock[it.id] ?? 0) : 0;
-  const n = Math.min(qty, have, 10);
+  const n = Math.min(qty, have, maxQty);
   const love = it ? Math.min(10, Math.max(1, Math.ceil((it.price * n) / 20))) : 0;
   const partner = farm.couple?.partner;
+  const can = canSend ?? !!farm.couple?.gifts_left;
   return (
     <Dialog
-      title={`Tặng quà cho ${partner ? displayName(partner) : "người thương"}`}
+      title={title ?? `Tặng quà cho ${partner ? displayName(partner) : "người thương"}`}
       onClose={onClose}
       className="farm-gift-dialog"
     >
@@ -2199,7 +2469,7 @@ function GiftDialog({
             <div className="gift-qty">
               <b>{it.name}</b>
               <div className="gift-qty-btns">
-                {[1, 5, 10].map((q) => (
+                {[1, 5, 10, 50].filter((q) => q <= maxQty).map((q) => (
                   <button
                     key={q}
                     type="button"
@@ -2214,8 +2484,12 @@ function GiftDialog({
             </div>
           )}
           <p className="gift-note">
-            +{love} <Emo e="💗" /> thân mật · còn {farm.couple?.gifts_left ?? 0}{" "}
-            lần tặng hôm nay
+            {note ?? (
+              <>
+                +{love} <Emo e="💗" /> thân mật · còn {farm.couple?.gifts_left ?? 0}{" "}
+                lần tặng hôm nay
+              </>
+            )}
           </p>
           <div className="farm-confirm-actions">
             <button type="button" className="btn" onClick={onClose}>
@@ -2224,10 +2498,10 @@ function GiftDialog({
             <button
               type="button"
               className="btn btn-primary"
-              disabled={busy || !it || n < 1 || !farm.couple?.gifts_left}
+              disabled={busy || !it || n < 1 || !can}
               onClick={() => it && onGift(it.id, n)}
             >
-              Tặng {n} <Emo e={it?.emoji} />
+              {sendLabel} {n} <Emo e={it?.emoji} />
             </button>
           </div>
         </>
@@ -2775,6 +3049,7 @@ function OrchardPanel({
   juicer: ReactNode;
 }) {
   const kinds = farm.tree_kinds ?? [];
+  const vouchers = farm.xmas?.tree_vouchers ?? 0; // phiếu cây giống Noel: lần trồng kế tiếp miễn phí
   const open = farm.orchard_spots ?? 0;
   const trees = farm.trees ?? [];
   const bySpot = new Map(trees.map((t) => [t.spot, t]));
@@ -2874,7 +3149,7 @@ function OrchardPanel({
                     ? `Mở ở cấp ${orchardUnlockLevel(0)}`
                     : target === undefined
                       ? "Hết chỗ"
-                      : balance < k.price
+                      : balance < k.price && !vouchers
                         ? "Thiếu xu"
                         : null;
               return (
@@ -2903,7 +3178,7 @@ function OrchardPanel({
                     disabled={!!block || busy}
                     onClick={() => target !== undefined && onPlant(target, k)}
                   >
-                    {emo(block ?? `Trồng · ${k.price} 🪙`)}
+                    {emo(block ?? (vouchers ? "Trồng · Miễn phí 🎄" : `Trồng · ${k.price} 🪙`))}
                   </button>
                 </li>
               );
@@ -3430,6 +3705,644 @@ function MarketSellDialog({
 }
 
 /* =========================================================
+   Giáng sinh: đơn Ông già Noel, cửa hàng kẹo, tất Noel
+   ========================================================= */
+
+/** "20:00 ngày 24/12" (giờ máy người xem) */
+const eveLabel = (iso: string) => {
+  const d = new Date(iso);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())} ngày ${p(d.getDate())}/${p(d.getMonth() + 1)}`;
+};
+
+const viDate = (d: string) => d.split("-").reverse().slice(0, 2).join("/");
+
+/* ---------- Giới thiệu sự kiện & thể lệ ---------- */
+
+function XmasIntro({ x, onClose, onGo }: { x: XmasView; onClose: () => void; onGo: () => void }) {
+  const rules: [string, string, ReactNode][] = [
+    ["🎅", "Đơn của Ông già Noel", <>Mỗi ngày 3 đơn riêng, giao đủ hàng được Kẹo Noel và XP. Giao đủ cả 3 đơn liên tiếp nhiều ngày: thêm {x.streak_candy} kẹo × số ngày (tối đa {x.streak_max} ngày).</>],
+    ["🎁", "Ông già Noel thả quà", <>4 lần mỗi ngày quà rơi ngẫu nhiên vào vườn một người, cả server được báo. Ai nhặt trước trong 10 phút được 10 kẹo + 100 xu.</>],
+    ["⛄", "Ném cầu tuyết", <>Mùa Noel không trộm được! Thay vào đó ném cầu tuyết vào vườn hàng xóm (10 quả/ngày, hôm nay còn {x.snow_left}): trúng +1 kẹo, ném trả người vừa ném mình +2 nữa.</>],
+    ["🧦", "Tất Noel", <>Treo tối đa 3 chiếc tất/ngày ở vườn bạn bè, bỏ món trong kho vào. Hôm sau chủ vườn mới mở và biết ai tặng. Cả hai cùng được kẹo.</>],
+    ["🎄", "Cây thông chung", <>Cả server góp hàng vào một cây thông (mỗi ngày nhận tối đa {x.tree_candy_day} kẹo từ góp cây). Đạt mỗi mốc, ai đã góp từ {x.tree_min_share} điểm nhận {x.tree.reward} kẹo, cây thông trong vườn mọi người to và sáng thêm.</>],
+    ["🎁", "Hộp quà bí ẩn", <>{x.box_cost} kẹo một hộp: xu, kẹo, đồ quý… hoặc đồ trang trí hiếm (tuần lộc, xe trượt tuyết…) đặt trong vườn cho cả server ngắm.</>],
+    ["✨", "Giờ vàng đêm Noel", <>{x.golden_from}:00–{x.golden_to}:00 ngày {viDate(x.golden_day)}: mọi kẹo nhận được nhân đôi.</>],
+    ["🏆", "Đua top kẹo", <>Top 10 người kiếm nhiều kẹo nhất có huy hiệu 🎄 Top Noel cạnh tên trong chat.</>],
+    ["🌱", "Ưu đãi tân thủ", <>Người chơi dưới cấp {x.newbie_level}: mọi kẹo nhận được +{x.newbie_pct}%. Mới chơi vẫn đua top được!</>],
+    ["🤫", "Ông già Noel bí mật", <>Ai trong nhóm cũng tham gia được, không giới hạn số người. Ngày {viDate(x.santa.draw_day)} bốc thăm mỗi người tặng quà bí mật cho đúng một người, vào muộn vẫn được ghép thêm tới trước đêm Noel. Đêm Noel mới lộ diện ai tặng ai!</>],
+    ["🏅", "Mốc kẹo", <>Kiếm đủ {x.milestones.map((m) => m.need).join(" / ")} kẹo để nhận quà. Mốc cuối là 🌟 Ngôi sao Giáng sinh độc quyền.</>],
+    ["🍪", "Món Noel", <>Xưởng chế biến có thêm Bánh gừng, Ca cao nóng, Kẹo gậy, chỉ nấu được trong mùa Noel.</>],
+    ["🌙", "Đêm Noel", <>Từ {eveLabel(x.eve.at)}: Ông già Noel ghé vườn mọi người tặng quà lớn và 🔔 Chuông Đêm Thánh, lộ diện Ông già Noel bí mật.</>],
+  ];
+  return (
+    <Dialog title="🎄 Lễ hội Giáng sinh ở Nông trại" onClose={onClose} className="xmas-intro">
+      <p className="xmas-intro-lead">
+        Từ <b>{viDate(x.from)}</b> đến <b>{viDate(x.to)}</b>, nông trại phủ tuyết trắng! Kiếm <b>Kẹo Noel</b>{" "}
+        <Emo e="🍬" /> để đổi quà, mở hộp bí ẩn và leo top. Cửa hàng kẹo mở tới {viDate(x.shop_to)}.
+      </p>
+      <ul className="xmas-intro-rules">
+        {rules.map(([e, title, body]) => (
+          <li key={title}>
+            <span aria-hidden>
+              <Emo e={e} />
+            </span>
+            <div>
+              <b>{title}</b>
+              <p>{body}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <div className="farm-confirm-actions">
+        <button type="button" className="btn" onClick={onClose}>
+          Để sau
+        </button>
+        <button type="button" className="btn btn-primary" data-autofocus onClick={onGo}>
+          Chơi ngay 🎅
+        </button>
+      </div>
+    </Dialog>
+  );
+}
+
+/* ---------- Popup mở quà Noel ---------- */
+
+type Reveal = {
+  /** hình hộp trước khi mở */
+  box: string;
+  title: string;
+  prizes: { emoji: string; label: string; sub?: string }[];
+  rare?: boolean;
+};
+
+const itemOf = (f: FarmView, id?: string) => f.items?.find((i) => i.id === id);
+
+function boxReveal(f: FarmView): Reveal | null {
+  const p = f.gained?.prize;
+  if (!p) return null;
+  const r: Reveal = { box: "🎁", title: "Hộp quà bí ẩn", prizes: [], rare: p.rare };
+  switch (p.kind) {
+    case "decor": {
+      const d = [...(f.xmas?.decors ?? []), ...(f.xmas?.special_decors ?? [])].find((x) => x.id === p.decor);
+      r.prizes.push({ emoji: d?.emoji ?? "🎁", label: d?.name ?? "Đồ trang trí hiếm", sub: "Đã đặt trong vườn bạn, cả server đều thấy!" });
+      break;
+    }
+    case "xu":
+      r.prizes.push({ emoji: "🪙", label: `${p.xu?.toLocaleString("vi-VN")} xu` });
+      break;
+    case "candy":
+      r.prizes.push({ emoji: "🍬", label: `${p.candy} Kẹo Noel` });
+      break;
+    case "item": {
+      const it = itemOf(f, p.item);
+      r.prizes.push({ emoji: it?.emoji ?? "📦", label: `${p.qty} ${it?.name.toLowerCase() ?? p.item}`, sub: "Đã cất vào kho" });
+      break;
+    }
+  }
+  return r;
+}
+
+function dropReveal(f: FarmView): Reveal | null {
+  const g = f.gained;
+  if (!g) return null;
+  const prizes = [];
+  if (g.candy) prizes.push({ emoji: "🍬", label: `${g.candy} Kẹo Noel` });
+  if (g.xu) prizes.push({ emoji: "🪙", label: `${g.xu} xu` });
+  return { box: "🎁", title: "Quà của Ông già Noel 🎅", prizes };
+}
+
+function socksReveal(f: FarmView): Reveal | null {
+  const g = f.gained;
+  if (!g?.socks?.length) return null;
+  const prizes = g.socks.map((x) => {
+    const it = itemOf(f, x.item);
+    return { emoji: it?.emoji ?? "📦", label: `${x.qty} ${it?.name.toLowerCase() ?? x.item}`, sub: `từ ${displayName(x.from)}` };
+  });
+  if (g.candy) prizes.push({ emoji: "🍬", label: `${g.candy} Kẹo Noel`, sub: "thưởng mở tất" });
+  return { box: "🧦", title: g.socks.length > 1 ? `Mở ${g.socks.length} chiếc tất Noel` : "Mở tất Noel", prizes };
+}
+
+const CONFETTI = ["🎉", "✨", "❄️", "🎊", "⭐", "🍬"];
+
+/** Hộp rung lắc rồi bật mở, quà nảy ra kèm pháo giấy; hiếm thì có hào quang vàng. */
+function XmasReveal({ reveal, onClose }: { reveal: Reveal; onClose: () => void }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setOpen(true);
+      playCoinSound();
+    }, 1100);
+    return () => window.clearTimeout(t);
+  }, []);
+  return (
+    <div className={`xmas-reveal${reveal.rare ? " is-rare" : ""}`} role="dialog" aria-modal aria-label={reveal.title} onClick={() => open && onClose()}>
+      <div className="xmas-reveal-card" onClick={(e) => e.stopPropagation()}>
+        <h3>{reveal.title}</h3>
+        {!open ? (
+          <div className="xmas-reveal-box" aria-label="Đang mở quà">
+            <Emo e={reveal.box} />
+          </div>
+        ) : (
+          <>
+            {reveal.rare && <div className="xmas-reveal-ribbon">✨ HIẾM! ✨</div>}
+            <div className="xmas-reveal-burst" aria-hidden>
+              {Array.from({ length: 18 }, (_, i) => (
+                <i
+                  key={i}
+                  style={
+                    {
+                      "--a": `${(i * 360) / 18}deg`,
+                      "--d": `${90 + (i % 3) * 30}px`,
+                      animationDelay: `${(i % 4) * 0.05}s`,
+                    } as CSSProperties
+                  }
+                >
+                  {CONFETTI[i % CONFETTI.length]}
+                </i>
+              ))}
+            </div>
+            <ul className="xmas-reveal-prizes">
+              {reveal.prizes.map((p, i) => (
+                <li key={i} style={{ animationDelay: `${0.1 + i * 0.18}s` }}>
+                  <span className="xmas-reveal-emoji">
+                    <Emo e={p.emoji} />
+                  </span>
+                  <b>{p.label}</b>
+                  {p.sub && <small>{p.sub}</small>}
+                </li>
+              ))}
+            </ul>
+            <button type="button" className="btn btn-primary" autoFocus onClick={onClose}>
+              Tuyệt vời!
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function XmasPanel({
+  farm,
+  now,
+  busy,
+  onDeliver,
+  onBuy,
+  onOpenSocks,
+  onClaimDrop,
+  onVisit,
+  onBox,
+  onTree,
+  onTreeClaim,
+  onRules,
+  onEveGift,
+  onSantaJoin,
+  onSantaSend,
+  onSantaOpen,
+  onMilestone,
+}: {
+  farm: FarmView;
+  now: number;
+  busy: boolean;
+  onDeliver: (slot: number) => void;
+  onBuy: (r: XmasReward) => void;
+  onOpenSocks: () => void;
+  onClaimDrop: (id: number) => void;
+  onVisit: (id: number) => void;
+  onBox: () => void;
+  onTree: () => void;
+  onTreeClaim: (goal: number) => void;
+  onRules: () => void;
+  onEveGift: () => void;
+  onSantaJoin: () => void;
+  onSantaSend: () => void;
+  onSantaOpen: () => void;
+  onMilestone: (n: number) => void;
+}) {
+  const x = farm.xmas!;
+  const items = new Map((farm.items ?? []).map((i) => [i.id, i]));
+  const stock = farm.storage?.stock ?? {};
+  const left = x.orders.filter((o) => !o.done).length;
+  const nextBonus = x.streak_candy * Math.min((left === 0 ? x.streak : x.streak + 1), x.streak_max);
+  return (
+    <div className="farm-section">
+      <div className="storage-cap">
+        <div>
+          <b>
+            <Emo e="🍬" /> {x.candy.toLocaleString("vi-VN")} Kẹo Noel
+          </b>
+          <small className="muted">
+            {" "}
+            · sự kiện {viDate(x.from)}–{viDate(x.to)}, đổi quà tới {viDate(x.shop_to)}
+          </small>
+        </div>
+        <button type="button" className="btn btn-sm" onClick={onRules}>
+          <Emo e="📜" /> Thể lệ
+        </button>
+      </div>
+      {x.newbie && (
+        <div className="xmas-newbie">
+          <Emo e="🌱" /> <b>Ưu đãi tân thủ:</b> dưới cấp {x.newbie_level}, mọi kẹo bạn nhận được <b>+{x.newbie_pct}%</b>!
+        </div>
+      )}
+
+      {x.golden ? (
+        <div className="xmas-golden">
+          <Emo e="✨" /> <b>Giờ vàng đêm Noel!</b> Mọi kẹo nhận được đang <b>x2</b> tới {x.golden_to}:00.
+        </div>
+      ) : (
+        x.on && (
+          <p className="farm-foot">
+            <Emo e="✨" /> Giờ vàng {x.golden_from}:00–{x.golden_to}:00 ngày {viDate(x.golden_day)}: mọi kẹo x2.
+          </p>
+        )
+      )}
+
+      {x.eve.now ? (
+        <div className="xmas-eve is-now">
+          <b>🎄 Đêm Noel đã đến!</b> Ông già Noel ghé vườn mọi người.
+          {x.eve.gift ? (
+            <button type="button" className="btn btn-primary" disabled={busy} onClick={onEveGift}>
+              🛷 Nhận quà đêm Noel
+            </button>
+          ) : (
+            <small> Bạn đã nhận quà đêm Noel ✓</small>
+          )}
+        </div>
+      ) : (
+        x.on && (
+          <div className="xmas-eve">
+            <Emo e="🌙" /> <b>Đêm Noel</b> {eveLabel(x.eve.at)}{" "}
+            · còn {formatLeft(new Date(x.eve.at).getTime() - now)}: quà cho mọi người, lộ diện Ông già Noel bí mật
+          </div>
+        )
+      )}
+
+      <h4>
+        <Emo e="🤫" /> Ông già Noel bí mật
+      </h4>
+      {(() => {
+        const s = x.santa;
+        const items = new Map((farm.items ?? []).map((i) => [i.id, i]));
+        if (s.gift_ready)
+          return (
+            <div className="order-card is-ready">
+              <span>🎁 Có quà Ông già Noel bí mật cho bạn! Mở để biết ai tặng.</span>
+              <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={onSantaOpen}>
+                Mở quà
+              </button>
+            </div>
+          );
+        if (s.can_join)
+          return (
+            <div className="xmas-santa">
+              <p className="farm-foot">
+                {s.drawn
+                  ? `Đã bốc thăm cho ${s.people} người, đăng ký bây giờ vẫn được và vào vòng ngay!`
+                  : `Ai trong nhóm cũng tham gia được. Ngày ${viDate(s.draw_day)} bốc thăm, mỗi người tặng bí mật đúng một người, vào muộn vẫn được ghép thêm.`}{" "}
+                Đêm Noel mới lộ ai tặng ai! ({s.people} người đã tham gia)
+              </p>
+              <button type="button" className="btn btn-primary" disabled={busy} onClick={onSantaJoin}>
+                🎅 Tham gia
+              </button>
+            </div>
+          );
+        if (!s.joined)
+          return (
+            <p className="farm-foot">
+              {`Đêm Noel đã đến, hết đăng ký. ${s.people} người đã tham gia, xem ai tặng ai nhé!`}
+            </p>
+          );
+        if (!s.target)
+          return (
+            <p className="farm-foot">
+              {s.drawn
+                ? `Đã đăng ký ✓ · Đang chờ thêm một người nữa để ghép cặp (${s.people} người tham gia).`
+                : `Đã đăng ký ✓ · Bốc thăm ngày ${viDate(s.draw_day)} (${s.people} người tham gia).`}
+            </p>
+          );
+        const it = s.sent_item ? items.get(s.sent_item) : undefined;
+        return (
+          <div className="xmas-santa">
+            <p>
+              Bạn là Ông già Noel bí mật của <b>{displayName(s.target)}</b> 🤫 Giữ kín nhé!
+            </p>
+            {s.sent ? (
+              <p className="farm-foot">
+                Đã gửi {s.sent_qty} <Emo e={it?.emoji ?? "📦"} /> {it?.name.toLowerCase()} · chờ đêm Noel lộ diện ({s.sent_count}/
+                {s.people} người đã gửi)
+              </p>
+            ) : x.eve.revealed ? (
+              <p className="farm-foot">Đêm Noel đã đến, không gửi quà được nữa.</p>
+            ) : (
+              <>
+                <p className="farm-foot">
+                  {s.sent_count}/{s.people} người đã gửi quà. Gửi trước đêm Noel, được +5 <Emo e="🍬" />.
+                </p>
+                <button type="button" className="btn btn-primary" disabled={busy} onClick={onSantaSend}>
+                  🎁 Gửi quà bí mật
+                </button>
+              </>
+            )}
+          </div>
+        );
+      })()}
+
+      <h4>
+        <Emo e="🏅" /> Mốc kẹo của bạn
+      </h4>
+      {(() => {
+        const last = x.milestones[x.milestones.length - 1]?.need ?? 1;
+        return (
+          <div className="xmas-tree">
+            <span className="quest-bar xmas-tree-bar">
+              <i style={{ width: `${Math.min(100, (x.earned / last) * 100)}%` }} />
+              {x.milestones.map((m) => (
+                <b key={m.need} style={{ left: `${(m.need / last) * 100}%` }} className={x.earned >= m.need ? "is-on" : ""} />
+              ))}
+            </span>
+            <p className="farm-foot">
+              Đã kiếm {x.earned} / {last} <Emo e="🍬" /> (kẹo đã tiêu vẫn tính)
+            </p>
+            <div className="xmas-goals">
+              {x.milestones.map((m, i) => {
+                const reached = x.earned >= m.need;
+                const p = m.prize;
+                const it = p.item ? farm.items?.find((t) => t.id === p.item) : undefined;
+                const label =
+                  p.kind === "xu"
+                    ? `${p.xu} 🪙`
+                    : p.kind === "item"
+                      ? `${p.qty} ${it?.emoji ?? "📦"}`
+                      : x.special_decors.find((d) => d.id === p.decor)?.emoji ?? "🌟";
+                return (
+                  <button
+                    key={m.need}
+                    type="button"
+                    className={`btn btn-sm${reached && !m.claimed ? " btn-primary" : ""}`}
+                    disabled={busy || !reached || m.claimed}
+                    title={reached ? undefined : `Cần kiếm ${m.need} kẹo`}
+                    onClick={() => onMilestone(i + 1)}
+                  >
+                    {m.need}: {m.claimed ? "✓" : label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
+      {x.drops.length > 0 && (
+        <ul className="order-list">
+          {x.drops.map((d) => (
+            <li key={d.id} className="order-card is-ready xmas-drop-card">
+              <span>
+                <Emo e="🎅" /> Quà đang rơi ở vườn{" "}
+                <button type="button" className="market-seller" onClick={() => onVisit(d.owner.id)}>
+                  {d.owner.id === farm.user.id ? "của bạn" : displayName(d.owner)}
+                </button>{" "}
+                · còn {formatLeft(new Date(d.expires_at).getTime() - now)}
+              </span>
+              <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => onClaimDrop(d.id)}>
+                Nhặt ngay
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {(x.socks_ready > 0 || x.socks_waiting > 0) && (
+        <div className="order-card is-ready">
+          <span>
+            <Emo e="🧦" />{" "}
+            {x.socks_ready > 0
+              ? `Có ${x.socks_ready} chiếc tất đang chờ bạn mở!`
+              : `${x.socks_waiting} chiếc tất vừa được treo, mai mới mở được.`}
+          </span>
+          {x.socks_ready > 0 && (
+            <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={onOpenSocks}>
+              Mở tất
+            </button>
+          )}
+        </div>
+      )}
+
+      {x.on && (
+        <>
+          <h4>
+            <Emo e="🎅" /> Đơn của Ông già Noel hôm nay
+          </h4>
+          <p className="farm-foot">
+            Giao đủ 3 đơn để nhận thêm {nextBonus} <Emo e="🍬" /> (chuỗi {x.streak} ngày, mỗi ngày liên
+            tiếp +{x.streak_candy}, tối đa {x.streak_max} ngày).
+          </p>
+          <ul className="order-list">
+            {x.orders.map((o) => (
+              <li
+                key={o.slot}
+                className={`order-card${o.can_deliver ? " is-ready" : ""}${o.done ? " is-empty" : ""}`}
+              >
+                <ul className="order-items">
+                  {o.items.map((it) => {
+                    const have = stock[it.item] ?? 0;
+                    const info = items.get(it.item);
+                    return (
+                      <li key={it.item} className={o.done || have >= it.qty ? "is-ok" : ""} title={info?.name}>
+                        <Emo e={info?.emoji ?? "📦"} />
+                        <b>{o.done ? it.qty : `${Math.min(have, it.qty)}/${it.qty}`}</b>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <div className="order-foot">
+                  <span className="order-reward">
+                    +{o.candy}
+                    {x.newbie && (
+                      <small className="xmas-newbie-plus" title="Ưu đãi tân thủ">
+                        +{Math.ceil((o.candy * x.newbie_pct) / 100)}
+                      </small>
+                    )}{" "}
+                    <Emo e="🍬" /> · +{o.xu} <Emo e="🪙" /> · +{o.xp} XP
+                  </span>
+                  {o.done ? (
+                    <span className="muted">
+                      Đã giao <Emo e="✅" />
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-primary"
+                      disabled={busy || !o.can_deliver}
+                      onClick={() => onDeliver(o.slot)}
+                    >
+                      Giao
+                    </button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+          <p className="farm-foot">
+            <Emo e="🧦" /> Ghé vườn hàng xóm để treo tất Noel (còn {x.socks_left} tất) hoặc{" "}
+            <Emo e="⛄" /> ném cầu tuyết (còn {x.snow_left} quả, trúng +1 kẹo, ném trả người vừa ném mình +2
+            nữa). Mùa Giáng sinh không ai trộm được vườn ai.
+          </p>
+
+          <h4>
+            <Emo e="🎄" /> Cây thông chung cả server
+          </h4>
+          {(() => {
+            const t = x.tree;
+            const last = t.goals[t.goals.length - 1] ?? 1;
+            return (
+              <div className="xmas-tree">
+                <span className="quest-bar xmas-tree-bar">
+                  <i style={{ width: `${Math.min(100, (t.total / last) * 100)}%` }} />
+                  {t.goals.map((g) => (
+                    <b key={g} style={{ left: `${(g / last) * 100}%` }} className={t.total >= g ? "is-on" : ""} />
+                  ))}
+                </span>
+                <p className="farm-foot">
+                  {t.total.toLocaleString("vi-VN")} / {last.toLocaleString("vi-VN")} điểm · bạn đã góp{" "}
+                  {t.mine.toLocaleString("vi-VN")}
+                  {t.mine < x.tree_min_share && ` (góp đủ ${x.tree_min_share} điểm để nhận thưởng mốc)`}
+                </p>
+                <p className="farm-foot">
+                  Kẹo từ góp cây hôm nay còn {x.tree_candy_left}/{x.tree_candy_day} <Emo e="🍬" />. Hết phần kẹo vẫn góp
+                  được để đẩy cây lên mốc.
+                </p>
+                <div className="xmas-goals">
+                  {t.goals.map((g, i) => {
+                    const reached = t.total >= g;
+                    return (
+                      <button
+                        key={g}
+                        type="button"
+                        className={`btn btn-sm${reached && !t.claimed[i] && t.mine > 0 ? " btn-primary" : ""}`}
+                        disabled={busy || !reached || t.claimed[i] || t.mine < x.tree_min_share}
+                        title={
+                          !reached
+                            ? `Cần ${g.toLocaleString("vi-VN")} điểm`
+                            : t.mine < x.tree_min_share
+                              ? `Góp ít nhất ${x.tree_min_share} điểm để nhận`
+                              : undefined
+                        }
+                        onClick={() => onTreeClaim(i + 1)}
+                      >
+                        Mốc {i + 1}: {t.claimed[i] ? "✓" : `${t.reward} 🍬`}
+                      </button>
+                    );
+                  })}
+                </div>
+                <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={onTree}>
+                  Góp hàng
+                </button>
+                {t.top.length > 0 && (
+                  <p className="farm-foot">
+                    Góp nhiều nhất: {t.top.map((r) => `${displayName(r.user)} (${r.value.toLocaleString("vi-VN")})`).join(", ")}
+                  </p>
+                )}
+              </div>
+            );
+          })()}
+        </>
+      )}
+
+      {x.shop_open && (
+        <>
+          <h4>
+            <Emo e="🎁" /> Hộp quà bí ẩn
+          </h4>
+          <p className="farm-foot">
+            Có thể trúng xu, kẹo, len, nấm, áo len… hoặc <b>đồ trang trí hiếm</b> đặt trong vườn cho cả server
+            ngắm:
+          </p>
+          <ul className="xmas-decor-list">
+            {[...x.decors, ...x.special_decors].map((d) => {
+              const has = farm.xmas_decor?.includes(d.id);
+              return (
+                <li key={d.id} className={has ? "is-on" : ""} title={has ? `Đã có: ${d.name}` : d.name}>
+                  <Emo e={d.emoji} />
+                </li>
+              );
+            })}
+          </ul>
+          <button type="button" className="btn btn-primary" disabled={busy || x.candy < x.box_cost} onClick={onBox}>
+            Mở hộp · {x.box_cost} <Emo e="🍬" />
+          </button>
+        </>
+      )}
+
+      {x.top.length > 0 && (
+        <>
+          <h4>
+            <Emo e="🏆" /> Top kẹo Noel
+          </h4>
+          <p className="farm-foot">Top {x.top.length} có huy hiệu 🎄 cạnh tên trong chat. Bạn đã kiếm {x.earned} kẹo.</p>
+          <ol className="xmas-top">
+            {x.top.map((r, i) => (
+              <li key={r.user.id} className={r.user.id === farm.user.id ? "is-me" : undefined}>
+                <span>{i < 3 ? ["🥇", "🥈", "🥉"][i] : `${i + 1}.`}</span>
+                <button type="button" className="market-seller" onClick={() => onVisit(r.user.id)}>
+                  {displayName(r.user)}
+                </button>
+                <b>
+                  {r.value} <Emo e="🍬" />
+                </b>
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
+
+      {x.shop_open && (
+        <>
+          <h4>
+            <Emo e="🎁" /> Đổi kẹo lấy quà
+          </h4>
+          {x.tree_vouchers > 0 && (
+            <p className="farm-foot">
+              <Emo e="🌳" /> Bạn có {x.tree_vouchers} phiếu cây giống: lần trồng cây ăn quả kế tiếp miễn phí.
+            </p>
+          )}
+          <ul className="stock-list">
+            {x.shop.map((r) => {
+              const left = r.daily_max ? (x.shop_left[r.id] ?? 0) : undefined;
+              return (
+                <li key={r.id}>
+                  <span className="stock-emoji" aria-hidden>
+                    <Emo e={r.emoji} />
+                  </span>
+                  <span className="stock-main">
+                    <b>{r.name}</b>
+                    <small>
+                      {r.cost} <Emo e="🍬" />
+                      {left !== undefined && ` · hôm nay còn ${left}/${r.daily_max}`}
+                      {r.note && ` · ${r.note}`}
+                    </small>
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    disabled={busy || x.candy < r.cost || left === 0}
+                    title={left === 0 ? "Mai đổi tiếp nhé" : x.candy < r.cost ? "Chưa đủ kẹo" : undefined}
+                    onClick={() => onBuy(r)}
+                  >
+                    Đổi
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* =========================================================
    Nhật ký & xếp hạng
    ========================================================= */
 
@@ -3459,6 +4372,14 @@ function logText(l: FarmLog, crops: Crop[], items: Item[] = []): string {
     case "market_sold": {
       const it = items.find((i) => i.id === l.crop);
       return `🕶️ ${who} mua lô ${it?.emoji ?? "📦"} ${it?.name.toLowerCase() ?? ""} của bạn ở chợ đen, bạn được ${(l.xu ?? 0).toLocaleString("vi-VN")} xu`;
+    }
+    case "snowball":
+      return `⛄ ${who} ném cầu tuyết trúng vườn bạn! Ném trả trong 30 phút được thêm kẹo`;
+    case "drop_claimed":
+      return `🎅 ${who} đã nhặt quà Ông già Noel ở vườn bạn (bạn được 3 kẹo)`;
+    case "sock_opened": {
+      const it = items.find((i) => i.id === l.crop);
+      return `🧦 ${who} đã mở tất Noel bạn treo: ${l.xu ?? 1} ${it?.emoji ?? "📦"} ${it?.name.toLowerCase() ?? ""}`.trim();
     }
     case "market_expired": {
       const it = items.find((i) => i.id === l.crop);

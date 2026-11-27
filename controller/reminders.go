@@ -141,6 +141,7 @@ func (a *API) RunScheduler(ctx context.Context, every time.Duration) {
 }
 
 func (a *API) tick(ctx context.Context, now time.Time) {
+	a.farmXmasTick(ctx)
 	due, err := a.store.FireDueReminders(ctx, now)
 	if err != nil {
 		log.Printf("scheduler reminders: %v", err)

@@ -34,3 +34,17 @@ func (s *Store) FarmCounterForTest(ctx context.Context, userID int64, key string
 
 // LevelXPForTest: XP tối thiểu để đạt cấp lv.
 func LevelXPForTest(lv int) int64 { return levelXP(lv) }
+
+// FarmSetXmasForTest: đặt kẹo và tổng kẹo đã kiếm của userID (sự kiện Giáng sinh).
+func (s *Store) FarmSetXmasForTest(ctx context.Context, userID, candy, earned int64) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO farm_xmas (user_id, candy, earned) VALUES (?, ?, ?)
+		ON CONFLICT (user_id) DO UPDATE SET candy = excluded.candy, earned = excluded.earned`, userID, candy, earned)
+	return err
+}
+
+// FarmBuildForTest: xây sẵn công trình id (cấp 1) cho userID.
+func (s *Store) FarmBuildForTest(ctx context.Context, userID int64, id string) error {
+	_, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO farm_buildings (user_id, building, level) VALUES (?, ?, 1)`, userID, id)
+	return err
+}

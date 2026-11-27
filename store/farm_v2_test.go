@@ -873,7 +873,8 @@ func TestFarmKitchen(t *testing.T) {
 	if b := v.Buildings[2]; b.ID != "kitchen" || !b.Built || b.Cap != 2 || b.UpgradePrice == nil || *b.UpgradePrice != 1200 {
 		t.Fatalf("kitchen: %+v", b)
 	}
-	if len(v.Recipes) != len(store.Recipes) || v.Jobs == nil || len(v.Jobs) != 0 {
+	// ngoài mùa Giáng sinh không hiện 3 món Noel
+	if len(v.Recipes) != len(store.Recipes)-3 || v.Jobs == nil || len(v.Jobs) != 0 {
 		t.Fatalf("recipes %d jobs %v", len(v.Recipes), v.Jobs)
 	}
 	_, err = e.st.FarmCraft(e.ctx, alice.ID, "banh_mi_que")

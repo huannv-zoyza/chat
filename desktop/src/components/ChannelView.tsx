@@ -37,6 +37,7 @@ import { E2EEBanner, SafetyDialog, useDMEncryption } from "./E2EEDialogs";
 import { e2ee, useE2EE } from "../lib/e2ee";
 import { channelLabel, channelTitle, dmPeerId, isDM } from "../lib/channel";
 import { isIntegrationBot } from "./Integrations";
+import { useXmasTop } from "../lib/xmasTop";
 
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
 
@@ -570,7 +571,8 @@ type RowProps = {
 
 export function MessageRow(props: RowProps) {
   const { mine, mentioned, grouped, name, avatarUser, time, content, attachments, pending, message, roleBadge } = props;
-  const { state, dispatch, setReply, pinMessage } = useChat();
+  const { state, dispatch, setReply, pinMessage, api } = useChat();
+  const xmasTop = useXmasTop(api.farmXmasTop);
   const compact = useMediaQuery(COMPACT_QUERY);
   const [pickerAnchor, setPickerAnchor] = useState<HTMLElement | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -659,6 +661,11 @@ export function MessageRow(props: RowProps) {
               {isAIUser(avatarUser) && <span className="bot-tag">AI</span>}
               {isIntegrationBot(avatarUser) && <span className="bot-tag is-integration">BOT</span>}
               {roleBadge}
+              {avatarUser && xmasTop.has(avatarUser.id) && (
+                <span className="bot-tag is-xmas" title="Top kẹo Noel">
+                  🎄 Top Noel
+                </span>
+              )}
             </span>
             <time className="msg-time" dateTime={time} title={formatFull(time)}>
               {formatTime(time)}

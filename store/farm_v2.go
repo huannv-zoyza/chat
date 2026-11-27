@@ -453,22 +453,26 @@ func (s *Store) FarmBuyItem(ctx context.Context, userID int64, itemID string, qt
 func (s *Store) FarmUpgradeStorage(ctx context.Context, userID int64) (FarmResult, error) {
 	res := FarmResult{OwnerID: userID}
 	var err error
-	res.Wallets, err = s.farmTx(ctx, func(op *farmOp) error {
-		f, err := ensureFarm(ctx, op.tx, userID)
-		if err != nil {
-			return err
-		}
-		if f.StorageLevel >= len(StoragePrices) {
-			return ErrFarmStorageMax
-		}
-		if err := op.spend(userID, StoragePrices[f.StorageLevel],
-			fmt.Sprintf("Nâng cấp kho lên %d chỗ", storageCap(f.StorageLevel+1))); err != nil {
-			return err
-		}
-		_, err = op.tx.ExecContext(ctx, `UPDATE farms SET storage_level = storage_level + 1 WHERE user_id = ?`, userID)
-		return err
-	})
+	res.Wallets, err = s.farmTx(ctx, func(op *farmOp) error { return op.upgradeStorage(userID, 100) })
 	return res, err
+}
+
+// upgradeStorage: nâng kho một bậc, trả pricePct% giá (0: phiếu Noel miễn phí).
+func (op *farmOp) upgradeStorage(userID, pricePct int64) error {
+	f, err := ensureFarm(op.ctx, op.tx, userID)
+	if err != nil {
+		return err
+	}
+	if f.StorageLevel >= len(StoragePrices) {
+		return ErrFarmStorageMax
+	}
+	if price := StoragePrices[f.StorageLevel] * pricePct / 100; price > 0 {
+		if err := op.spend(userID, price, fmt.Sprintf("Nâng cấp kho lên %d chỗ", storageCap(f.StorageLevel+1))); err != nil {
+			return err
+		}
+	}
+	_, err = op.tx.ExecContext(op.ctx, `UPDATE farms SET storage_level = storage_level + 1 WHERE user_id = ?`, userID)
+	return err
 }
 
 /* ---------- Chuồng trại và vật nuôi ---------- */
@@ -1038,9 +1042,13 @@ func goodsBuilt(id string, built map[string]int) bool {
 // newOrder: đơn 1–3 loại hàng đã mở khoá ở cấp level (nông sản theo cấp cây, sản phẩm theo cấp con
 // vật, món chế biến theo cấp món nếu built có công trình làm món đó: xưởng hoặc máy ép), mỗi loại 1–4 đơn vị (món chế biến: một
 // loại mỗi đơn, 1–2 món; quả chỉ có khi fruits[id] = người chơi đang có cây loại đó). Thưởng xu = ceil(1.35 × tổng giá đơn vị), XP = ceil(xu / 10).
-func (s *Store) newOrder(level int, built map[string]int, fruits map[string]bool) ([]OrderItem, int64, int64) {
+// day: ngày giờ VN (món Noel chỉ vào đơn trong sự kiện).
+func (s *Store) newOrder(day string, level int, built map[string]int, fruits map[string]bool) ([]OrderItem, int64, int64) {
 	var pool []Item
 	for _, it := range Items {
+		if it.Kind == "goods" && !recipeOpen(it.ID, day) {
+			continue // món Noel chỉ vào đơn trong sự kiện
+		}
 		if it.Level <= level && (it.Kind != "goods" || goodsBuilt(it.ID, built)) && (it.Kind != "fruit" || fruits[it.ID]) {
 			pool = append(pool, it)
 		}
@@ -1064,9 +1072,26 @@ func (s *Store) newOrder(level int, built map[string]int, fruits map[string]bool
 	return out, xu, (xu + 9) / 10
 }
 
+// orderPool: đầu vào của newOrder cho userID: cấp, công trình đã xây, loại quả đang có cây.
+func (op *farmOp) orderPool(userID int64) (int, map[string]int, map[string]bool, error) {
+	f, err := ensureFarm(op.ctx, op.tx, userID)
+	if err != nil {
+		return 0, nil, nil, err
+	}
+	built, err := loadBuildings(op.ctx, op.tx, userID)
+	if err != nil {
+		return 0, nil, nil, err
+	}
+	trees, err := loadTrees(op.ctx, op.tx, userID)
+	if err != nil {
+		return 0, nil, nil, err
+	}
+	return levelFor(f.XP), built, treeFruitSet(trees), nil
+}
+
 // fillOrders: ô đơn nào chưa có hoặc đã tới giờ có đơn mới thì sinh đơn mới (một dòng mới, id mới).
 func (op *farmOp) fillOrders(userID int64) error {
-	f, err := ensureFarm(op.ctx, op.tx, userID)
+	level, built, fruits, err := op.orderPool(userID)
 	if err != nil {
 		return err
 	}
@@ -1074,15 +1099,6 @@ func (op *farmOp) fillOrders(userID int64) error {
 	if err != nil {
 		return err
 	}
-	built, err := loadBuildings(op.ctx, op.tx, userID)
-	if err != nil {
-		return err
-	}
-	trees, err := loadTrees(op.ctx, op.tx, userID)
-	if err != nil {
-		return err
-	}
-	fruits := treeFruitSet(trees)
 	for slot := range FarmOrderSlots {
 		o, ok := orders[slot]
 		if ok && (len(o.Items) > 0 || o.NextAt > op.unix()) {
@@ -1093,7 +1109,7 @@ func (op *farmOp) fillOrders(userID int64) error {
 				return err
 			}
 		}
-		items, xu, xp := op.s.newOrder(levelFor(f.XP), built, fruits)
+		items, xu, xp := op.s.newOrder(op.day, level, built, fruits)
 		raw, _ := json.Marshal(items)
 		if _, err := op.tx.ExecContext(op.ctx,
 			`INSERT INTO farm_orders (user_id, slot, items, xu, xp) VALUES (?, ?, ?, ?, ?)`,

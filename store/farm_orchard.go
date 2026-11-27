@@ -154,8 +154,13 @@ func (s *Store) FarmPlantTree(ctx context.Context, userID int64, spot int, treeI
 		if used > 0 {
 			return ErrFarmSpotUsed
 		}
-		if err := op.spend(userID, k.Price, "Mua cây giống "+k.FruitName); err != nil {
+		// phiếu cây giống Noel: trồng miễn phí (dùng phiếu trước khi trả xu)
+		if used, err := op.useTreeVoucher(userID); err != nil {
 			return err
+		} else if !used {
+			if err := op.spend(userID, k.Price, "Mua cây giống "+k.FruitName); err != nil {
+				return err
+			}
 		}
 		now := op.unix()
 		ready := now + k.MatureSec*int64(100-farmPerks(lv).GrowPct)/100

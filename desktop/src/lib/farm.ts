@@ -88,6 +88,10 @@ export type FarmView = {
     /** điểm thân mật vừa cộng / cấp thân mật mới (kết đôi) */
     love?: number;
     love_up?: number;
+    /** chăm nhanh cả chuồng: số con đã cho ăn, thức ăn tự mua, số con còn đói */
+    fed?: number;
+    bought?: Record<string, number>;
+    hungry?: number;
   };
   dog?: boolean;
   // phần 2: kho, chăn nuôi, đơn hàng, mở rộng đất (máy chủ cũ không có: để tuỳ chọn)

@@ -30,6 +30,7 @@ import (
 //	POST /api/farm/buildings/{id}          xây coop | pasture | kitchen   {x, y} tuỳ chọn: chỗ đặt
 //	POST /api/farm/buildings/{id}/move     {x, y}  dời công trình tự do (xưởng)
 //	POST /api/farm/buildings/{id}/upgrade
+//	POST /api/farm/buildings/{id}/tend     chăm nhanh cả chuồng (coop | pasture): thu + cho ăn, tự mua thức ăn thiếu
 //	POST /api/farm/animals    {kind}       mua con vật
 //	POST /api/farm/animals/feed    {id} | {all: true}
 //	POST /api/farm/animals/collect {id} | {all: true}
@@ -330,6 +331,11 @@ func (a *API) farmCollect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := a.store.FarmCollect(r.Context(), currentUser(r).ID, req.ID, req.All)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmTend(w http.ResponseWriter, r *http.Request) {
+	res, err := a.store.FarmTend(r.Context(), currentUser(r).ID, r.PathValue("id"))
 	a.farmRespond(w, r, res, err)
 }
 

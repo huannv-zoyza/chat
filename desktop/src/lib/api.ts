@@ -618,6 +618,8 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
       request<import("./farm").FarmView>("POST", "/api/farm/animals/feed", id === "all" ? { all: true } : { id }),
     farmCollect: (id: number | "all") =>
       request<import("./farm").FarmView>("POST", "/api/farm/animals/collect", id === "all" ? { all: true } : { id }),
+    farmTend: (building: "coop" | "pasture") =>
+      request<import("./farm").FarmView>("POST", `/api/farm/buildings/${building}/tend`),
     farmPropose: (userId: number) =>
       request<import("./farm").FarmView>("POST", "/api/farm/couple/propose", { user_id: userId }),
     farmCancelPropose: () => request<import("./farm").FarmView>("DELETE", "/api/farm/couple/propose"),

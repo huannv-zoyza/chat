@@ -352,7 +352,7 @@ func (a *API) settleChannelGames(ctx context.Context, channelID int64) error {
 // settlePendingCashouts: lúc khởi động, trả chip/cược cho các ván dùng xu đã kết thúc (hoặc tin đã xoá)
 // mà chưa kịp trả (máy chủ tắt giữa chừng).
 func (a *API) settlePendingCashouts(ctx context.Context) {
-	rows, err := a.store.GamesNeedingCashout(ctx, "baucua", "rps")
+	rows, err := a.store.GamesNeedingCashout(ctx, "baucua", "rps", "poker")
 	if err != nil {
 		log.Printf("pending cashouts: %v", err)
 		return

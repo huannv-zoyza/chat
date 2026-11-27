@@ -495,3 +495,51 @@ func TestRPSBettingMoneyFlow(t *testing.T) {
 		t.Fatalf("alice after restart cashout = %d, want 2000", a.Balance)
 	}
 }
+
+// Poker: vào bàn trừ đúng mức mua vào, kết thúc ván chip về ví.
+func TestPokerMoneyFlow(t *testing.T) {
+	e := newEnv(t)
+	alice := e.register("alice", "Alice")
+	bob := e.register("bob", "Bob")
+	var ch channel
+	e.do("POST", "/api/channels", alice.Token, map[string]string{"name": "poker"}, &ch)
+	e.do("POST", "/api/channels/"+itoa(ch.ID)+"/join", bob.Token, nil, nil)
+	act := func(token string, id int64, action string) int {
+		return e.do("POST", "/api/messages/"+itoa(id)+"/game", token, map[string]any{"action": action}, nil)
+	}
+	create := func(buyIn int64) (int, int64) {
+		var m struct{ ID int64 }
+		code := e.do("POST", "/api/channels/"+itoa(ch.ID)+"/games", alice.Token, map[string]any{
+			"kind": "poker", "options": map[string]any{"buy_in": buyIn},
+		}, &m)
+		return code, m.ID
+	}
+	if code, _ := create(123); code != 400 {
+		t.Fatalf("invalid buy-in: %d", code)
+	}
+	if code, _ := create(2000); code != 400 {
+		t.Fatalf("buy-in above balance: %d", code)
+	}
+	code, id := create(500)
+	if code != 201 {
+		t.Fatalf("create poker: %d", code)
+	}
+	if w := e.wallet(alice.Token); w.Balance != 500 || w.InTables != 500 {
+		t.Fatalf("alice after create: %+v", w)
+	}
+	if code := act(bob.Token, id, "join"); code != 200 {
+		t.Fatalf("bob join: %d", code)
+	}
+	if code := act(alice.Token, id, "start"); code != 200 {
+		t.Fatalf("start: %d", code)
+	}
+	if code := act(alice.Token, id, "cancel"); code != 400 {
+		t.Fatalf("cancel while playing: %d", code)
+	}
+	if code := act(alice.Token, id, "finish"); code != 200 {
+		t.Fatalf("finish: %d", code)
+	}
+	if a, b := e.wallet(alice.Token), e.wallet(bob.Token); a.Balance != 1000 || b.Balance != 1000 || a.InTables != 0 || b.InTables != 0 {
+		t.Fatalf("after finish: alice=%+v bob=%+v", a, b)
+	}
+}

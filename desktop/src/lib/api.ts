@@ -80,7 +80,7 @@ export type MessageLinkInfo = {
   message?: Message;
 };
 
-export type GameKind = "station" | "werewolf" | "spy" | "caro" | "rps" | "chess" | "xiangqi" | "baucua";
+export type GameKind = "station" | "werewolf" | "spy" | "caro" | "rps" | "chess" | "xiangqi" | "baucua" | "poker";
 
 export type Wallet = {
   balance: number;

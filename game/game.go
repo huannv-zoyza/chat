@@ -127,6 +127,7 @@ var titles = map[string]string{
 	"chess":    "Cờ vua",
 	"xiangqi":  "Cờ tướng",
 	"baucua":   "Bầu cua tôm cá",
+	"poker":    "Poker Texas Hold'em",
 }
 
 // Title: tên trò chơi để hiển thị ("" nếu không có trò này).
@@ -150,6 +151,8 @@ func newRules(kind string) rules {
 		return &xiangqi{}
 	case "baucua":
 		return &baucua{}
+	case "poker":
+		return &poker{}
 	}
 	return nil
 }

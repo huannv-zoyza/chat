@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type PointerEvent as RPointerEvent,
   type ReactNode,
 } from "react";
@@ -373,7 +374,20 @@ function Tree({
   );
 }
 
-function Pine({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
+const BAUBLES = ["#e63946", "#ffd166", "#4cc9f0", "#f72585"];
+
+function Pine({
+  x,
+  y,
+  s = 1,
+  xmas = false,
+}: {
+  x: number;
+  y: number;
+  s?: number;
+  /** Giáng sinh: tuyết phủ ngọn, quả châu, ngôi sao */
+  xmas?: boolean;
+}) {
   const [cx, cy] = pt(x, y);
   return (
     <g>
@@ -401,7 +415,92 @@ function Pine({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
         ])}
         fill="#25692a"
       />
+      {xmas && (
+        <>
+          <polygon
+            points={poly([
+              [cx, cy - 78 * s],
+              [cx + 10 * s, cy - 51 * s],
+              [cx + 4 * s, cy - 54 * s],
+              [cx - 3 * s, cy - 49 * s],
+              [cx - 10 * s, cy - 51 * s],
+            ])}
+            fill="#f4f8fb"
+          />
+          {[
+            [-9, -30],
+            [8, -24],
+            [-2, -40],
+            [12, -36],
+            [-14, -20],
+          ].map(([dx, dy], i) => (
+            <circle
+              key={i}
+              cx={cx + dx * s}
+              cy={cy + dy * s}
+              r={2.8 * s}
+              fill={BAUBLES[i % BAUBLES.length]}
+              className="iso-bauble"
+              style={{ animationDelay: `${i * 0.4}s` }}
+            />
+          ))}
+          <text
+            x={cx}
+            y={cy - 76 * s}
+            fontSize={14 * s}
+            textAnchor="middle"
+            fill="#ffd166"
+            stroke="#c99400"
+            strokeWidth={0.6}
+          >
+            ★
+          </text>
+        </>
+      )}
     </g>
+  );
+}
+
+/** Câu người tuyết / tuần lộc nói khi được bấm. */
+const XMAS_LINES = [
+  "Ho ho ho! 🎅",
+  "Giáng sinh an lành! 🎄",
+  "Lạnh quá, ném cầu tuyết không? ⛄",
+  "Nhớ giao đơn Ông già Noel nhé!",
+  "Treo tất cho bạn bè chưa? 🧦",
+  "Jingle bells, jingle bells… 🔔",
+  "Ai nhặt được quà Noel hôm nay? 🎁",
+  "Kẹo Noel ngọt lắm! 🍬",
+];
+
+/** Tuyết rơi phủ lên bản đồ (lớp HTML trên SVG, không chặn chuột). Vị trí / tốc độ cố định theo chỉ số. */
+const SNOW = Array.from({ length: 60 }, (_, i) => ({
+  left: (i * 37) % 100,
+  size: 3 + ((i * 7) % 5),
+  dur: 7 + ((i * 13) % 8),
+  delay: -((i * 11) % 15),
+  drift: ((i * 17) % 40) - 20,
+}));
+
+function Snow() {
+  return (
+    <div className="iso-snow" aria-hidden>
+      {SNOW.map((f, i) => (
+        <i
+          key={i}
+          style={
+            {
+              left: `${f.left}%`,
+              width: f.size,
+              height: f.size,
+              animationDuration: `${f.dur}s`,
+              animationDelay: `${f.delay}s`,
+              "--drift": `${f.drift}px`,
+            } as CSSProperties
+          }
+        />
+      ))}
+    </div>
   );
 }
 
@@ -908,6 +1007,14 @@ export type WorldHandlers = {
   onExpand: () => void;
   onStorage: () => void;
   onOrders: () => void;
+  /** Giáng sinh: bấm hộp quà Ông già Noel đang rơi ở vườn này */
+  onXmasDrop?: (id: number) => void;
+  /** Giáng sinh: mở quà dưới gốc cây thông (vườn mình, mỗi ngày một lần) */
+  onXmasDailyGift?: () => void;
+  /** Giáng sinh: mở các tất Noel đã tới ngày mở (vườn mình) */
+  onXmasOpenSocks?: () => void;
+  /** Đêm Noel: nhận quà Ông già Noel để lại trong vườn */
+  onXmasEveGift?: () => void;
   /** đang chọn chỗ đặt công trình: chạm / kéo trên bản đồ để dời chỗ */
   onPlaceSpot?: (s: Spot) => void;
 };
@@ -937,6 +1044,48 @@ export function FarmWorld({
   placing?: Placing | null;
 } & WorldHandlers) {
   const me = view.me;
+  // sự kiện Giáng sinh: vườn mình có xmas.on, vườn người khác có xmas_sock
+  const xmas = !!(view.xmas?.on || view.xmas_sock);
+  // bấm đồ Noel: món vừa bấm nhảy lên kèm bong bóng lời nói (tự tắt), n đổi để bấm lại thì chạy lại hiệu ứng
+  const [poke, setPoke] = useState<{ id: string; text: string; x: number; y: number; z: number; n: number } | null>(null);
+  useEffect(() => {
+    if (!poke) return;
+    const t = window.setTimeout(() => setPoke(null), 2600);
+    return () => window.clearTimeout(t);
+  }, [poke]);
+  const pokeAt = (id: string, x: number, y: number, z: number, text: string) =>
+    setPoke((p) => ({ id, text, x, y, z, n: (p?.n ?? 0) + 1 }));
+  const isPoked = (id: string) => poke?.id === id;
+  const pokeKey = (id: string) => (poke?.id === id ? `-${poke.n}` : "");
+  // đống tuyết đã quét (đang tan → mất hẳn); bị ném lần mới thì tuyết đọng lại
+  const [sweeping, setSweeping] = useState<Set<number>>(new Set());
+  const [swept, setSwept] = useState<Set<number>>(new Set());
+  const snowKey = (view.snowed_by ?? []).map((u) => u.id).join(",");
+  useEffect(() => {
+    setSweeping(new Set());
+    setSwept(new Set());
+  }, [snowKey, view.user.id]);
+  const sweep = (i: number) => {
+    setSweeping((s) => new Set(s).add(i));
+    window.setTimeout(() => setSwept((s) => new Set(s).add(i)), 450);
+  };
+  const xmasHud: ReactNode[] = [];
+  // đống tuyết vẽ trên cùng (trên lớp nút ô ruộng) để bấm quét được
+  const snowLayer: ReactNode[] = [];
+  // hàng thông viền: mùa Noel bấm thì cây rung, quả châu lóe sáng
+  // hàm thường (không phải component) để không gắn lại cây mỗi lần vẽ lại bản đồ
+  const borderPine = (id: string, x: number, y: number, s: number) =>
+    xmas ? (
+      <g
+        key={`${id}${pokeKey(id)}`}
+        className={`iso-click${isPoked(id) ? " iso-tree-flash iso-shake" : ""}`}
+        onClick={() => pokeAt(id, x, y, 0, "")}
+      >
+        <Pine x={x} y={y} s={s} xmas />
+      </g>
+    ) : (
+      <Pine key={id} x={x} y={y} s={s} />
+    );
   const crop = (id?: string) => view.crops.find((c) => c.id === id);
   const kinds = useMemo(
     () => new Map((view.animal_kinds ?? []).map((k) => [k.id, k])),
@@ -1154,7 +1303,7 @@ export function FarmWorld({
       i,
       -0.4,
       i % 3.2 < 1.6 ? (
-        <Pine key={`tp${i}`} x={i} y={-0.4} s={1.1} />
+        borderPine(`tp${i}`, i, -0.4, 1.1)
       ) : (
         <Tree key={`tt${i}`} x={i} y={-0.4} s={1.15} />
       ),
@@ -1166,7 +1315,7 @@ export function FarmWorld({
       j % 3.2 < 1.6 ? (
         <Tree key={`lt${j}`} x={-0.4} y={j} s={1.1} />
       ) : (
-        <Pine key={`lp${j}`} x={-0.4} y={j} s={1.05} />
+        borderPine(`lp${j}`, -0.4, j, 1.05)
       ),
     );
   // vườn cây ăn quả (bên phải ruộng): 12 chỗ lưới 4 × 3
@@ -1285,8 +1434,214 @@ export function FarmWorld({
       🌾
     </Sprite>,
   );
+  // Giáng sinh: luống hoa thành góc Noel (cây thông lớn, hộp quà, người tuyết). Mọi món đều bấm được:
+  // nhảy lên + bong bóng lời nói (pokeAt); quà dưới gốc cây mở được mỗi ngày một lần (vườn mình).
+  if (xmas) {
+    // cây thông lớn to dần theo số mốc cây thông chung toàn server đã đạt
+    const lv = view.xmas_tree_level ?? 0;
+    const s = 1.6 + 0.15 * lv;
+    add(
+      12.4,
+      17.8,
+      <g
+        key={`xtree${pokeKey("xtree")}`}
+        className={`iso-click${isPoked("xtree") ? " iso-tree-flash" : ""}`}
+        onClick={() =>
+          pokeAt("xtree", 12.4, 17.8, 110 * s, lv > 0 ? `🎄 Cây thông chung đã đạt ${lv} mốc!` : "🎄 Cùng góp hàng để cây lên mốc nhé!")
+        }
+      >
+        <Pine x={12.4} y={17.8} s={s} xmas />
+      </g>,
+    );
+    for (let i = 0; i < lv * 2; i++) {
+      const sx = 11.6 + (i % 4) * 0.5;
+      const sy = 17.2 + Math.floor(i / 4) * 0.4;
+      add(
+        sx,
+        sy,
+        <Sprite key={`xs${i}`} x={sx} y={sy} z={40 + (i % 3) * 22} size={16} className="iso-twinkle">
+          ✨
+        </Sprite>,
+      );
+    }
+    // hộp quà dưới gốc: vườn mình còn quà hôm nay thì lấp lánh, bấm là mở
+    const giftReady = me && !!view.xmas?.daily_gift;
+    const GIFTS: [number, number, number][] = [
+      [11.4, 18.2, 24],
+      [13.3, 18.3, 22],
+      [12.0, 18.6, 20],
+    ];
+    GIFTS.forEach(([x, y, size], i) =>
+      add(
+        x,
+        y + 1, // vẽ sau cây thông: hộp quà nằm trước gốc cây, bấm được
+        <g
+          key={`xg${i}${pokeKey(`xg${i}`)}`}
+          className={`iso-click${giftReady ? " xmas-gift-ready" : ""}${isPoked(`xg${i}`) ? " iso-poked" : ""}`}
+          onClick={() => {
+            if (giftReady) h.onXmasDailyGift?.();
+            else
+              pokeAt(
+                `xg${i}`,
+                x,
+                y,
+                50,
+                me ? "🎁 Hôm nay mở rồi, mai quay lại nhé!" : `🎁 Quà dưới gốc cây của ${view.user.display_name || view.user.username}`,
+              );
+          }}
+        >
+          <Sprite x={x} y={y} size={size}>
+            🎁
+          </Sprite>
+          {giftReady && i === 0 && (
+            <Sprite x={x} y={y} z={34} size={16} className="iso-twinkle">
+              ✨
+            </Sprite>
+          )}
+        </g>,
+      ),
+    );
+    if (giftReady) {
+      // dưới mấy hộp quà, không đè lên cây thông (bấm cây là xem tiến độ cây chung)
+      const [gx, gy] = pt(13.2, 19.4, -12);
+      xmasHud.push(
+        <g key="xgift-sign" transform={`translate(${gx}, ${gy})`} className="iso-sign iso-click" onClick={() => h.onXmasDailyGift?.()}>
+          <rect x={-62} y={-13} width={124} height={24} rx={12} />
+          <SvgLabel text="🎁 Quà hôm nay!" y={4} />
+        </g>,
+      );
+    }
+    const FRIENDS: [string, number, number, string, number][] = [
+      ["xm1", 9.8, 17.6, "⛄", 40],
+      ["xm2", 15.0, 17.7, "⛄", 34],
+      ["xr", 10.8, 17.3, "🦌", 30],
+    ];
+    FRIENDS.forEach(([id, x, y, e, size]) =>
+      add(
+        x,
+        y,
+        <g
+          key={`${id}${pokeKey(id)}`}
+          className={`iso-click${isPoked(id) ? " iso-poked" : ""}`}
+          onClick={() => pokeAt(id, x, y, size + 14, XMAS_LINES[Math.floor(Math.random() * XMAS_LINES.length)])}
+        >
+          <Sprite x={x} y={y} size={size}>
+            {e}
+          </Sprite>
+        </g>,
+      ),
+    );
+  }
+  // tất Noel đang treo: dây kim tuyến trước mặt nhà kho (vùng cố định, không công trình nào đè lên)
+  const socks = view.xmas_socks ?? 0;
+  if (socks > 0) {
+    const shown = Math.min(socks, 6);
+    const ready = me ? (view.xmas?.socks_ready ?? 0) : 0;
+    const owner = view.user.display_name || view.user.username;
+    const onSock = () => {
+      if (ready > 0) h.onXmasOpenSocks?.();
+      else
+        pokeAt(
+          "socks",
+          11.5,
+          3.22,
+          60,
+          me ? `🧦 ${socks} chiếc tất, mai mới mở được!` : `🧦 Vườn ${owner} đang có ${socks} chiếc tất Noel`,
+        );
+    };
+    const [ax, ay] = pt(10.15, 3.22, 40);
+    const [bx2, by2] = pt(12.85, 3.22, 40);
+    add(
+      12.9,
+      3.4,
+      <g key={`socks${pokeKey("socks")}`} className={`iso-click${ready > 0 ? " xmas-gift-ready" : ""}${isPoked("socks") ? " iso-poked" : ""}`} onClick={onSock}>
+        <title>{me ? (ready > 0 ? "Mở tất Noel" : "Tất Noel") : `Tất Noel ở vườn ${owner}`}</title>
+        <path
+          d={`M${ax},${ay} Q${(ax + bx2) / 2},${(ay + by2) / 2 + 14} ${bx2},${by2}`}
+          fill="none"
+          stroke="#e63946"
+          strokeWidth={2.5}
+          strokeDasharray="5 3"
+        />
+        {Array.from({ length: shown }, (_, i) => {
+          const sx = 10.4 + (2.2 * (i + 0.5)) / shown;
+          return (
+            <Sprite key={i} x={sx} y={3.22} z={22 - Math.sin(((i + 0.5) / shown) * Math.PI) * 6} size={22}>
+              🧦
+            </Sprite>
+          );
+        })}
+        {socks > shown && (
+          <g transform={`translate(${bx2 + 18}, ${by2 + 6})`} className="iso-sign">
+            <rect x={-18} y={-11} width={36} height={20} rx={10} />
+            <SvgLabel text={`+${socks - shown}`} y={4} />
+          </g>
+        )}
+      </g>,
+    );
+  }
+  // đồ trang trí hiếm (hộp quà bí ẩn): bên trái góc Noel, dưới đường đá; bấm để khoe
+  const DECOR_AT: Record<string, [number, number, string, number, string]> = {
+    snowman: [3, 18.3, "☃️", 46, "Người tuyết khổng lồ"],
+    reindeer: [4.3, 17.6, "🦌", 40, "Tuần lộc mũi đỏ"],
+    sleigh: [5.6, 18.2, "🛷", 40, "Xe trượt tuyết"],
+    santa: [6.9, 17.6, "🎅", 44, "Tượng Ông già Noel"],
+    // độc quyền: mốc kẹo cuối, quà đêm Noel
+    star: [16.2, 17.6, "🌟", 40, "Ngôi sao Giáng sinh"],
+    bell: [17.3, 18.2, "🔔", 34, "Chuông Đêm Thánh"],
+  };
+  (view.xmas_decor ?? []).forEach((id) => {
+    const d = DECOR_AT[id];
+    if (!d) return;
+    const pid = `dc${id}`;
+    add(
+      d[0],
+      d[1],
+      <g
+        key={`${pid}${pokeKey(pid)}`}
+        className={`iso-click${isPoked(pid) ? " iso-poked" : ""}`}
+        onClick={() =>
+          pokeAt(
+            pid,
+            d[0],
+            d[1],
+            d[3] + 14,
+            me
+              ? `✨ ${d[4]} hiếm của bạn!`
+              : `✨ ${d[4]} hiếm của ${view.user.display_name || view.user.username}, trúng từ hộp quà bí ẩn!`,
+          )
+        }
+      >
+        <Sprite x={d[0]} y={d[1]} size={d[3]} className={isPoked(pid) ? undefined : "iso-idle"}>
+          {d[2]}
+        </Sprite>
+      </g>,
+    );
+  });
+  // vừa bị ném cầu tuyết trúng: tuyết đọng trên ruộng, bấm từng đống để quét đi
+  if (view.snowed_by?.length)
+    for (let i = 0; i < 6; i++) {
+      if (swept.has(i)) continue;
+      const sx = 9.6 + (i % 3) * 1.4;
+      const sy = 6.6 + Math.floor(i / 3) * 1.6;
+      snowLayer.push(
+        <g
+          key={`sn${i}`}
+          className={`iso-click${sweeping.has(i) ? " xmas-sweep" : ""}`}
+          onClick={(e) => {
+            e.stopPropagation(); // không bấm nhầm ô ruộng bên dưới
+            sweep(i);
+          }}
+        >
+          <title>Quét tuyết</title>
+          <Sprite x={sx} y={sy} size={26}>
+            ❄️
+          </Sprite>
+        </g>,
+      );
+    }
   const FL = ["🌷", "🌻", "🌼", "🌸"];
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < (xmas ? 0 : 14); i++) {
     const x = 9.4 + (i % 7) * 0.9;
     const y = 17.2 + Math.floor(i / 7) * 0.8;
     add(
@@ -1404,6 +1759,63 @@ export function FarmWorld({
 
   // nhãn đồng hồ / "Trộm!" và bong bóng vật nuôi: vẽ sau cùng để không vật nào che
   const hud: ReactNode[] = [];
+  hud.push(...xmasHud);
+  // đêm Noel: xe trượt tuyết của Ông già Noel đậu trong vườn mình, bấm để nhận quà
+  if (me && view.xmas?.eve.gift) {
+    const [sx, sy] = pt(10.6, 14.6);
+    hud.push(
+      <g key="eve" className="iso-click xmas-drop" onClick={() => h.onXmasEveGift?.()}>
+        <Shadow x={10.6} y={14.6} r={0.8} o={0.25} />
+        <SvgEmo e="🛷" x={sx - 16} y={sy + 4} size={50} />
+        <SvgEmo e="🎅" x={sx + 22} y={sy - 6} size={44} />
+        <g transform={`translate(${sx}, ${sy - 70})`} className="iso-sign">
+          <rect x={-74} y={-13} width={148} height={24} rx={12} />
+          <SvgLabel text="🎄 Quà đêm Noel!" y={4} />
+        </g>
+      </g>,
+    );
+  }
+  if (poke?.text) {
+    const [bx, by] = pt(poke.x, poke.y, poke.z);
+    const w = Math.min(300, 24 + poke.text.length * 7.2);
+    hud.push(
+      // hai lớp: animation CSS (transform) ở lớp trong, nếu không nó đè mất translate của SVG
+      <g key={`poke${poke.n}`} transform={`translate(${bx}, ${by})`}>
+        <g className="iso-sign xmas-bubble">
+          <rect x={-w / 2} y={-14} width={w} height={26} rx={13} />
+          <SvgLabel text={poke.text} y={4} />
+        </g>
+      </g>,
+    );
+  }
+  if (view.xmas_drop) {
+    const d = view.xmas_drop;
+    const [gx, gy] = pt(10.4, 13.4);
+    hud.push(
+      <g
+        key="xdrop"
+        className="iso-click xmas-drop"
+        onClick={() => h.onXmasDrop?.(d.id)}
+      >
+        <Shadow x={10.4} y={13.4} r={0.5} o={0.25} />
+        <SvgEmo e="🎁" x={gx} y={gy} size={52} />
+        <g transform={`translate(${gx}, ${gy - 66})`} className="iso-sign">
+          <rect x={-58} y={-13} width={116} height={24} rx={12} />
+          <SvgLabel text="🎅 Nhặt quà Noel!" y={4} />
+        </g>
+      </g>,
+    );
+  }
+  if (view.snowed_by?.length) {
+    const [lx, ly] = pt(11.5, 5.2, 60);
+    const names = view.snowed_by.map((u) => u.display_name || u.username).join(", ");
+    hud.push(
+      <g key="snowed" transform={`translate(${lx}, ${ly})`} className="iso-sign">
+        <rect x={-110} y={-13} width={220} height={24} rx={12} />
+        <SvgLabel text={`⛄ ${names.length > 22 ? names.slice(0, 21) + "…" : names} ném tuyết!`} y={4} />
+      </g>,
+    );
+  }
   view.plots.forEach((p, i) => {
     const [x, y] = plotXY(i);
     hud.push(
@@ -1609,7 +2021,11 @@ export function FarmWorld({
             pt(gx + 1, gy + 1),
             pt(gx, gy + 1),
           ])}
-          fill={["#7cc04a", "#78bb46", "#80c44e", "#74b743", "#7dbf4b"][v]}
+          fill={
+            (xmas
+              ? ["#eef4f7", "#e6eef2", "#f3f7f9", "#dfe9ee", "#e9f1f4"]
+              : ["#7cc04a", "#78bb46", "#80c44e", "#74b743", "#7dbf4b"])[v]
+          }
         />,
       );
     }
@@ -1644,7 +2060,7 @@ export function FarmWorld({
   return (
     <div
       ref={wrap}
-      className="iso-wrap"
+      className={`iso-wrap${xmas ? " is-xmas" : ""}`}
       onPointerDown={onDown}
       onPointerMove={onMove}
       onPointerUp={onUp}
@@ -1702,6 +2118,7 @@ export function FarmWorld({
         {expandArea}
         {things.map((t) => t.node)}
         <g>{hud}</g>
+        <g>{snowLayer}</g>
         {placing && (
           <>
             {/* chạm chỗ nào trên bản đồ thì dời bản nháp tới đó; không bấm nhầm vào ruộng, chuồng */}
@@ -1811,6 +2228,7 @@ export function FarmWorld({
           </g>
         )}
       </svg>
+      {xmas && <Snow />}
       <div className="iso-zoom">
         <button
           type="button"

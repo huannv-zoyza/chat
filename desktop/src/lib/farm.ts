@@ -58,7 +58,10 @@ export type FarmLog = {
     | "breakup"
     | "gift"
     | "market_sold"
-    | "market_expired";
+    | "market_expired"
+    | "sock_opened"
+    | "snowball"
+    | "drop_claimed";
   /** id cây / món (gift, market_*) */
   crop?: string;
   /** xu; số lượng với gift và market_expired */
@@ -124,6 +127,15 @@ export type FarmView = {
     /** điểm thân mật vừa cộng / cấp thân mật mới (kết đôi) */
     love?: number;
     love_up?: number;
+    /** Giáng sinh: kẹo vừa nhận (âm: vừa tiêu), tất vừa mở */
+    candy?: number;
+    socks?: { from: PublicUser; item: string; qty: number }[];
+    /** cầu tuyết: trúng / trượt / ném trả */
+    snow?: "hit" | "miss" | "revenge";
+    /** hộp quà bí ẩn vừa mở */
+    prize?: XmasPrize;
+    /** quà Ông già Noel bí mật là quà bù (người tặng quên gửi) */
+    santa_fallback?: boolean;
     /** chăm nhanh cả chuồng: số con đã cho ăn, thức ăn tự mua, số con còn đói */
     fed?: number;
     bought?: Record<string, number>;
@@ -173,6 +185,132 @@ export type FarmView = {
   orchard_spots?: number;
   /** chợ đen chung toàn server, chỉ vườn mình */
   market?: MarketView;
+  /** sự kiện Giáng sinh, chỉ vườn mình */
+  xmas?: XmasView;
+  /** vườn người khác trong sự kiện: treo tất ở đây được không */
+  xmas_sock?: "can" | "hung" | "none_left";
+  /** vườn người khác trong sự kiện: ném cầu tuyết được không */
+  xmas_snow?: "can" | "cooldown" | "none_left";
+  /** ai vừa ném trúng cầu tuyết vào vườn này (15 phút) */
+  snowed_by?: PublicUser[];
+  /** quà Ông già Noel đang chờ nhặt ở vườn này */
+  xmas_drop?: XmasDrop;
+  /** đồ trang trí Noel hiếm của chủ vườn (id trong XmasView.decors) */
+  xmas_decor?: string[];
+  /** số mốc cây thông chung toàn server đã đạt */
+  xmas_tree_level?: number;
+  /** số tất Noel đang treo (chưa mở) ở vườn này */
+  xmas_socks?: number;
+};
+
+export type XmasDrop = { id: number; owner: PublicUser; expires_at: string };
+export type XmasTopRow = { user: PublicUser; value: number };
+export type XmasDecor = { id: string; name: string; emoji: string };
+export type XmasPrize = {
+  kind: "xu" | "candy" | "item" | "decor";
+  xu?: number;
+  candy?: number;
+  item?: string;
+  qty?: number;
+  decor?: string;
+  rare?: boolean;
+};
+
+export type XmasOrder = {
+  slot: number;
+  items: { item: string; qty: number }[];
+  candy: number;
+  /** xu thêm (40% đơn xe tải) */
+  xu: number;
+  xp: number;
+  done: boolean;
+  can_deliver: boolean;
+};
+
+export type XmasReward = {
+  id: string;
+  name: string;
+  emoji: string;
+  cost: number;
+  /** phiếu xây nông trại: expand | storage | tree */
+  kind?: string;
+  note?: string;
+  /** mỗi ngày đổi tối đa (túi xu) */
+  daily_max?: number;
+  xu?: number;
+  item?: string;
+  qty?: number;
+};
+
+/** Sự kiện Giáng sinh (store/farm_xmas.go). on=false: sự kiện đã qua, chỉ còn cửa hàng / mở tất. */
+export type XmasView = {
+  from: string;
+  to: string;
+  shop_to: string;
+  on: boolean;
+  candy: number;
+  orders: XmasOrder[];
+  streak: number;
+  streak_candy: number;
+  streak_max: number;
+  shop: XmasReward[];
+  shop_open: boolean;
+  socks_left: number;
+  sock_max_qty: number;
+  socks_ready: number;
+  socks_waiting: number;
+  golden: boolean;
+  golden_day: string;
+  golden_from: number;
+  golden_to: number;
+  snow_left: number;
+  drops: XmasDrop[];
+  tree: {
+    total: number;
+    mine: number;
+    goals: number[];
+    claimed: boolean[];
+    reward: number;
+    top: XmasTopRow[];
+  };
+  top: XmasTopRow[];
+  earned: number;
+  box_cost: number;
+  decors: XmasDecor[];
+  /** ưu đãi tân thủ: dưới cấp newbie_level mọi kẹo +newbie_pct% */
+  newbie: boolean;
+  newbie_level: number;
+  newbie_pct: number;
+  /** kẹo còn nhận được từ góp cây hôm nay / mỗi ngày; điểm góp tối thiểu để nhận thưởng mốc */
+  tree_candy_left: number;
+  tree_candy_day: number;
+  tree_min_share: number;
+  /** quà dưới gốc cây thông hôm nay chưa mở */
+  daily_gift: boolean;
+  /** món giới hạn mỗi ngày: còn đổi được mấy lần */
+  shop_left: Record<string, number>;
+  /** phiếu cây giống Noel đang có (lần trồng kế tiếp miễn phí) */
+  tree_vouchers: number;
+  /** thống kê sự kiện cả nhóm */
+  stats: { today: Record<string, number>; total: Record<string, number>; players_today: number; players: number };
+  /** đồ trang trí độc quyền (mốc kẹo cuối, quà đêm Noel), không có trong hộp bí ẩn */
+  special_decors: XmasDecor[];
+  milestones: { need: number; prize: XmasPrize; claimed: boolean }[];
+  santa: {
+    draw_day: string;
+    can_join: boolean;
+    joined: boolean;
+    drawn: boolean;
+    people: number;
+    sent_count: number;
+    target?: PublicUser;
+    sent: boolean;
+    sent_item?: string;
+    sent_qty?: number;
+    gift_ready: boolean;
+    max_qty: number;
+  };
+  eve: { at: string; to: string; now: boolean; gift: boolean; candy: number; xu: number; revealed: boolean };
 };
 
 /** Một cây trong vườn: growing (đang lớn) | fruiting (đang ra quả) | ready (có quả để hái). */
@@ -426,6 +564,36 @@ export const farmEvents = {
 /* ---------- sự kiện "farm.market": chợ đen vừa đổi, ai đang mở nông trại thì tải lại ---------- */
 
 const marketSubs = new Set<() => void>();
+/* ---------- sự kiện "farm.xmas": tin Giáng sinh toàn server (quà rơi, trúng đồ hiếm, cây lên mốc) ---------- */
+
+const xmasSubs = new Set<() => void>();
+export const farmXmasEvents = {
+  emit() {
+    xmasSubs.forEach((f) => f());
+  },
+  on(f: () => void) {
+    xmasSubs.add(f);
+    return () => {
+      xmasSubs.delete(f);
+    };
+  },
+};
+
+/** Tin Giáng sinh báo riêng mình (bị ném tuyết, có tất mới, tất được mở, quà ở vườn bị nhặt). */
+export type XmasPoke = { kind: string; text: string; from_id?: number; id?: number; lines?: string[] };
+const pokeSubs = new Set<(p: XmasPoke) => void>();
+export const farmXmasPokes = {
+  emit(p: XmasPoke) {
+    pokeSubs.forEach((f) => f(p));
+  },
+  on(f: (p: XmasPoke) => void) {
+    pokeSubs.add(f);
+    return () => {
+      pokeSubs.delete(f);
+    };
+  },
+};
+
 export const farmMarketEvents = {
   emit() {
     marketSubs.forEach((f) => f());

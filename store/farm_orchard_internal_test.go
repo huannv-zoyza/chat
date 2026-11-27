@@ -9,7 +9,7 @@ func TestOrderPoolGatesFruit(t *testing.T) {
 	s.SetRand(func() float64 { n++; return float64(n%97) / 97 })
 	count := func(fruits map[string]bool) (cam, tao int) {
 		for range 400 {
-			items, _, _ := s.newOrder(20, map[string]int{kitchenID: 1}, fruits)
+			items, _, _ := s.newOrder("2026-11-24", 20, map[string]int{kitchenID: 1}, fruits)
 			for _, it := range items {
 				switch it.Item {
 				case "cam":

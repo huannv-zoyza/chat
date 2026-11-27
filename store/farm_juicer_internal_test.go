@@ -76,7 +76,7 @@ func TestFarmOrdersJuiceGating(t *testing.T) {
 	fruits := map[string]bool{"cam": true, "tao": true, "chuoi": true, "xoai": true, "dua": true, "nho": true}
 	count := func(built map[string]int) (kitchen, juice int) {
 		for range 600 {
-			items, _, _ := s.newOrder(30, built, fruits)
+			items, _, _ := s.newOrder("2026-11-24", 30, built, fruits)
 			goods := 0
 			for _, it := range items {
 				r, ok := recipeByID(it.Item)

@@ -37,7 +37,7 @@ import { playCoinSound, playMentionSound, playMessageSound, playThrowSound } fro
 import { channelLabel, dmPeerId, isDM } from "../lib/channel";
 import { e2ee } from "../lib/e2ee";
 import { load, save } from "../lib/storage";
-import { farmEvents, farmMarketEvents } from "../lib/farm";
+import { farmEvents, farmMarketEvents, farmXmasEvents, farmXmasPokes } from "../lib/farm";
 import {
   type Action,
   type ChatState,
@@ -631,6 +631,15 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       sock.on("watchparty.error", (ev) => dispatch({ type: "notice", text: ev.message })),
       sock.on("farm.updated", (ev) => farmEvents.emit(ev.log)),
       sock.on("farm.market", () => farmMarketEvents.emit()),
+      sock.on("farm.xmas", (ev) => {
+        // tin Noel chung hiện ở khung XmasNotice (nổi trên cả chat lẫn nông trại); except: người đã có tin riêng
+        if (ev.text && !ev.except?.includes(me.id)) farmXmasPokes.emit({ kind: "news", text: ev.text, id: ev.id });
+        farmXmasEvents.emit();
+      }),
+      sock.on("farm.xmas_me", (ev) => {
+        farmXmasPokes.emit({ kind: ev.kind, text: ev.text, from_id: ev.from_id, id: ev.id });
+        farmXmasEvents.emit();
+      }),
       sock.on("nickname.updated", (ev) =>
         dispatch({ type: "nickname.set", channelId: ev.channel_id, userId: ev.user_id, nickname: ev.nickname }),
       ),

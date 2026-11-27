@@ -643,6 +643,33 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
       request<import("./farm").FarmView>("POST", "/api/farm/market", { item, qty, price }),
     farmMarketBuy: (id: number) => request<import("./farm").FarmView>("POST", `/api/farm/market/${id}/buy`),
     farmMarketCancel: (id: number) => request<import("./farm").FarmView>("DELETE", `/api/farm/market/${id}`),
+    farmXmasDeliver: (slot: number) =>
+      request<import("./farm").FarmView>("POST", `/api/farm/xmas/orders/${slot}/deliver`),
+    farmXmasBuy: (id: string) => request<import("./farm").FarmView>("POST", `/api/farm/xmas/shop/${id}`),
+    farmXmasSock: (userId: number, item: string, qty: number) =>
+      request<import("./farm").FarmView>("POST", "/api/farm/xmas/sock", { user_id: userId, item, qty }),
+    farmXmasOpenSocks: () => request<import("./farm").FarmView>("POST", "/api/farm/xmas/socks/open"),
+    farmXmasSnowball: (userId: number) =>
+      request<import("./farm").FarmView>("POST", "/api/farm/xmas/snowball", { user_id: userId }),
+    farmXmasClaimDrop: (id: number) => request<import("./farm").FarmView>("POST", `/api/farm/xmas/drops/${id}/claim`),
+    farmXmasBox: () => request<import("./farm").FarmView>("POST", "/api/farm/xmas/box"),
+    farmXmasTree: (item: string, qty: number) =>
+      request<import("./farm").FarmView>("POST", "/api/farm/xmas/tree", { item, qty }),
+    farmXmasTreeClaim: (goal: number) =>
+      request<import("./farm").FarmView>("POST", `/api/farm/xmas/tree/${goal}/claim`),
+    farmXmasSantaJoin: () => request<import("./farm").FarmView>("POST", "/api/farm/xmas/santa/join"),
+    farmXmasSantaSend: (item: string, qty: number) =>
+      request<import("./farm").FarmView>("POST", "/api/farm/xmas/santa/send", { item, qty }),
+    farmXmasSantaOpen: () => request<import("./farm").FarmView>("POST", "/api/farm/xmas/santa/open"),
+    farmXmasMilestone: (n: number) => request<import("./farm").FarmView>("POST", `/api/farm/xmas/milestones/${n}/claim`),
+    farmXmasEveGift: () => request<import("./farm").FarmView>("POST", "/api/farm/xmas/eve-gift"),
+    farmXmasInbox: (since: number) =>
+      request<{ items: { id: number; at: string; kind: string; text: string; from_id?: number }[]; last: number }>(
+        "GET",
+        `/api/farm/xmas/inbox?since=${since}`,
+      ),
+    farmXmasDailyGift: () => request<import("./farm").FarmView>("POST", "/api/farm/xmas/daily-gift"),
+    farmXmasTop: () => request<import("./farm").XmasTopRow[]>("GET", "/api/farm/xmas/top"),
     farmCraft: (recipe: string) => request<import("./farm").FarmView>("POST", "/api/farm/craft", { recipe }),
     farmCraftFill: (recipe: string) =>
       request<import("./farm").FarmView>("POST", "/api/farm/craft", { recipe, fill: true }),

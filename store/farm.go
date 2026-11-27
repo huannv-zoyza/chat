@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -96,14 +97,23 @@ const (
 )
 
 // dailyQuests: 4 nhiệm vụ của userID trong ngày day, chọn cố định theo băm (user, ngày, nhiệm vụ),
-// giữ thứ tự trong kho.
+// giữ thứ tự trong kho. Mùa Giáng sinh không có nhiệm vụ trộm (không trộm được).
 func dailyQuests(userID int64, day string) []questDef {
 	type ranked struct {
 		i int
 		h uint64
 	}
-	rs := make([]ranked, len(questDefs))
-	for i, q := range questDefs {
+	defs := questDefs
+	if xmasOn(day) { // không trộm được: thay nhiệm vụ trộm bằng ném cầu tuyết
+		defs = slices.Clone(questDefs)
+		for i := range defs {
+			if defs[i].ID == "steal" {
+				defs[i] = questDef{snowQuestKey, "Ném trúng 3 quả cầu tuyết", 3, 40, 10}
+			}
+		}
+	}
+	rs := make([]ranked, len(defs))
+	for i, q := range defs {
 		h := fnv.New64a()
 		fmt.Fprintf(h, "%d|%s|%s", userID, day, q.ID)
 		rs[i] = ranked{i, h.Sum64()}
@@ -116,7 +126,7 @@ func dailyQuests(userID int64, day string) []questDef {
 	sort.Ints(picked)
 	out := make([]questDef, len(picked))
 	for i, idx := range picked {
-		out[i] = questDefs[idx]
+		out[i] = defs[idx]
 	}
 	return out
 }
@@ -236,6 +246,13 @@ type Gained struct {
 	Watered int         `json:"watered,omitempty"` // tưới tất cả (FarmWaterAll): số ô vừa tưới
 	Bugs    int         `json:"bugs,omitempty"`    // bắt sâu tất cả (FarmBugAll): số con vừa bắt
 	Auto    *AutoReport `json:"auto,omitempty"`
+	// Giáng sinh (farm_xmas.go): kẹo vừa nhận (âm: vừa tiêu), tất vừa mở.
+	Candy int64      `json:"candy,omitempty"`
+	Socks []XmasSock `json:"socks,omitempty"`
+	Snow  string     `json:"snow,omitempty"`  // cầu tuyết: hit | miss | revenge (ném trả)
+	Prize *XmasPrize `json:"prize,omitempty"` // hộp quà bí ẩn vừa mở
+	// quà Ông già Noel bí mật là quà bù (người tặng quên gửi)
+	SantaFallback bool `json:"santa_fallback,omitempty"`
 }
 
 type FarmView struct {
@@ -291,6 +308,20 @@ type FarmView struct {
 
 	// Chợ đen (farm_market.go), chung toàn server; chỉ khi me.
 	Market *MarketView `json:"market,omitempty"`
+
+	// Giáng sinh (farm_xmas.go): xmas chỉ khi me; xmas_sock chỉ khi xem vườn người khác trong sự kiện:
+	// can | hung (đã treo ở đây hôm nay) | none_left (hết tất hôm nay).
+	Xmas     *XmasView `json:"xmas,omitempty"`
+	XmasSock string    `json:"xmas_sock,omitempty"`
+	// Ai xem cũng thấy trong sự kiện (farm_xmas_fun.go): người vừa ném trúng cầu tuyết (vườn phủ tuyết),
+	// quà Ông già Noel đang chờ nhặt ở vườn này, đồ trang trí hiếm, số mốc cây thông chung đã đạt.
+	// xmas_snow chỉ khi xem vườn người khác: can | cooldown | none_left.
+	XmasSnow      string             `json:"xmas_snow,omitempty"`
+	SnowedBy      []model.PublicUser `json:"snowed_by,omitempty"`
+	XmasDrop      *XmasDropView      `json:"xmas_drop,omitempty"`
+	XmasDecor     []string           `json:"xmas_decor,omitempty"`
+	XmasTreeLevel int                `json:"xmas_tree_level,omitempty"`
+	XmasSocks     int                `json:"xmas_socks,omitempty"` // tất Noel đang treo (chưa mở) ở vườn này
 }
 
 // TreeView: một cây trong vườn. State: growing | fruiting | ready.
@@ -320,13 +351,16 @@ type LeaderRow struct {
 
 // FarmResult: kết quả một hành động, để controller dựng FarmView và bắn sự kiện.
 type FarmResult struct {
-	OwnerID int64     // nông trại vừa bị tác động (trả FarmView của vườn này)
-	Notify  int64     // người nhận farm.updated {log} nếu khác OwnerID (vd. tặng quà cho người thương)
-	Gained  *Gained   // nil nếu hành động không đem lại gì
-	Dog     *bool     // chỉ có khi trộm
-	Log     *LogEntry // có khi người khác tác động lên nông trại của OwnerID
-	Wallets []Wallet  // ví đã đổi
-	Market  bool      // chợ đen vừa đổi: báo mọi người tải lại (farm.market)
+	OwnerID int64      // nông trại vừa bị tác động (trả FarmView của vườn này)
+	Notify  int64      // người nhận farm.updated {log} nếu khác OwnerID (vd. tặng quà cho người thương)
+	Gained  *Gained    // nil nếu hành động không đem lại gì
+	Dog     *bool      // chỉ có khi trộm
+	Log     *LogEntry  // có khi người khác tác động lên nông trại của OwnerID
+	Wallets []Wallet   // ví đã đổi
+	Market  bool       // chợ đen vừa đổi: báo mọi người tải lại (farm.market)
+	News    string     // tin sự kiện Giáng sinh báo cả server (farm.xmas)
+	Sync    bool       // Giáng sinh: báo im lặng cả server tải lại (quà vừa bị nhặt), không hiện tin
+	Pokes   []XmasPoke // Giáng sinh: báo riêng người liên quan (farm.xmas_me); tin chung News thì bỏ qua họ
 }
 
 /* ---------- Đọc dữ liệu thô ---------- */
@@ -931,25 +965,30 @@ func (s *Store) FarmClear(ctx context.Context, userID int64, idx int) (FarmResul
 func (s *Store) FarmExpand(ctx context.Context, userID int64) (FarmResult, error) {
 	res := FarmResult{OwnerID: userID}
 	var err error
-	res.Wallets, err = s.farmTx(ctx, func(op *farmOp) error {
-		f, err := ensureFarm(ctx, op.tx, userID)
-		if err != nil {
-			return err
-		}
-		next := expansionOf(f.Plots).Next
-		if next == nil {
-			return ErrFarmMaxPlots
-		}
-		if levelFor(f.XP) < next.Level {
-			return farmErr("Cần đạt cấp %d mới mở rộng được nông trại.", next.Level)
-		}
-		if err := op.spend(userID, next.Price, fmt.Sprintf("Mở rộng nông trại lên %d ô", next.Plots)); err != nil {
-			return err
-		}
-		_, err = op.tx.ExecContext(ctx, `UPDATE farms SET plots = ? WHERE user_id = ?`, next.Plots, userID)
-		return err
-	})
+	res.Wallets, err = s.farmTx(ctx, func(op *farmOp) error { return op.expand(userID, 100) })
 	return res, err
+}
+
+// expand: mở rộng lên bậc kế, trả pricePct% giá (100: giá thường; phiếu Noel trả ít hơn).
+func (op *farmOp) expand(userID, pricePct int64) error {
+	f, err := ensureFarm(op.ctx, op.tx, userID)
+	if err != nil {
+		return err
+	}
+	next := expansionOf(f.Plots).Next
+	if next == nil {
+		return ErrFarmMaxPlots
+	}
+	if levelFor(f.XP) < next.Level {
+		return farmErr("Cần đạt cấp %d mới mở rộng được nông trại.", next.Level)
+	}
+	if price := next.Price * pricePct / 100; price > 0 {
+		if err := op.spend(userID, price, fmt.Sprintf("Mở rộng nông trại lên %d ô", next.Plots)); err != nil {
+			return err
+		}
+	}
+	_, err = op.tx.ExecContext(op.ctx, `UPDATE farms SET plots = ? WHERE user_id = ?`, next.Plots, userID)
+	return err
 }
 
 // FarmBuyDog: thuê chó giữ nhà thêm 24h (cộng dồn từ lúc hết hạn hiện tại, tối đa 72h kể từ bây giờ).
@@ -1205,6 +1244,9 @@ func (s *Store) FarmSteal(ctx context.Context, thiefID, ownerID int64, idx int) 
 	res.Wallets, err = s.farmTx(ctx, func(op *farmOp) error {
 		if thiefID == ownerID {
 			return ErrFarmOwnSteal
+		}
+		if xmasOn(op.day) {
+			return ErrXmasSteal
 		}
 		if ok, err := partners(ctx, op.tx, thiefID, ownerID); err != nil {
 			return err
@@ -1475,7 +1517,7 @@ func (s *Store) GetFarm(ctx context.Context, ownerID, viewerID int64) (FarmView,
 		Perks: farmPerks(lv), NextPerks: farmPerks(lv + 1),
 		PlotCount: f.Plots, MaxPlots: FarmMaxPlots, Crops: Crops,
 		Now:        rfc(now),
-		StealsLeft: int(max(0, FarmStealsPerDay-tries)),
+		StealsLeft: int(max(0, stealsPerDay(day)-tries)),
 	}
 	v.Expansion = expansionOf(f.Plots)
 	if n := v.Expansion.Next; n != nil {
@@ -1497,6 +1539,9 @@ func (s *Store) GetFarm(ctx context.Context, ownerID, viewerID int64) (FarmView,
 		return FarmView{}, err
 	}
 	if err := s.fillCouple(ctx, &v, ownerID, viewerID, day); err != nil {
+		return FarmView{}, err
+	}
+	if err := s.fillXmas(ctx, &v, ownerID, viewerID, nowT); err != nil {
 		return FarmView{}, err
 	}
 	if v.CoupleState == "partner" { // không trộm vườn người thương
@@ -1626,7 +1671,7 @@ func (s *Store) FarmNeighbors(ctx context.Context, viewerID int64) ([]Neighbor, 
 	if err != nil {
 		return nil, err
 	}
-	stealsLeft := int(max(0, FarmStealsPerDay-tries))
+	stealsLeft := int(max(0, stealsPerDay(vnDay(nowT))-tries))
 	couple, coupled, err := coupleOf(ctx, s.db, viewerID)
 	if err != nil {
 		return nil, err

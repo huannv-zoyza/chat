@@ -504,3 +504,94 @@ market: { slots: 10; used: number; per_user: 3; max_qty: 50; max_price: 1000000;
 
 Giao diện: tab "🕶️ Chợ đen" (`BlackMarketPanel` trong `components/Farm.tsx`): thanh `used/slots`, danh sách lô (Mua / Gỡ),
 nút "Treo hàng" mở hộp chọn món, số lượng và giá (gợi ý giá bán ở kho), tắt khi chợ kín hoặc đã treo đủ 3 lô.
+
+## 16. Sự kiện Giáng sinh
+
+Mã: `store/farm_xmas.go`, migration 000035. Chạy `XmasFrom`..`XmasTo` (20/12/2026 → 01/01/2027, ngày giờ VN, tính cả
+hai đầu); cửa hàng kẹo mở tới `XmasShopTo` (07/01/2027). Tiền sự kiện: **Kẹo Noel** (bảng `farm_xmas`).
+
+- **Đơn của Ông già Noel**: mỗi người mỗi ngày 3 đơn riêng (sinh lúc mở nông trại lần đầu trong ngày), cùng bể hàng
+  với đơn xe tải nhưng gấp đôi số lượng. Giao đơn: trừ kho, nhận xu bằng 40% đơn xe tải cùng hàng, nhận kẹo (`ceil(giá trị / 40)`, tối thiểu 2) và XP, tính
+  vào nhiệm vụ "Giao 2 đơn hàng". Kẹo mỗi đơn = `ceil(giá trị / 60)` trong khoảng 4..8 (sàn cao, trần thấp để đơn người mới không thua xa), XP
+  như đơn xe tải.
+  Giao đủ cả 3 đơn trong ngày: thêm `5 × số ngày liên tiếp` kẹo (tối đa 7 ngày).
+- **Cửa hàng Noel** (`XmasShop`): túi 500 xu (tối đa 2 lần/ngày: xu dùng chung ví với cả app, chặn lạm phát), hàng
+  vào kho (cần đủ chỗ), và phiếu xây nông trại dùng ngay: mở rộng đất bậc kế giảm 50% (vẫn cần đủ cấp), nâng kho một
+  bậc miễn phí, phiếu cây giống (lần trồng cây ăn quả kế tiếp miễn phí, lưu ở `farm_counters` ngày "xmas"). Phiếu
+  lỗi (chưa đủ cấp, kho tối đa) thì không mất kẹo.
+- **Tất Noel**: mỗi ngày treo tối đa 3 tất ở 3 vườn khác nhau, mỗi tất 1–5 đơn vị một món trong kho (rời kho ngay).
+  Người treo nhận 2 kẹo. Chủ vườn mở từ hôm sau (mở hết một lần, cần đủ chỗ kho), lúc đó mới biết ai tặng; mỗi tất 2
+  kẹo, người tặng nhận nhật ký `sock_opened`. Mở được cả sau sự kiện.
+- **Không trộm**: trong sự kiện lượt trộm mỗi ngày = 0, `FarmSteal` báo `ErrXmasSteal`, không có nhiệm vụ trộm.
+
+API: `POST /api/farm/xmas/orders/{slot}/deliver`, `POST /api/farm/xmas/shop/{id}`,
+`POST /api/farm/xmas/sock {user_id, item, qty}`, `POST /api/farm/xmas/socks/open`.
+
+FarmView: `xmas` (vườn mình, khi sự kiện / cửa hàng còn mở hoặc còn tất chưa mở): `{on, candy, orders[], streak,
+shop[], shop_open, socks_left, socks_ready, socks_waiting, ...}`; `xmas_sock` (vườn người khác trong sự kiện):
+`can | hung | none_left`. `gained.candy` (âm khi tiêu), `gained.socks[]` (tất vừa mở).
+
+Giao diện: tab "🎄 Noel" (`XmasPanel`) chỉ hiện khi có `xmas`; nút "🧦 Treo tất Noel" khi thăm vườn người khác.
+
+### 16b. Phần cho vui (`store/farm_xmas_fun.go`)
+
+- **Giờ vàng**: 24/12 từ 20:00 tới 24:00 giờ VN, mọi kẹo nhận được x2 (tính trong `addCandy`).
+- **Cầu tuyết ⛄** (thay cho trộm): 10 quả/ngày, mỗi vườn 30 phút một lần. Trúng 70%: +1 kẹo, chủ vườn nhận nhật ký
+  `snowball` và ruộng phủ tuyết 15 phút (`snowed_by`). Ném trả người vừa ném trúng mình trong 30 phút: +2 kẹo nữa.
+  Nhiệm vụ trộm hằng ngày đổi thành "Ném trúng 3 quả cầu tuyết".
+- **Quà Ông già Noel**: 4 lượt/ngày, mỗi lượt vào một phút ngẫu nhiên (cố định theo ngày) trong 2 giờ từ 9h, 13h,
+  17h, 20h. Bộ hẹn giờ thả quà ở vườn một người ngẫu nhiên (ưu tiên người có chơi hôm nay) và báo cả server. Ai bấm
+  nhặt trước trong 10 phút: +10 kẹo, +100 xu; chủ vườn +3 kẹo nếu người khác nhặt.
+- **Hộp quà bí ẩn**: 12 kẹo một hộp: xu, kẹo, len, nấm, áo len, hoặc 6% đồ trang trí hiếm (`XmasDecors`: tuần lộc,
+  xe trượt tuyết, tượng Ông già Noel, người tuyết khổng lồ) hiện trên bản đồ vườn; trúng đồ hiếm thì báo cả server.
+- **Cây thông chung**: góp 1–50 món, điểm = giá bán × số lượng, mỗi 60 điểm 1 kẹo, tối đa 20 kẹo/ngày từ góp cây
+  (hết phần kẹo vẫn góp điểm được), để kho to không đổi hết ra kẹo. Mốc 3.000 / 10.000 / 25.000 / 50.000 điểm: ai đã
+  góp từ 100 điểm nhận 15 kẹo mỗi mốc. Cây thông lớn trên bản đồ to và sáng dần theo số mốc.
+- **Quà dưới gốc cây thông**: mỗi ngày bấm hộp quà dưới cây thông lớn trong vườn mình được 1–3 kẹo
+  (`POST /api/farm/xmas/daily-gift`). Các món Noel khác trên bản đồ (cây thông, người tuyết, tuần lộc, đồ hiếm, hàng
+  thông, đống tuyết khi bị ném) bấm vào có hiệu ứng / lời nói, chỉ ở giao diện.
+- **Ưu đãi tân thủ**: người chơi dưới cấp 6 nhận thêm 50% mọi kẹo (làm tròn lên, tính trước giờ vàng).
+- **Top kẹo**: xếp theo tổng kẹo đã kiếm (`farm_xmas.earned`); top 10 có huy hiệu "🎄 Top Noel" cạnh tên trong chat.
+
+API thêm: `POST /api/farm/xmas/snowball {user_id}`, `POST /api/farm/xmas/drops/{id}/claim`, `POST /api/farm/xmas/box`,
+`POST /api/farm/xmas/tree {item, qty}`, `POST /api/farm/xmas/tree/{goal}/claim`, `GET /api/farm/xmas/top`.
+Websocket `farm.xmas {text}` tới mọi người: quà vừa rơi, trúng đồ hiếm, cây lên mốc; `farm.xmas` không text khi quà
+vừa bị nhặt (chỉ để tải lại, đỡ ồn). `farm.xmas_me {kind, text, from_id}` báo riêng người liên quan, hiện ở góc màn
+hình cả khi đang ở chat (`XmasNotice`): bị ném tuyết (nút "Ném trả"), có tất mới (ẩn danh), tất mình tặng được mở,
+quà ở vườn mình bị nhặt. Tất đang treo hiện trên dây kim tuyến trước nhà kho (`xmas_socks`), chủ vườn bấm để mở.
+
+
+### 16c. Cao trào (`store/farm_xmas_finale.go`, migration 000036)
+
+- **Ông già Noel bí mật**: đăng ký (`POST /api/farm/xmas/santa/join`) không giới hạn số người, tới trước đêm Noel.
+  Ngày `XmasSantaDraw` (21/12) bộ hẹn giờ bốc thăm một lần: xáo trộn rồi xếp vòng, người i tặng người i+1 (không ai
+  tự tặng, mỗi người nhận đúng một quà), báo cả server. Vào muộn: chen vào sau một người tặng **chưa gửi quà**
+  (A→B thành A→mới→B; ai đã gói quà giữ nguyên người nhận; ai cũng đã gửi thì không chen được). Lúc bốc thăm thiếu
+  người thì người chờ được ghép vòng khi đủ 2. Gửi quà 1–10 món trong kho, một lần, trước `XmasEveAt`
+  (`POST .../santa/send {item, qty}`, +5 kẹo, báo "x/y người đã gửi"). Từ đêm Noel người nhận mở quà
+  (`POST .../santa/open`, +5 kẹo, cần đủ chỗ kho), cả server biết ai tặng gì.
+- **Mốc kẹo cá nhân** theo tổng kẹo đã kiếm: 50 → 300 xu, 120 → 3 nấm, 250 → 2 áo len, 400 → 🌟 Ngôi sao Giáng
+  sinh (đồ trang trí độc quyền, báo cả server). `POST /api/farm/xmas/milestones/{n}/claim`.
+- **Đêm Noel** từ `XmasEveAt` (24/12 20:00, trùng giờ vàng) tới hết `XmasEveTo` (25/12): lần đầu tới giờ, bộ hẹn
+  giờ báo cả server "Ông già Noel ghé vườn mọi người", lộ diện các cặp bí mật và top 3 kẹo. Mỗi người nhận một lần
+  quà đêm Noel (`POST .../eve-gift`): 20 kẹo (x2 giờ vàng), 300 xu và 🔔 Chuông Đêm Thánh. Trên bản đồ có xe trượt
+  tuyết của Ông già Noel để bấm nhận.
+- **Món Noel** ở xưởng: Bánh gừng 🍪, Ca cao nóng ☕, Kẹo gậy 🍭. Chỉ nấu được và chỉ vào đơn hàng trong sự kiện
+  (`recipeOpen`); đã nấu thì vẫn bán / giao được sau sự kiện.
+
+Sau sự kiện: đồ trang trí Noel (`farm_xmas_decor`) vẫn hiện trên bản đồ vĩnh viễn (chiến tích). Tab Noel ẩn khi hết
+hạn cửa hàng, trừ khi còn tất hoặc quà Ông già Noel bí mật chưa mở.
+
+### 16d. Bổ sung (`store/farm_xmas_extras.go`, migration 000037)
+
+- **Quà bù Ông già Noel bí mật**: tới đêm Noel mà người tặng chưa gửi thì người nhận vẫn mở được quà bù (10 kẹo + 5
+  kẹo mở quà, 200 xu). Tin báo chỉ nói "Ông già Noel đã gửi bù", không nêu tên người quên.
+- **Thống kê theo ngày** (`farm_xmas_stats`, `farm_xmas_active`): mỗi hành động sự kiện +1 (đơn Noel, cầu tuyết, tất,
+  nhặt quà, hộp bí ẩn, góp cây, quà bí mật, quà dưới gốc cây) và ghi người chơi trong ngày. `xmas.stats` trong
+  FarmView; tab Noel có mục "Cả nhóm chơi Noel" (hôm nay / cả mùa).
+- **Tin cho người offline** (`farm_xmas_news`, giữ 300 tin): mọi tin chung và tin riêng đều lưu (tin chung có `skip`
+  là những người đã có tin riêng / tự làm). `GET /api/farm/xmas/inbox?since=N` trả tin trong 2 ngày gần nhất; sự
+  kiện websocket kèm `id` để client đánh dấu đã xem. Mở app: thẻ "Trong lúc bạn vắng mặt" (tối đa 6 dòng); lần đầu
+  trên máy chỉ lấy mốc, không dội tin cũ.
+- **Nhạc Noel**: giai điệu Jingle Bells (dân gian) bằng tiếng chuông WebAudio, nhỏ, lặp; mặc định tắt, nút 🎵/🔇 trên
+  thanh trên nông trại, nhớ lựa chọn; tắt khi rời nông trại hoặc hết sự kiện.

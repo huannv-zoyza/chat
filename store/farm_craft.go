@@ -51,12 +51,24 @@ var Recipes = []Recipe{
 	{"nuoc_thap_cam", "Nước ép thập cẩm", "🍹", ingredients("cam", 1, "tao", 1, "xoai", 1, "ca_rot", 1), 2 * 3600, 165, 14, 12, juicerID},
 	{"nuoc_dua", "Nước dừa", "🌴", ingredients("dua", 2), 45 * 60, 195, 16, 14, juicerID},
 	{"nuoc_nho", "Nước nho", "🍷", ingredients("nho", 4), 90 * 60, 540, 32, 18, juicerID},
+	// Món Noel (xmasRecipes): chỉ nấu được, chỉ vào đơn hàng khi đang sự kiện Giáng sinh
+	{"banh_gung", "Bánh gừng Noel", "🍪", ingredients("lua", 1, "trung", 2, "sua", 1), 45 * 60, 250, 12, 4, kitchenID},
+	{"ca_cao", "Ca cao nóng", "☕", ingredients("sua", 2), 30 * 60, 225, 10, 4, kitchenID},
+	{"keo_gay", "Kẹo gậy Noel", "🍭", ingredients("dau_tay", 2, "sua", 1), 60 * 60, 340, 16, 5, kitchenID},
 }
 
 const (
 	kitchenID = "kitchen"
 	juicerID  = "juicer"
 )
+
+// xmasRecipes: món chỉ có trong sự kiện Giáng sinh (đã nấu xong thì vẫn bán / giao được sau sự kiện).
+var xmasRecipes = map[string]bool{"banh_gung": true, "ca_cao": true, "keo_gay": true}
+
+// recipeOpen: món recipeID có đang mở ở ngày day (món Noel chỉ mở trong sự kiện).
+func recipeOpen(recipeID, day string) bool { return !xmasRecipes[recipeID] || xmasOn(day) }
+
+var ErrXmasRecipeOff = &FarmError{"Món Noel chỉ nấu được trong sự kiện Giáng sinh."}
 
 func recipeByID(id string) (Recipe, bool) {
 	for _, r := range Recipes {
@@ -118,6 +130,9 @@ func loadJobs(ctx context.Context, q queryer, userID int64) ([]jobRow, error) {
 // freeSlots: các lò trống của công trình mà món r cần (theo thứ tự lò), sau khi kiểm tra đã xây,
 // đủ cấp và còn lò. Lỗi giữ nguyên lời của xưởng; máy ép có lời riêng.
 func (op *farmOp) freeSlots(userID int64, r Recipe) ([]int, error) {
+	if !recipeOpen(r.ID, op.day) {
+		return nil, ErrXmasRecipeOff
+	}
 	f, err := ensureFarm(op.ctx, op.tx, userID)
 	if err != nil {
 		return nil, err
@@ -374,7 +389,12 @@ func (s *Store) fillKitchen(ctx context.Context, v *FarmView, ownerID, now int64
 		v.Jobs[i] = Job{Building: j.Building, Slot: j.Slot, Recipe: j.Recipe.ID, ReadyAt: rfc(j.Ready), State: st}
 	}
 	if v.Me {
-		v.Recipes = Recipes
+		day := vnDay(s.now())
+		for _, r := range Recipes {
+			if recipeOpen(r.ID, day) {
+				v.Recipes = append(v.Recipes, r)
+			}
+		}
 	}
 	return nil
 }

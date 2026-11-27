@@ -1,9 +1,12 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -50,6 +53,25 @@ import (
 //	POST /api/farm/market          {item, qty, price}  treo hàng trong kho lên chợ đen (giá cả lô)
 //	POST /api/farm/market/{id}/buy                    mua cả lô
 //	DELETE /api/farm/market/{id}                      gỡ lô của mình, hàng về kho
+//	POST /api/farm/xmas/orders/{slot}/deliver         giao đơn Ông già Noel (Giáng sinh, store/farm_xmas.go)
+//	POST /api/farm/xmas/shop/{id}                     đổi Kẹo Noel lấy quà
+//	POST /api/farm/xmas/sock       {user_id, item, qty} treo tất Noel ở vườn người khác
+//	POST /api/farm/xmas/socks/open                    mở mọi tất đã treo từ hôm trước ở vườn mình
+//	POST /api/farm/xmas/snowball   {user_id}          ném cầu tuyết vào vườn người khác
+//	POST /api/farm/xmas/drops/{id}/claim              nhặt quà Ông già Noel (ai bấm trước được)
+//	POST /api/farm/xmas/box                           mở hộp quà bí ẩn (đổi kẹo)
+//	POST /api/farm/xmas/tree       {item, qty}        góp hàng vào cây thông chung toàn server
+//	POST /api/farm/xmas/tree/{goal}/claim             nhận thưởng mốc cây thông chung
+//	GET  /api/farm/xmas/top                           top kẹo (huy hiệu 🎄 trong chat)
+//	POST /api/farm/xmas/daily-gift                    mở quà dưới gốc cây thông (mỗi ngày một lần)
+//	POST /api/farm/xmas/santa/join                    đăng ký Ông già Noel bí mật (trước ngày bốc thăm)
+//	POST /api/farm/xmas/santa/send {item, qty}        gửi quà bí mật cho người mình bốc được
+//	POST /api/farm/xmas/santa/open                    mở quà bí mật (từ đêm Noel)
+//	POST /api/farm/xmas/milestones/{n}/claim          nhận quà mốc kẹo cá nhân
+//	POST /api/farm/xmas/eve-gift                      nhận quà đêm Noel
+//	GET  /api/farm/xmas/inbox?since=N                 tin Noel đã lỡ (tin chung + tin riêng, 2 ngày gần nhất)
+//
+// Tin sự kiện (nhặt quà, trúng đồ hiếm, cây chung lên mốc, quà vừa thả) bắn farm.xmas {text} tới mọi người.
 //
 // Hành động trả FarmView của nông trại vừa tác động (kèm "gained" / "dog" nếu có). Ví đổi thì người đó
 // nhận wallet.updated; người khác tưới / bắt sâu / trộm / bị chó đuổi thì chủ nhận farm.updated {log}.
@@ -135,6 +157,27 @@ func (a *API) farmRespond(w http.ResponseWriter, r *http.Request, res store.Farm
 	}
 	if res.Market {
 		a.hub.ToAll(mustJSON(map[string]string{"type": "farm.market"}))
+	}
+	if res.News != "" {
+		// người làm và người nhận tin riêng không cần thấy tin chung nữa
+		except := []int64{me}
+		for _, p := range res.Pokes {
+			except = append(except, p.UserID)
+		}
+		a.farmXmasNews(res.News, except...)
+	} else if res.Sync {
+		a.hub.ToAll(mustJSON(map[string]string{"type": "farm.xmas"})) // không text: chỉ tải lại
+	}
+	for _, p := range res.Pokes {
+		id, err := a.store.AddXmasNews(r.Context(), p.UserID, p.Kind, p.Text, p.From, nil)
+		if err != nil {
+			log.Printf("xmas poke: %v", err)
+		}
+		a.hub.ToUser(p.UserID, mustJSON(struct {
+			Type string `json:"type"`
+			store.XmasPoke
+			ID int64 `json:"id,omitempty"`
+		}{"farm.xmas_me", p, id}))
 	}
 	v, err := a.store.GetFarm(r.Context(), res.OwnerID, me)
 	if err != nil {
@@ -547,4 +590,172 @@ func (a *API) farmMarketBuy(w http.ResponseWriter, r *http.Request) {
 func (a *API) farmMarketCancel(w http.ResponseWriter, r *http.Request) {
 	res, err := a.store.FarmMarketCancel(r.Context(), currentUser(r).ID, orderID(r))
 	a.farmRespond(w, r, res, err)
+}
+
+// Giáng sinh (store/farm_xmas.go).
+func (a *API) farmXmasDeliver(w http.ResponseWriter, r *http.Request) {
+	slot, err := strconv.Atoi(r.PathValue("slot"))
+	if err != nil {
+		slot = -1 // store báo không tìm thấy đơn
+	}
+	res, err := a.store.FarmXmasDeliver(r.Context(), currentUser(r).ID, slot)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmXmasBuy(w http.ResponseWriter, r *http.Request) {
+	res, err := a.store.FarmXmasBuy(r.Context(), currentUser(r).ID, r.PathValue("id"))
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmXmasSock(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UserID int64  `json:"user_id"`
+		Item   string `json:"item"`
+		Qty    int64  `json:"qty"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	res, err := a.store.FarmXmasSock(r.Context(), currentUser(r).ID, req.UserID, req.Item, req.Qty)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmXmasOpenSocks(w http.ResponseWriter, r *http.Request) {
+	res, err := a.store.FarmXmasOpenSocks(r.Context(), currentUser(r).ID)
+	a.farmRespond(w, r, res, err)
+}
+
+// farmXmasNews báo cả server tin Giáng sinh; except: id những người client tự bỏ qua (đã có tin riêng).
+func (a *API) farmXmasNews(text string, except ...int64) {
+	// lưu lại để người đang offline vào sau vẫn xem được (lỗi lưu không chặn việc báo)
+	id, err := a.store.AddXmasNews(context.Background(), 0, "news", text, 0, except)
+	if err != nil {
+		log.Printf("xmas news: %v", err)
+	}
+	a.hub.ToAll(mustJSON(struct {
+		Type   string  `json:"type"`
+		Text   string  `json:"text"`
+		Except []int64 `json:"except,omitempty"`
+		ID     int64   `json:"id,omitempty"`
+	}{"farm.xmas", text, except, id}))
+}
+
+func (a *API) farmXmasSnowball(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UserID int64 `json:"user_id"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	res, err := a.store.FarmXmasSnowball(r.Context(), currentUser(r).ID, req.UserID)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmXmasClaimDrop(w http.ResponseWriter, r *http.Request) {
+	res, err := a.store.FarmXmasClaimDrop(r.Context(), currentUser(r).ID, orderID(r))
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmXmasBox(w http.ResponseWriter, r *http.Request) {
+	res, err := a.store.FarmXmasBox(r.Context(), currentUser(r).ID)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmXmasTree(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Item string `json:"item"`
+		Qty  int64  `json:"qty"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	res, err := a.store.FarmXmasTreeDonate(r.Context(), currentUser(r).ID, req.Item, req.Qty)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmXmasTreeClaim(w http.ResponseWriter, r *http.Request) {
+	goal, _ := strconv.Atoi(r.PathValue("goal")) // sai thì 0, store báo chưa đạt mốc
+	res, err := a.store.FarmXmasTreeClaim(r.Context(), currentUser(r).ID, goal)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmXmasDailyGift(w http.ResponseWriter, r *http.Request) {
+	res, err := a.store.FarmXmasDailyGift(r.Context(), currentUser(r).ID)
+	a.farmRespond(w, r, res, err)
+}
+
+// farmXmasInbox: tin Noel từ sau id since (?since=N; thiếu hoặc âm: chỉ trả last để đánh dấu đã xem).
+func (a *API) farmXmasInbox(w http.ResponseWriter, r *http.Request) {
+	since, err := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
+	if err != nil {
+		since = -1
+	}
+	items, last, err := a.store.XmasInbox(r.Context(), currentUser(r).ID, since)
+	if err != nil {
+		internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "last": last})
+}
+
+func (a *API) farmXmasTop(w http.ResponseWriter, r *http.Request) {
+	list, err := a.store.FarmXmasTop(r.Context())
+	if err != nil {
+		internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (a *API) farmXmasSantaJoin(w http.ResponseWriter, r *http.Request) {
+	res, err := a.store.FarmXmasSantaJoin(r.Context(), currentUser(r).ID)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmXmasSantaSend(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Item string `json:"item"`
+		Qty  int64  `json:"qty"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	res, err := a.store.FarmXmasSantaSend(r.Context(), currentUser(r).ID, req.Item, req.Qty)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmXmasSantaOpen(w http.ResponseWriter, r *http.Request) {
+	res, err := a.store.FarmXmasSantaOpen(r.Context(), currentUser(r).ID)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmXmasMilestone(w http.ResponseWriter, r *http.Request) {
+	n, _ := strconv.Atoi(r.PathValue("n")) // sai thì 0, store báo chưa đạt mốc
+	res, err := a.store.FarmXmasMilestone(r.Context(), currentUser(r).ID, n)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmXmasEveGift(w http.ResponseWriter, r *http.Request) {
+	res, err := a.store.FarmXmasEveGift(r.Context(), currentUser(r).ID)
+	a.farmRespond(w, r, res, err)
+}
+
+// farmXmasTick (bộ hẹn giờ): thả quà Ông già Noel tới lượt, bốc thăm Ông già Noel bí mật, báo đêm Noel.
+func (a *API) farmXmasTick(ctx context.Context) {
+	news, err := a.store.FarmXmasFinaleTick(ctx)
+	if err != nil {
+		log.Printf("scheduler xmas finale: %v", err)
+	}
+	for _, n := range news {
+		a.farmXmasNews(n)
+	}
+	d, err := a.store.FarmXmasDropTick(ctx)
+	if err != nil {
+		log.Printf("scheduler xmas drop: %v", err)
+		return
+	}
+	if d != nil {
+		a.farmXmasNews(fmt.Sprintf("🎅 Ông già Noel vừa thả quà ở vườn %s! Ai nhanh tay thì nhặt được (10 phút).",
+			store.UserLabel(d.Owner)))
+	}
 }

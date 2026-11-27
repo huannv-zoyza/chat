@@ -54,6 +54,8 @@ export type ServerEvent =
   | { type: "watchparty.state"; state: WatchPartyState }
   | { type: "farm.updated"; log: import("./farm").FarmLog }
   | { type: "farm.market" }
+  | { type: "farm.xmas"; text?: string; except?: number[]; id?: number }
+  | { type: "farm.xmas_me"; kind: string; text: string; from_id?: number; id?: number }
   | { type: "watchparty.error"; channel_id: number; message: string }
   | { type: "game.map"; message_id: number; map: StationMap }
   | { type: "game.frame"; message_id: number; frame: StFrame }

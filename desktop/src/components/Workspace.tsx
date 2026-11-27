@@ -16,6 +16,7 @@ import { clearPendingInvite, peekPendingInvite } from "../lib/platform";
 import { UserSettingsDialog } from "./UserSettingsDialog";
 import { WalletDialog } from "./Wallet";
 import { ThrowOverlay } from "./Fun";
+import { XmasNotice } from "./XmasNotice";
 import { NewDMDialog } from "./NewDMDialog";
 import { SearchDialog } from "./MessageExtras";
 import { RemindersDialog } from "./Reminders";
@@ -168,6 +169,7 @@ export function Workspace() {
     >
       <UpdateBanner />
       <ThrowOverlay />
+      <XmasNotice />
       {state.notice && (
         <div className="gc-toast" role="status">
           <span className="gc-toast-text">{state.notice}</span>

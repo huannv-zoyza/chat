@@ -61,13 +61,24 @@ export type FarmLog = {
   xu?: number;
 };
 
+/** Đặc quyền theo cấp, khớp farmPerks ở máy chủ. */
+export type Perks = {
+  grow_pct: number;
+  animal_pct: number;
+  harvest_bonus: number;
+  sell_pct: number;
+};
+
 export type FarmView = {
   user: PublicUser;
   me: boolean;
   level: number;
   xp: number;
   level_xp: number;
+  /** Luôn có ở máy chủ mới; null (máy chủ cũ) hoặc >= MAX_SAFE_INTEGER nghĩa là không có cấp kế. */
   next_level_xp: number | null;
+  perks?: Perks;
+  next_perks?: Perks;
   plots: Plot[];
   plot_count: number;
   max_plots: number;
@@ -314,6 +325,44 @@ export function formatLeft(ms: number) {
   const sec = s % 60;
   const pad = (n: number) => String(n).padStart(2, "0");
   return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
+}
+
+/** Thời gian cây lớn sau đặc quyền (làm tròn xuống như máy chủ). */
+export function effGrowSec(sec: number, p?: Perks) {
+  return p ? Math.floor((sec * (100 - p.grow_pct)) / 100) : sec;
+}
+
+export function effAnimalSec(sec: number, p?: Perks) {
+  return p ? Math.floor((sec * (100 - p.animal_pct)) / 100) : sec;
+}
+
+/** Giá bán một cái sau đặc quyền (chỉ để hiển thị). */
+export function effSellPrice(price: number, p?: Perks) {
+  return p ? Math.floor((price * (100 + p.sell_pct)) / 100) : price;
+}
+
+/** Tổng tiền bán qty cái, tính trên cả lô như máy chủ. */
+export function effSellTotal(price: number, qty: number, p?: Perks) {
+  return p ? Math.floor((price * qty * (100 + p.sell_pct)) / 100) : price * qty;
+}
+
+/** Còn cấp kế tiếp không (máy chủ mới luôn có; int64 bão hoà coi như không). */
+export function hasNextLevel(v: { next_level_xp: number | null }) {
+  return v.next_level_xp != null && v.next_level_xp < Number.MAX_SAFE_INTEGER;
+}
+
+/** Các đặc quyền vừa tăng, để nối vào toast lên cấp. */
+export function perkGains(prev?: Perks, cur?: Perks): string[] {
+  if (!prev || !cur) return [];
+  const out: string[] = [];
+  if (cur.grow_pct > prev.grow_pct)
+    out.push(`Cây lớn nhanh hơn ${cur.grow_pct}%`);
+  if (cur.animal_pct > prev.animal_pct)
+    out.push(`vật nuôi làm nhanh hơn ${cur.animal_pct}%`);
+  if (cur.harvest_bonus > prev.harvest_bonus)
+    out.push(`thu hoạch +${cur.harvest_bonus}/vụ`);
+  if (cur.sell_pct > prev.sell_pct) out.push(`bán giá +${cur.sell_pct}%`);
+  return out;
 }
 
 /** "5 phút", "2 giờ", "1 giờ 30 phút". */

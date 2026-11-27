@@ -43,8 +43,19 @@ danh thì `streak + 1`, không thì `streak = 1`. Thưởng theo ngày trong chu
 | `bi_ngo` | Bí ngô | 🎃 | 300 | 12 giờ | 640 | 60 | 8 |
 
 ### Cấp độ
-XP cần để **lên** cấp n+1 (tổng tích luỹ): `[0, 30, 80, 160, 280, 450, 680, 1000, 1400, 1900]`
-(cấp 1 = 0 XP, cấp 10 tối đa). Lên cấp thưởng `20 * cấp_mới` xu (qua `earn`).
+XP tổng tích luỹ để đạt cấp n: cấp 1..10 theo bảng `[0, 30, 80, 160, 280, 450, 680, 1000, 1400, 1900]`.
+Từ cấp 11 không giới hạn: `gap(10) = 500`, `gap(n) = round10(gap(n−1) × 1.15)`, `XP(n) = XP(n−1) + gap(n)`
+(an toàn int64, dừng khi vượt `MaxInt64/2`). Lên cấp thưởng `20 * cấp_mới` xu (qua `earn`).
+
+Đặc quyền theo cấp (`farmPerks(level)`), đều có trần:
+| Đặc quyền | Công thức | Trần |
+|---|---|---|
+| Cây lớn nhanh hơn `grow_pct` | 2% × (lv − 1) | 50% (cấp 26) |
+| Vật nuôi làm nhanh hơn `animal_pct` | 1% × (lv − 1) | 30% (cấp 31) |
+| Thu hoạch thêm `harvest_bonus` | lv/5 đơn vị/vụ | +5 (cấp 25) |
+| Bán giá cao hơn `sell_pct` | 2% × (lv − 1) | 40% (cấp 21) |
+
+Tính theo cấp tại thời điểm hành động (cây đã gieo không đổi giờ chín). Giá bán kho: `floor(price × qty × (100 + sell_pct) / 100)`.
 
 ### Ô đất
 - Bắt đầu **6 ô**, mua thêm tối đa **12**. Giá ô thứ 7..12: `[200, 300, 450, 600, 800, 1000]`,
@@ -131,12 +142,16 @@ type Plot = {
   can_water: boolean; can_bug: boolean; can_steal: boolean; can_harvest: boolean;
 };
 
+type Perks = { grow_pct: number; animal_pct: number; harvest_bonus: number; sell_pct: number };
+
 type FarmView = {
   user: PublicUser;
   me: boolean;                   // đang xem nông trại của mình
   level: number; xp: number;
   level_xp: number;              // XP mốc cấp hiện tại
-  next_level_xp: number | null;  // null khi tối đa
+  next_level_xp: number;         // luôn có; ở cấp không thể đạt là MaxInt64 (client coi như không có cấp kế)
+  perks: Perks;                  // đặc quyền cấp hiện tại
+  next_perks: Perks;             // đặc quyền cấp kế tiếp
   plots: Plot[];
   plot_count: number; max_plots: number;
   next_plot?: { price: number; level: number } | null;

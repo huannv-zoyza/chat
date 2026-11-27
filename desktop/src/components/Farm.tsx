@@ -22,6 +22,7 @@ import {
   formatLeft,
   orchardUnlockLevel,
   ORCHARD_SPOTS,
+  liveState,
   treeLive,
   useFarmOpen,
   type Animal,
@@ -41,6 +42,14 @@ import {
   type Spot,
   spotProblem,
 } from "../lib/farm";
+import {
+  autoPending,
+  autoSummary,
+  emptyPlots,
+  loadAuto,
+  saveAuto,
+  type FarmAutoSettings,
+} from "../lib/farmAuto";
 import { playCoinSound } from "../lib/sound";
 import { useChat } from "../state/ChatProvider";
 import { Emo, emo } from "./Emoji";
@@ -65,26 +74,6 @@ function useServerNow(serverNow: string | undefined) {
     return () => window.clearInterval(t);
   }, []);
   return now + offset.current;
-}
-
-/** Trạng thái ô tính lại theo đồng hồ (máy chủ gửi lúc tải, cây vẫn lớn tiếp giữa hai lần tải). */
-function liveState(
-  p: Plot,
-  now: number,
-): { state: PlotState; progress: number; left: number } {
-  if (p.state === "empty") return { state: "empty", progress: 0, left: 0 };
-  const planted = p.planted_at ? new Date(p.planted_at).getTime() : now;
-  const ready = p.ready_at ? new Date(p.ready_at).getTime() : now;
-  const wither = p.wither_at ? new Date(p.wither_at).getTime() : Infinity;
-  if (p.state === "withered" || now >= wither)
-    return { state: "withered", progress: 1, left: 0 };
-  if (now >= ready) return { state: "ripe", progress: 1, left: wither - now };
-  const total = Math.max(1, ready - planted);
-  return {
-    state: "growing",
-    progress: Math.min(0.999, Math.max(0, (now - planted) / total)),
-    left: ready - now,
-  };
 }
 
 /** Ngày / chiều / tối theo giờ máy người xem: trời đổi màu theo. */
@@ -269,6 +258,8 @@ function Farm() {
     plot: number | null,
     fn: () => Promise<FarmView>,
     okText?: string | ((f: FarmView) => string | undefined),
+    /** có: lỗi giao cho người gọi (vòng tự động) thay vì hiện ở thanh lỗi */
+    onError?: (msg: string) => void,
   ) => {
     if (busy) return;
     setBusy(true);
@@ -339,7 +330,8 @@ function Farm() {
       else if (okMsg) showToast(okMsg, g?.hungry ? "bad" : "good");
       return true;
     } catch (err) {
-      setError(errMsg(err));
+      if (onError) onError(errMsg(err));
+      else setError(errMsg(err));
       if (view && !view.me)
         api
           .visitFarm(view.user.id)
@@ -351,6 +343,59 @@ function Farm() {
     }
     return false;
   };
+
+  // ---- tự động: "Làm hết", "Gieo tất cả" và vòng 30 giây ----
+  const meId = state.me.id;
+  const [auto, setAuto] = useState<FarmAutoSettings>(() => loadAuto(meId));
+  const [autoOpen, setAutoOpen] = useState(false);
+  const pausedUntil = useRef(0);
+  const patchAuto = (p: Partial<FarmAutoSettings>) =>
+    setAuto((a) => {
+      const n = { ...a, ...p };
+      saveAuto(meId, n);
+      return n;
+    });
+  const autoOpts = () => ({
+    crop: auto.crop,
+    kitchen_recipe: auto.kitchen_recipe,
+    juicer_recipe: auto.juicer_recipe,
+    buy_feed: auto.buy_feed,
+  });
+  const runAuto = (prefix: string, onError?: (m: string) => void) =>
+    act(
+      null,
+      () => api.farmAuto(autoOpts()),
+      (f) => (f.gained?.auto ? autoSummary(f.gained.auto, prefix) : undefined),
+      onError,
+    );
+  const plantAll = () => {
+    if (!auto.crop) {
+      setTab("shop");
+      return showToast("Chọn loại cây để gieo tất cả");
+    }
+    const crop = auto.crop;
+    void act(
+      null,
+      () => api.farmPlantAll(crop),
+      (f) => `🌱 Đã gieo ${f.gained?.planted ?? 0} ô`,
+    );
+  };
+  // tick mới nhất cho vòng lặp (tránh closure cũ), không bao giờ chồng hai lượt
+  const autoTick = useRef<() => void>(() => {});
+  autoTick.current = () => {
+    if (busy || visit || !mine || !auto.on) return;
+    if (Date.now() < pausedUntil.current) return;
+    if (!autoPending(mine, now, auto)) return;
+    void runAuto("🤖", (m) => {
+      pausedUntil.current = Date.now() + 5 * 60_000;
+      if (m !== "Chưa có việc gì để làm.") showToast(m, "bad");
+    });
+  };
+  useEffect(() => {
+    if (!auto.on || visit) return;
+    const t = window.setInterval(() => autoTick.current(), 30_000);
+    return () => window.clearInterval(t);
+  }, [auto.on, visit]);
 
   const goVisit = async (userId: number) => {
     setError(null);
@@ -677,7 +722,8 @@ function Farm() {
                 ) : (
                 <div className="farm-banner">
                   {view.me ? (
-                    ripeCount > 0 ? (
+                    <>
+                    {ripeCount > 0 ? (
                       <button
                         type="button"
                         className="farm-harvest-all"
@@ -690,7 +736,55 @@ function Farm() {
                       </button>
                     ) : (
                       <span className="farm-tip">{fieldTip(view, now)}</span>
-                    )
+                    )}
+                    {autoPending(view, now, auto) && (
+                      <button
+                        type="button"
+                        className="farm-auto-btn"
+                        disabled={busy}
+                        onClick={() => void runAuto("⚡")}
+                      >
+                        <Emo e="⚡" /> Làm hết
+                      </button>
+                    )}
+                    {emptyPlots(view, now) > 0 && (
+                      <button
+                        type="button"
+                        className="farm-auto-btn"
+                        disabled={busy}
+                        onClick={plantAll}
+                      >
+                        <Emo e="🌱" /> Gieo tất cả
+                      </button>
+                    )}
+                    <div className="farm-auto">
+                      <button
+                        type="button"
+                        className={`farm-auto-btn${auto.on ? " is-on" : ""}`}
+                        aria-pressed={auto.on}
+                        onClick={() => patchAuto({ on: !auto.on })}
+                      >
+                        <Emo e="🤖" /> Tự động
+                      </button>
+                      <button
+                        type="button"
+                        className="farm-auto-btn farm-auto-gear"
+                        aria-label="Cài đặt tự động"
+                        aria-expanded={autoOpen}
+                        onClick={() => setAutoOpen((o) => !o)}
+                      >
+                        <Emo e="⚙️" />
+                      </button>
+                      {autoOpen && (
+                        <AutoSettings
+                          view={view}
+                          value={auto}
+                          onChange={patchAuto}
+                          onClose={() => setAutoOpen(false)}
+                        />
+                      )}
+                    </div>
+                    </>
                   ) : (
                     <span className="farm-tip is-visit">
                       <Emo e="🫣" />
@@ -3215,5 +3309,64 @@ export function FarmSidebarCard() {
         <span className="farm-card-badge">{info.ripe}</span>
       )}
     </button>
+  );
+}
+
+/** Cửa sổ nhỏ chọn cây và công thức cho chế độ tự động. */
+function AutoSettings({
+  view,
+  value,
+  onChange,
+  onClose,
+}: {
+  view: FarmView;
+  value: FarmAutoSettings;
+  onChange: (p: Partial<FarmAutoSettings>) => void;
+  onClose: () => void;
+}) {
+  const crops = view.crops.filter((c) => c.level <= view.level);
+  const recipes = (b: "kitchen" | "juicer") =>
+    (view.recipes ?? []).filter(
+      (r) => (r.building ?? "kitchen") === b && r.level <= view.level,
+    );
+  const sel = (
+    label: string,
+    v: string | undefined,
+    opts: { id: string; name: string; emoji: string }[],
+    set: (id: string | undefined) => void,
+  ) => (
+    <label className="farm-auto-field">
+      <span>{label}</span>
+      <select value={v ?? ""} onChange={(e) => set(e.target.value || undefined)}>
+        <option value="">— không —</option>
+        {opts.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.emoji} {o.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+  return (
+    <div className="farm-auto-pop" role="dialog" aria-label="Cài đặt tự động">
+      {sel("Cây gieo", value.crop, crops, (id) => onChange({ crop: id }))}
+      {sel("Món ở xưởng", value.kitchen_recipe, recipes("kitchen"), (id) =>
+        onChange({ kitchen_recipe: id }),
+      )}
+      {sel("Món ở máy ép", value.juicer_recipe, recipes("juicer"), (id) =>
+        onChange({ juicer_recipe: id }),
+      )}
+      <label className="farm-auto-check">
+        <input
+          type="checkbox"
+          checked={value.buy_feed}
+          onChange={(e) => onChange({ buy_feed: e.target.checked })}
+        />
+        Tự mua thức ăn khi thiếu
+      </label>
+      <button type="button" className="btn btn-sm" onClick={onClose}>
+        Xong
+      </button>
+    </div>
   );
 }

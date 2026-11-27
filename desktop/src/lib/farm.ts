@@ -157,6 +157,26 @@ export const orchardUnlockLevel = (spot: number) => [5, 8, 12, 16][Math.min(3, M
 /** Chỗ trồng thứ i trên bản đồ (đơn vị ô): lưới 4 × 3. */
 export const orchardSpotXY = (i: number): Spot => ({ x: 16 + 1.6 * (i % 4), y: 3 + 1.6 * Math.floor(i / 4) });
 
+/** Trạng thái ô tính lại theo đồng hồ (máy chủ gửi lúc tải, cây vẫn lớn tiếp giữa hai lần tải). */
+export function liveState(
+  p: Plot,
+  now: number,
+): { state: PlotState; progress: number; left: number } {
+  if (p.state === "empty") return { state: "empty", progress: 0, left: 0 };
+  const planted = p.planted_at ? new Date(p.planted_at).getTime() : now;
+  const ready = p.ready_at ? new Date(p.ready_at).getTime() : now;
+  const wither = p.wither_at ? new Date(p.wither_at).getTime() : Infinity;
+  if (p.state === "withered" || now >= wither)
+    return { state: "withered", progress: 1, left: 0 };
+  if (now >= ready) return { state: "ripe", progress: 1, left: wither - now };
+  const total = Math.max(1, ready - planted);
+  return {
+    state: "growing",
+    progress: Math.min(0.999, Math.max(0, (now - planted) / total)),
+    left: ready - now,
+  };
+}
+
 /** Cây đã có quả chưa (khớp máy chủ: ready, hoặc tới giờ ready_at) và còn bao lâu (ms, không âm). */
 export function treeLive(t: TreeView, now: number): { ready: boolean; left: number } {
   const left = Math.max(0, new Date(t.ready_at).getTime() - now);

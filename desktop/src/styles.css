@@ -16798,3 +16798,65 @@ button.villager:focus-visible .villager-name {
   font-size: var(--step--1);
   font-weight: 600;
 }
+
+/* ---- nút tự động và hộp cài đặt ---- */
+.farm-banner {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.farm-auto {
+  position: relative;
+  display: inline-flex;
+  gap: 0.25rem;
+}
+.farm-auto-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.8rem;
+  border: 2px solid var(--wood-dk);
+  border-radius: 999px;
+  background: #fff8e6;
+  color: var(--ink-brown);
+  font-size: 0.85rem;
+  font-weight: 700;
+  box-shadow: 0 2px 0 var(--wood-dk);
+}
+.farm-auto-btn.is-on {
+  background: #b7e07a;
+}
+.farm-auto-btn:disabled {
+  opacity: 0.6;
+}
+.farm-auto-pop {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  z-index: 6;
+  display: grid;
+  gap: 0.5rem;
+  width: 15rem;
+  padding: 0.7rem;
+  border: 3px solid var(--wood-dk);
+  border-radius: 0.9rem;
+  background: #fff8e6;
+  color: var(--ink-brown);
+  box-shadow: 0 4px 0 var(--wood-dk);
+}
+.farm-auto-field {
+  display: grid;
+  gap: 0.15rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.farm-auto-field select {
+  width: 100%;
+  padding: 0.25rem;
+}
+.farm-auto-check {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+}

@@ -46,6 +46,8 @@ import {
   autoPending,
   autoSummary,
   emptyPlots,
+  waterablePlots,
+  buggyPlots,
   loadAuto,
   saveAuto,
   type FarmAutoSettings,
@@ -367,6 +369,18 @@ function Farm() {
       () => api.farmAuto(autoOpts()),
       (f) => (f.gained?.auto ? autoSummary(f.gained.auto, prefix) : undefined),
       onError,
+    );
+  const bugAll = () =>
+    void act(
+      null,
+      () => api.farmBugAll(),
+      (f) => `Đã bắt ${f.gained?.bugs ?? 0} con sâu 🐛`,
+    );
+  const waterAll = () =>
+    void act(
+      null,
+      () => api.farmWaterAll(),
+      (f) => `Đã tưới ${f.gained?.watered ?? 0} ô 💧`,
     );
   const plantAll = () => {
     if (!auto.crop) {
@@ -755,6 +769,26 @@ function Farm() {
                         onClick={plantAll}
                       >
                         <Emo e="🌱" /> Gieo tất cả
+                      </button>
+                    )}
+                    {buggyPlots(view) > 0 && (
+                      <button
+                        type="button"
+                        className="farm-auto-btn"
+                        disabled={busy}
+                        onClick={bugAll}
+                      >
+                        <Emo e="🐛" /> Bắt sâu tất cả
+                      </button>
+                    )}
+                    {waterablePlots(view, now) > 0 && (
+                      <button
+                        type="button"
+                        className="farm-auto-btn"
+                        disabled={busy}
+                        onClick={waterAll}
+                      >
+                        <Emo e="💧" /> Tưới tất cả
                       </button>
                     )}
                     <div className="farm-auto">

@@ -114,7 +114,9 @@ POST /api/farm/plant      {plot, crop}        -> FarmView
 POST /api/farm/harvest    {plot} | {all:true} -> FarmView + "gained": {xu, xp}
 POST /api/farm/clear      {plot}              -> FarmView
 POST /api/farm/water      {user_id, plot}     -> FarmView (của nông trại vừa tác động)
+POST /api/farm/water      {all: true}         -> FarmView + "gained": {watered} (tưới mọi ô của mình còn tưới được)
 POST /api/farm/bug        {user_id, plot}     -> FarmView
+POST /api/farm/bug        {all: true}         -> FarmView + "gained": {bugs} (bắt mọi sâu đã lộ của mình)
 POST /api/farm/steal      {user_id, plot}     -> FarmView + "gained" (âm nếu bị chó đuổi) + "dog": bool
 POST /api/farm/buy-plot                       -> FarmView
 POST /api/farm/buy-dog                        -> FarmView
@@ -428,35 +430,43 @@ Chỉ áp dụng cho nông trại của chính mình. Không có tác vụ nền
 - **Gieo tất cả** `POST /api/farm/plant {all:true, crop}` (thay `{plot, crop}`): dọn mọi ô héo, gieo `crop` vào các ô trống
   theo thứ tự tới khi hết xu (thiếu xu thì gieo một phần). Cần đủ cấp. Không có ô trống: lỗi; không đủ xu cho ô nào:
   "không đủ xu". `gained: {planted, xu: -tiền hạt}`.
+- **Tưới tất cả** `POST /api/farm/water {all:true}`: tưới mọi ô của chính mình đang lớn và `can_water`; `gained.watered` =
+  số ô đã tưới. Không có ô nào cần tưới: lỗi "Không có cây nào cần tưới."
+- **Bắt sâu tất cả** `POST /api/farm/bug {all:true}`: bắt mọi sâu đã lộ (tiến độ ≥ 50%, chưa héo) của chính mình, mỗi con
+  tính một lượt nhiệm vụ `bug`, không thưởng xu/XP. `gained.bugs` = số con. Không có sâu: "Không có sâu nào để bắt.";
+  `user_id` của người khác: 400 "Chỉ bắt sâu tất cả được ở vườn của mình.".
 - **Hái tất cả** và **nấu đầy lò**: xem §12 (`orchard/harvest {all:true}`) và §13 (`craft {recipe, fill:true}`).
 - **Làm hết** `POST /api/farm/auto`, body `{crop?, kitchen_recipe?, juicer_recipe?, buy_feed}`. Tất cả trong **một
   giao dịch**, theo thứ tự:
-  1. thu hoạch mọi ô chín;
-  2. gieo `crop` (nếu có; "không có ô trống" thì bỏ qua lặng lẽ);
-  3. chăm chuồng gà rồi đồng cỏ (thu + cho ăn; `buy_feed` tắt: chỉ dùng thức ăn trong kho, không tốn xu; "không có gì
+  1. bắt mọi sâu đã lộ (trước khi thu, để ô chín không bị trừ 30%; không có sâu thì bỏ qua lặng lẽ), `auto.bugs` = số con;
+  2. thu hoạch mọi ô chín;
+  3. gieo `crop` (nếu có; "không có ô trống" thì bỏ qua lặng lẽ);
+  4. tưới mọi ô đang lớn còn tưới được (không có ô nào thì bỏ qua lặng lẽ), `auto.watered` = số ô;
+  5. chăm chuồng gà rồi đồng cỏ (thu + cho ăn; `buy_feed` tắt: chỉ dùng thức ăn trong kho, không tốn xu; "không có gì
      để thu hay cho ăn" và "không có thức ăn" bỏ qua lặng lẽ);
-  4. hái mọi cây chín còn vừa kho;
-  5. thu mọi lò đã xong của xưởng và máy ép (kho đầy thì không thu, không báo lỗi);
-  6. lấp lò xưởng bằng `kitchen_recipe`, rồi lò máy ép bằng `juicer_recipe` (món phải thuộc đúng công trình, không thì
+  6. hái mọi cây chín còn vừa kho;
+  7. thu mọi lò đã xong của xưởng và máy ép (kho đầy thì không thu, không báo lỗi);
+  8. lấp lò xưởng bằng `kitchen_recipe`, rồi lò máy ép bằng `juicer_recipe` (món phải thuộc đúng công trình, không thì
      "Món X không làm ở đây.").
 - **SAVEPOINT mỗi bước**: bước gặp lỗi nghiệp vụ (`FarmError` hoặc không đủ xu) bị hoàn lại mọi ghi của riêng bước đó,
-  lý do ghi vào `skipped` dạng `"<nhãn>: <lỗi>"` (nhãn: Thu hoạch, Gieo, Chuồng gà, Đồng cỏ, Vườn cây, Thu món, Xưởng,
+  lý do ghi vào `skipped` dạng `"<nhãn>: <lỗi>"` (nhãn: Bắt sâu, Thu hoạch, Gieo, Tưới, Chuồng gà, Đồng cỏ, Vườn cây, Thu món, Xưởng,
   Máy ép), các bước khác vẫn chạy. Lỗi khác (DB) hoàn lại và dừng cả lượt.
 - Kết quả: `gained` gộp mọi bước (`xu` = −tổng đã tiêu, `xp`, `level_up`, `items`, `fed`, `planted`...) và
-  `gained.auto = {harvested, planted, fed, fruits, crafted, collected, spent, skipped: string[]}`. `harvested` = số ô thu,
+  `gained.auto = {bugs, harvested, planted, watered, fed, fruits, crafted, collected, spent, skipped: string[]}`. `harvested` = số ô thu,
   `fruits` = số quả hái, `collected` = số sản phẩm chăn nuôi + món đã thu, `crafted` = số lò vừa bắt đầu, `spent` = xu đã
   trả cho hạt giống và thức ăn (số dương).
-- Không có `harvested + planted + fed + fruits + crafted + collected` nào thì lỗi `ErrFarmNothingAuto`: "Chưa có việc
+- Không có `bugs + harvested + planted + watered + fed + fruits + crafted + collected` nào thì lỗi `ErrFarmNothingAuto`: "Chưa có việc
   gì để làm." (cả giao dịch hoàn lại).
 
 ### Giao diện (`desktop/src/lib/farmAuto.ts`, `components/Farm.tsx`)
 
 - Cài đặt `{on, crop?, kitchen_recipe?, juicer_recipe?, buy_feed}` lưu ở settings key `farm-auto:<userId>`; thiếu hoặc
   hỏng thì mặc định tắt (`buy_feed` mặc định **tắt**, không bao giờ tự bật mua thức ăn).
-- `autoPending(view, now, settings)` ước lượng lạc quan còn việc không: ô chín, ô trống / héo khi đã chọn cây, vật nuôi
+- `autoPending(view, now, settings)` ước lượng lạc quan còn việc không: ô chín, ô có sâu đã lộ, ô đang lớn còn tưới được, ô trống / héo khi đã chọn cây, vật nuôi
   sẵn sàng hoặc đói (có thức ăn trong kho hoặc `buy_feed`), cây có quả, lò xong, lò trống đủ nguyên liệu cho món đã chọn.
   Nút "⚡ Làm hết" (một chạm, gọi `/auto` rồi báo `autoSummary`, chỉ liệt kê phần khác 0) hiện khi `autoPending`; "🌱 Gieo
-  tất cả" khi có ô trống (chưa chọn cây thì mở cửa hàng hạt).
+  tất cả" khi có ô trống (chưa chọn cây thì mở cửa hàng hạt); "💧 Tưới tất cả" khi `waterablePlots > 0`; "🐛 Bắt sâu tất cả" khi `buggyPlots > 0`. `autoSummary`
+  viết hoa chữ đầu, ví dụ "🤖 Gieo 4, tưới 4 ô".
 - Công tắc "🤖 Tự động" (kèm popover cài đặt cây, món xưởng, món máy ép, mua thức ăn): khi bật và đang ở vườn **của mình**
   (không phải đi thăm), cứ **30 giây** kiểm tra `autoPending` và gọi `/auto` nếu còn việc; không chạy chồng khi đang bận.
   Gặp **lỗi** thì **tạm dừng 5 phút** và hiện toast một lần; riêng "Chưa có việc gì để làm." thì không hiện toast (nhưng

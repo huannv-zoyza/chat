@@ -148,7 +148,11 @@ var (
 	ErrFarmNotGrowing   = &FarmError{"Chỉ tưới được cây đang lớn."}
 	ErrFarmWaterMax     = &FarmError{"Vụ này đã được tưới đủ 3 lần."}
 	ErrFarmWatered      = &FarmError{"Bạn đã tưới vụ này rồi."}
+	ErrFarmNothingWater = &FarmError{"Không có cây nào cần tưới."}
+	ErrFarmWaterAllOwn  = &FarmError{"Chỉ tưới tất cả được ở vườn của mình."}
 	ErrFarmNoBug        = &FarmError{"Cây này không có sâu."}
+	ErrFarmNothingBug   = &FarmError{"Không có sâu nào để bắt."}
+	ErrFarmBugAllOwn    = &FarmError{"Chỉ bắt sâu tất cả được ở vườn của mình."}
 	ErrFarmOwnSteal     = &FarmError{"Không trộm được nông trại của chính mình."}
 	ErrFarmStealMax     = &FarmError{"Vụ này đã bị trộm đủ 2 lần."}
 	ErrFarmStolen       = &FarmError{"Bạn đã trộm vụ này rồi."}
@@ -229,6 +233,8 @@ type Gained struct {
 	Hungry int              `json:"hungry,omitempty"`
 	// Gieo tất cả (FarmPlantAll): số ô vừa gieo. Auto: báo cáo một lượt FarmAuto.
 	Planted int         `json:"planted,omitempty"`
+	Watered int         `json:"watered,omitempty"` // tưới tất cả (FarmWaterAll): số ô vừa tưới
+	Bugs    int         `json:"bugs,omitempty"`    // bắt sâu tất cả (FarmBugAll): số con vừa bắt
 	Auto    *AutoReport `json:"auto,omitempty"`
 }
 
@@ -967,6 +973,76 @@ func (s *Store) FarmBuyDog(ctx context.Context, userID int64) (FarmResult, error
 
 /* ---------- Hành động lên nông trại (của mình hoặc người khác) ---------- */
 
+// waterPlot: actorID tưới ô p (đã nạp; nil là ô trống): chỉ ô đang lớn, tối đa FarmMaxWaters lần mỗi
+// vụ, mỗi người một lần. Ghi lượt tưới và đẩy ready_at sớm lại 1/10 thời gian lớn. Không thưởng gì.
+func (op *farmOp) waterPlot(actorID int64, p *plotRow, now int64) error {
+	switch p.state(now) {
+	case stateEmpty:
+		return ErrFarmEmptyPlot
+	case stateGrowing:
+	default:
+		return ErrFarmNotGrowing
+	}
+	if p.Waters >= FarmMaxWaters {
+		return ErrFarmWaterMax
+	}
+	if ok, err := op.addAct(p.ID, actorID, "water"); err != nil {
+		return err
+	} else if !ok {
+		return ErrFarmWatered
+	}
+	ready := max(now, p.Ready-p.Crop.GrowSec/10)
+	_, err := op.tx.ExecContext(op.ctx,
+		`UPDATE farm_plots SET ready_at = ?, waters = waters + 1 WHERE id = ?`, ready, p.ID)
+	return err
+}
+
+// waterAll: userID tưới mọi ô đang lớn của chính mình; ô đã đủ lượt hoặc đã tưới rồi thì bỏ qua.
+// Trả số ô vừa tưới; không có ô nào thì ErrFarmNothingWater.
+func (op *farmOp) waterAll(userID int64) (int, error) {
+	f, err := ensureFarm(op.ctx, op.tx, userID)
+	if err != nil {
+		return 0, err
+	}
+	plots, err := loadPlots(op.ctx, op.tx, userID)
+	if err != nil {
+		return 0, err
+	}
+	now, n := op.unix(), 0
+	for i := range plots {
+		p := &plots[i]
+		if p.Idx >= f.Plots {
+			continue
+		}
+		switch err := op.waterPlot(userID, p, now); err {
+		case nil:
+			n++
+		case ErrFarmWaterMax, ErrFarmWatered, ErrFarmNotGrowing, ErrFarmEmptyPlot:
+		default:
+			return 0, err
+		}
+	}
+	if n == 0 {
+		return 0, ErrFarmNothingWater
+	}
+	return n, nil
+}
+
+// FarmWaterAll: chủ tưới mọi ô đang lớn của mình trong một lần.
+func (s *Store) FarmWaterAll(ctx context.Context, userID int64) (FarmResult, error) {
+	res := FarmResult{OwnerID: userID}
+	var err error
+	res.Wallets, err = s.farmTx(ctx, func(op *farmOp) error {
+		n, err := op.waterAll(userID)
+		if err != nil {
+			return err
+		}
+		res.Gained = &Gained{Watered: n}
+		return nil
+	})
+	return res, err
+}
+
 // FarmWater: actorID tưới ô idx của ownerID.
 func (s *Store) FarmWater(ctx context.Context, actorID, ownerID int64, idx int) (FarmResult, error) {
 	res := FarmResult{OwnerID: ownerID}
@@ -980,25 +1056,7 @@ func (s *Store) FarmWater(ctx context.Context, actorID, ownerID int64, idx int) 
 		if err != nil {
 			return err
 		}
-		now := op.unix()
-		switch p.state(now) {
-		case stateEmpty:
-			return ErrFarmEmptyPlot
-		case stateGrowing:
-		default:
-			return ErrFarmNotGrowing
-		}
-		if p.Waters >= FarmMaxWaters {
-			return ErrFarmWaterMax
-		}
-		if ok, err := op.addAct(p.ID, actorID, "water"); err != nil {
-			return err
-		} else if !ok {
-			return ErrFarmWatered
-		}
-		ready := max(now, p.Ready-p.Crop.GrowSec/10)
-		if _, err := op.tx.ExecContext(ctx,
-			`UPDATE farm_plots SET ready_at = ?, waters = waters + 1 WHERE id = ?`, ready, p.ID); err != nil {
+		if err := op.waterPlot(actorID, p, op.unix()); err != nil {
 			return err
 		}
 		if actorID == ownerID {
@@ -1030,6 +1088,69 @@ func (s *Store) FarmWater(ctx context.Context, actorID, ownerID int64, idx int) 
 	return res, err
 }
 
+// catchBug: actorID bắt sâu ô p (đã nạp; nil là ô trống): chỉ khi sâu đã lộ. Xoá sâu và tính tiến độ
+// nhiệm vụ "bug" cho actorID. Không thưởng gì (phần thưởng giúp người khác nằm ở FarmBug).
+func (op *farmOp) catchBug(actorID int64, p *plotRow, now int64) error {
+	switch {
+	case p == nil:
+		return ErrFarmEmptyPlot
+	case p.state(now) == stateWithered:
+		return ErrFarmWithered
+	case !p.bugVisible(now):
+		return ErrFarmNoBug
+	}
+	if _, err := op.tx.ExecContext(op.ctx, `UPDATE farm_plots SET bug = 0 WHERE id = ?`, p.ID); err != nil {
+		return err
+	}
+	return op.bump(actorID, "bug", 1)
+}
+
+// bugAll: userID bắt mọi con sâu đã lộ trên vườn của chính mình. Trả số con vừa bắt; không có thì
+// ErrFarmNothingBug.
+func (op *farmOp) bugAll(userID int64) (int, error) {
+	f, err := ensureFarm(op.ctx, op.tx, userID)
+	if err != nil {
+		return 0, err
+	}
+	plots, err := loadPlots(op.ctx, op.tx, userID)
+	if err != nil {
+		return 0, err
+	}
+	now, n := op.unix(), 0
+	for i := range plots {
+		p := &plots[i]
+		if p.Idx >= f.Plots {
+			continue
+		}
+		switch err := op.catchBug(userID, p, now); err {
+		case nil:
+			n++
+		case ErrFarmNoBug, ErrFarmWithered, ErrFarmEmptyPlot:
+		default:
+			return 0, err
+		}
+	}
+	if n == 0 {
+		return 0, ErrFarmNothingBug
+	}
+	return n, nil
+}
+
+// FarmBugAll: chủ bắt mọi con sâu đã lộ trên vườn mình trong một lần.
+func (s *Store) FarmBugAll(ctx context.Context, userID int64) (FarmResult, error) {
+	res := FarmResult{OwnerID: userID}
+	var err error
+	res.Wallets, err = s.farmTx(ctx, func(op *farmOp) error {
+		n, err := op.bugAll(userID)
+		if err != nil {
+			return err
+		}
+		res.Gained = &Gained{Bugs: n}
+		return nil
+	})
+	return res, err
+}
+
 // FarmBug: actorID bắt sâu ô idx của ownerID.
 func (s *Store) FarmBug(ctx context.Context, actorID, ownerID int64, idx int) (FarmResult, error) {
 	res := FarmResult{OwnerID: ownerID}
@@ -1043,19 +1164,7 @@ func (s *Store) FarmBug(ctx context.Context, actorID, ownerID int64, idx int) (F
 		if err != nil {
 			return err
 		}
-		now := op.unix()
-		switch {
-		case p == nil:
-			return ErrFarmEmptyPlot
-		case p.state(now) == stateWithered:
-			return ErrFarmWithered
-		case !p.bugVisible(now):
-			return ErrFarmNoBug
-		}
-		if _, err := op.tx.ExecContext(ctx, `UPDATE farm_plots SET bug = 0 WHERE id = ?`, p.ID); err != nil {
-			return err
-		}
-		if err := op.bump(actorID, "bug", 1); err != nil {
+		if err := op.catchBug(actorID, p, op.unix()); err != nil {
 			return err
 		}
 		if actorID == ownerID {

@@ -234,6 +234,11 @@ type Gained struct {
 	Items   map[string]int64 `json:"items,omitempty"`
 	Love    int64            `json:"love,omitempty"`    // điểm thân mật vừa cộng (kết đôi)
 	LoveUp  int              `json:"love_up,omitempty"` // cấp thân mật mới nếu vừa lên cấp
+	// Chăm sóc nhanh cả chuồng (FarmTend): Fed = số con vừa cho ăn, Bought = thức ăn tự mua (Xu âm =
+	// tổng xu đã trả), Hungry = số con vẫn còn đói sau khi chăm.
+	Fed    int              `json:"fed,omitempty"`
+	Bought map[string]int64 `json:"bought,omitempty"`
+	Hungry int              `json:"hungry,omitempty"`
 }
 
 type FarmView struct {

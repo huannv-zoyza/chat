@@ -1107,7 +1107,7 @@ function Farm() {
       )}
       {chop && mine && (
         <Dialog
-          title={`Chặt cây ${mine.tree_kinds?.find((k) => k.id === chop.tree)?.name.toLowerCase() ?? ""}?`}
+          title="Chặt cây?"
           onClose={() => setChop(null)}
           className="farm-confirm"
         >

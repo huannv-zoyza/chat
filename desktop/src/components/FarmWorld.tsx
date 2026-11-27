@@ -1181,7 +1181,7 @@ export function FarmWorld({
           y,
           <g key={`os${i}`}>
             <SpotStake x={x} y={y} locked />
-            <OrchardTag x={x} y={y} text={`🔒 Cấp ${orchardUnlockLevel(i)}`} />
+            <OrchardTag x={x} y={y} text={`🔒 Mở ở cấp ${orchardUnlockLevel(i)}`} />
           </g>,
         );
     } else if (!t) {
@@ -2210,7 +2210,7 @@ function OrchardTag({ x, y, text }: { x: number; y: number; text: string }) {
   const [cx, cy] = pt(x, y);
   return (
     <g transform={`translate(${cx}, ${cy - 30})`} className="iso-sign is-build is-locked">
-      <rect x={-34} y={-10} width={68} height={19} rx={9.5} />
+      <rect x={-48} y={-10} width={96} height={19} rx={9.5} />
       <SvgLabel text={text} y={3} fontSize={10} />
     </g>
   );

@@ -21,7 +21,7 @@ type Item struct {
 	Name  string `json:"name"`
 	Emoji string `json:"emoji"`
 	Price int64  `json:"price"`
-	Kind  string `json:"kind"` // crop | product | goods (món chế biến, xem farm_craft.go)
+	Kind  string `json:"kind"` // crop | product | fruit (quả, farm_orchard.go) | goods (món chế biến, xem farm_craft.go)
 	Level int    `json:"level"`
 	// BuyPrice: giá mua một đơn vị ở chợ (chỉ nông sản, để có thức ăn cho vật nuôi). Đắt hơn giá bán
 	// 50% để không mua đi bán lại kiếm lời được. 0: không bán ở chợ.
@@ -63,16 +63,19 @@ var products = []struct {
 	{"nam", "Nấm truffle", "🍄", 220},
 }
 
-// Items: mọi món vào được kho: nông sản (giá đơn vị = ceil(sell / 3)), sản phẩm chăn nuôi, rồi món
-// chế biến ở xưởng.
+// Items: mọi món vào được kho: nông sản (giá đơn vị = ceil(sell / 3)), sản phẩm chăn nuôi, quả của
+// cây ăn quả, rồi món chế biến ở xưởng.
 var Items = func() []Item {
-	out := make([]Item, 0, len(Crops)+len(products)+len(Recipes))
+	out := make([]Item, 0, len(Crops)+len(products)+len(FruitTrees)+len(Recipes))
 	for _, c := range Crops {
 		price := (c.Sell + FarmHarvestUnits - 1) / FarmHarvestUnits
 		out = append(out, Item{c.ID, c.Name, c.Emoji, price, "crop", c.Level, (price*3 + 1) / 2})
 	}
 	for i, p := range products {
 		out = append(out, Item{p.ID, p.Name, p.Emoji, p.Price, "product", AnimalKinds[i].Level, 0})
+	}
+	for _, t := range FruitTrees {
+		out = append(out, Item{t.Fruit, t.FruitName, t.FruitEmoji, t.FruitPrice, "fruit", t.Level, 0})
 	}
 	for _, r := range Recipes {
 		out = append(out, Item{r.ID, r.Name, r.Emoji, r.Price, "goods", r.Level, 0})
@@ -123,6 +126,9 @@ var buildingDefs = []buildingDef{
 	{ID: "pasture", Name: "Đồng cỏ", Price: 600, Level: 3, Cap: 3, UpgradeCap: 6, UpgradePrice: 900},
 	{ID: kitchenID, Name: "Xưởng chế biến", Price: 500, Level: 4, Cap: 2, UpgradeCap: 4, UpgradePrice: 1200,
 		Size: Size{3, 2}, Default: Spot{12, 12}},
+	// Máy ép nước: chỗ mặc định (16,13) nằm dưới ao vịt, bên phải xưởng, trên đường đá ngang.
+	{ID: juicerID, Name: "Máy ép nước", Price: 800, Level: 6, Cap: 2, UpgradeCap: 4, UpgradePrice: 1600,
+		Size: Size{2, 2}, Default: Spot{16, 13}},
 }
 
 func buildingByID(id string) (buildingDef, bool) {
@@ -180,6 +186,7 @@ var (
 	ErrFarmNoOrder        = &FarmError{"Không tìm thấy đơn hàng này."}
 	ErrFarmOrderShort     = &FarmError{"Chưa đủ hàng để giao đơn này."}
 	ErrFarmNothingTend    = &FarmError{"Chuồng này không có gì để thu hay cho ăn."}
+	ErrFarmNoFeedStock    = &FarmError{"Trong kho không có thức ăn cho vật nuôi."}
 	ErrFarmNoXuFeed       = &FarmError{"Không đủ xu mua thức ăn cho vật nuôi."}
 )
 
@@ -326,10 +333,10 @@ func (op *farmOp) takeStock(userID int64, item string, qty int64) (bool, error) 
 	return true, err
 }
 
-// sellValue: tiền bán qty đơn vị it với pct (100 + sell_pct). Chỉ nông sản và sản phẩm chăn nuôi được
-// thưởng giá; món chế biến (goods) bán đúng giá gốc để không mua nguyên liệu → chế biến → bán có lãi.
+// sellValue: tiền bán qty đơn vị it với pct (100 + sell_pct). Chỉ nông sản, sản phẩm chăn nuôi và quả
+// được thưởng giá; món chế biến (goods) bán đúng giá gốc để không mua nguyên liệu → chế biến → bán có lãi.
 func sellValue(it Item, qty, pct int64) int64 {
-	if it.Kind != "crop" && it.Kind != "product" {
+	if it.Kind != "crop" && it.Kind != "product" && it.Kind != "fruit" {
 		pct = 100
 	}
 	return it.Price * qty * pct / 100
@@ -489,7 +496,7 @@ func (s *Store) FarmBuild(ctx context.Context, userID int64, id string) (FarmRes
 	return s.FarmBuildAt(ctx, userID, id, nil)
 }
 
-// FarmBuildAt: xây công trình id (coop | pasture | kitchen); công trình tự do đặt ở at (nil: chỗ mặc
+// FarmBuildAt: xây công trình id (coop | pasture | kitchen | juicer); công trình tự do đặt ở at (nil: chỗ mặc
 // định), chỗ phải hợp lệ (farm_place.go).
 func (s *Store) FarmBuildAt(ctx context.Context, userID int64, id string, at *Spot) (FarmResult, error) {
 	res := FarmResult{OwnerID: userID}
@@ -812,161 +819,175 @@ func (s *Store) FarmTend(ctx context.Context, userID int64, building string) (Fa
 	res := FarmResult{OwnerID: userID}
 	var err error
 	res.Wallets, err = s.farmTx(ctx, func(op *farmOp) error {
-		if b, ok := buildingByID(building); !ok || b.ID == "kitchen" {
-			return ErrFarmUnknownBuild
-		}
-		now := op.unix()
-		all, err := loadAnimals(ctx, op.tx, userID)
-		if err != nil {
-			return err
-		}
-		var animals []*animalRow
-		for i := range all {
-			if all[i].Kind.Building == building {
-				animals = append(animals, &all[i])
-			}
-		}
-		var ready []*animalRow
-		hungry0 := 0
-		for _, a := range animals {
-			switch a.state(now) {
-			case animalReady:
-				ready = append(ready, a)
-			case animalHungry:
-				hungry0++
-			}
-		}
-		if len(ready) == 0 && hungry0 == 0 {
-			return ErrFarmNothingTend
-		}
-		room, err := op.storageRoom(userID)
-		if err != nil {
-			return err
-		}
-		if room < 1 && hungry0 == 0 {
-			return ErrFarmStorageFull
-		}
-		g := &Gained{}
-		if n := min(int64(len(ready)), room); n > 0 {
-			if g, err = op.collectAnimals(userID, ready[:n]); err != nil {
-				return err
-			}
-		}
-		f, err := ensureFarm(ctx, op.tx, userID)
-		if err != nil {
-			return err
-		}
-		level := levelFor(f.XP)
-		// spend chỉ nhận khi số dư >= số tiền (không cho nợ thêm): lấy số dư một lần, tự theo dõi.
-		w, err := loadWallet(ctx, op.tx, userID)
-		if err != nil {
-			return err
-		}
-		budget := w.Balance
-		stock := map[string]int64{}
-		rows, err := op.tx.QueryContext(ctx, `SELECT item, qty FROM farm_stock WHERE user_id = ?`, userID)
-		if err != nil {
-			return err
-		}
-		for rows.Next() {
-			var item string
-			var qty int64
-			if err := rows.Scan(&item, &qty); err != nil {
-				rows.Close()
-				return err
-			}
-			stock[item] = qty
-		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			return err
-		}
-		rows.Close()
-
-		bought := map[string]int64{}
-		var spent int64
-		var blocked error // lý do đầu tiên một con không được cho ăn vì cấp
-		var notSold error // lý do đầu tiên một con không được cho ăn vì chợ không bán thức ăn
-		for _, a := range animals {
-			if a.Ready != 0 {
-				continue
-			}
-			k := a.Kind
-			take := min(stock[k.Feed], k.FeedQty)
-			buy := k.FeedQty - take
-			if buy > 0 {
-				it, ok := itemByID(k.Feed)
-				if !ok || it.BuyPrice <= 0 {
-					if notSold == nil {
-						name := k.Feed
-						if ok {
-							name = it.Name
-						}
-						notSold = farmErr("Chợ không bán %s.", name)
-					}
-					continue
-				}
-				if level < it.Level {
-					if blocked == nil {
-						blocked = farmErr("Cần đạt cấp %d mới mua được %s.", it.Level, it.Name)
-					}
-					continue
-				}
-				cost := it.BuyPrice * buy
-				if cost > budget {
-					continue
-				}
-				budget -= cost
-				spent += cost
-				bought[k.Feed] += buy
-			}
-			if take > 0 {
-				if ok, err := op.takeStock(userID, k.Feed, take); err != nil {
-					return err
-				} else if !ok {
-					return missingFeed(a)
-				}
-				stock[k.Feed] -= take
-			}
-			if err := op.startProducing(userID, a, now); err != nil {
-				return err
-			}
-			g.Fed++
-		}
-		boughtIDs := make([]string, 0, len(bought))
-		for id := range bought {
-			boughtIDs = append(boughtIDs, id)
-		}
-		sort.Strings(boughtIDs)
-		for _, id := range boughtIDs {
-			qty := bought[id]
-			it, _ := itemByID(id)
-			if err := op.spend(userID, it.BuyPrice*qty, fmt.Sprintf("Mua %d %s cho vật nuôi", qty, it.Name)); err != nil {
-				return err
-			}
-		}
-		for _, a := range animals {
-			if a.Ready == 0 {
-				g.Hungry++
-			}
-		}
-		if g.Fed == 0 && len(g.Items) == 0 {
-			if blocked != nil {
-				return blocked
-			}
-			if notSold != nil {
-				return notSold
-			}
-			return ErrFarmNoXuFeed
-		}
-		if len(bought) > 0 {
-			g.Bought = bought
-			g.Xu = -spent
-		}
+		g, err := op.tendBuilding(userID, building, true)
 		res.Gained = g
-		return nil
+		return err
 	})
 	return res, err
+}
+
+// tendBuilding: phần thân của FarmTend trong một farmOp. buyFeed=false: chỉ dùng thức ăn có trong kho,
+// không tốn xu (con nào thiếu thức ăn vẫn đói; không cho ăn được con nào thì ErrFarmNoFeedStock).
+func (op *farmOp) tendBuilding(userID int64, building string, buyFeed bool) (*Gained, error) {
+	ctx := op.ctx
+	if b, ok := buildingByID(building); !ok || b.movable() {
+		return nil, ErrFarmUnknownBuild
+	}
+	now := op.unix()
+	all, err := loadAnimals(ctx, op.tx, userID)
+	if err != nil {
+		return nil, err
+	}
+	var animals []*animalRow
+	for i := range all {
+		if all[i].Kind.Building == building {
+			animals = append(animals, &all[i])
+		}
+	}
+	var ready []*animalRow
+	hungry0 := 0
+	for _, a := range animals {
+		switch a.state(now) {
+		case animalReady:
+			ready = append(ready, a)
+		case animalHungry:
+			hungry0++
+		}
+	}
+	if len(ready) == 0 && hungry0 == 0 {
+		return nil, ErrFarmNothingTend
+	}
+	room, err := op.storageRoom(userID)
+	if err != nil {
+		return nil, err
+	}
+	if room < 1 && hungry0 == 0 {
+		return nil, ErrFarmStorageFull
+	}
+	g := &Gained{}
+	if n := min(int64(len(ready)), room); n > 0 {
+		if g, err = op.collectAnimals(userID, ready[:n]); err != nil {
+			return nil, err
+		}
+	}
+	f, err := ensureFarm(ctx, op.tx, userID)
+	if err != nil {
+		return nil, err
+	}
+	level := levelFor(f.XP)
+	// spend chỉ nhận khi số dư >= số tiền (không cho nợ thêm): lấy số dư một lần, tự theo dõi.
+	w, err := loadWallet(ctx, op.tx, userID)
+	if err != nil {
+		return nil, err
+	}
+	budget := w.Balance
+	stock := map[string]int64{}
+	rows, err := op.tx.QueryContext(ctx, `SELECT item, qty FROM farm_stock WHERE user_id = ?`, userID)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var item string
+		var qty int64
+		if err := rows.Scan(&item, &qty); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		stock[item] = qty
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	bought := map[string]int64{}
+	var spent int64
+	var blocked error // lý do đầu tiên một con không được cho ăn vì cấp
+	var notSold error // lý do đầu tiên một con không được cho ăn vì chợ không bán thức ăn
+	for _, a := range animals {
+		if a.Ready != 0 {
+			continue
+		}
+		k := a.Kind
+		take := min(stock[k.Feed], k.FeedQty)
+		buy := k.FeedQty - take
+		if buy > 0 && !buyFeed {
+			continue
+		}
+		if buy > 0 {
+			it, ok := itemByID(k.Feed)
+			if !ok || it.BuyPrice <= 0 {
+				if notSold == nil {
+					name := k.Feed
+					if ok {
+						name = it.Name
+					}
+					notSold = farmErr("Chợ không bán %s.", name)
+				}
+				continue
+			}
+			if level < it.Level {
+				if blocked == nil {
+					blocked = farmErr("Cần đạt cấp %d mới mua được %s.", it.Level, it.Name)
+				}
+				continue
+			}
+			cost := it.BuyPrice * buy
+			if cost > budget {
+				continue
+			}
+			budget -= cost
+			spent += cost
+			bought[k.Feed] += buy
+		}
+		if take > 0 {
+			if ok, err := op.takeStock(userID, k.Feed, take); err != nil {
+				return nil, err
+			} else if !ok {
+				return nil, missingFeed(a)
+			}
+			stock[k.Feed] -= take
+		}
+		if err := op.startProducing(userID, a, now); err != nil {
+			return nil, err
+		}
+		g.Fed++
+	}
+	boughtIDs := make([]string, 0, len(bought))
+	for id := range bought {
+		boughtIDs = append(boughtIDs, id)
+	}
+	sort.Strings(boughtIDs)
+	for _, id := range boughtIDs {
+		qty := bought[id]
+		it, _ := itemByID(id)
+		if err := op.spend(userID, it.BuyPrice*qty, fmt.Sprintf("Mua %d %s cho vật nuôi", qty, it.Name)); err != nil {
+			return nil, err
+		}
+	}
+	for _, a := range animals {
+		if a.Ready == 0 {
+			g.Hungry++
+		}
+	}
+	if g.Fed == 0 && len(g.Items) == 0 {
+		if !buyFeed {
+			return nil, ErrFarmNoFeedStock
+		}
+		if blocked != nil {
+			return nil, blocked
+		}
+		if notSold != nil {
+			return nil, notSold
+		}
+		return nil, ErrFarmNoXuFeed
+	}
+	if len(bought) > 0 {
+		g.Bought = bought
+		g.Xu = -spent
+	}
+	return g, nil
 }
 
 /* ---------- Đơn hàng (xe tải) ---------- */
@@ -1008,13 +1029,19 @@ func (s *Store) randN(n int) int {
 	return min(max(int(s.rand()*float64(n)), 0), n-1)
 }
 
+// goodsBuilt: món chế biến id có công trình làm ra nó đã xây (built: cấp công trình theo id).
+func goodsBuilt(id string, built map[string]int) bool {
+	r, ok := recipeByID(id)
+	return ok && built[r.Building] > 0
+}
+
 // newOrder: đơn 1–3 loại hàng đã mở khoá ở cấp level (nông sản theo cấp cây, sản phẩm theo cấp con
-// vật, món chế biến theo cấp món nếu goods = đã có xưởng), mỗi loại 1–4 đơn vị (món chế biến: một
-// loại mỗi đơn, 1–2 món). Thưởng xu = ceil(1.35 × tổng giá đơn vị), XP = ceil(xu / 10).
-func (s *Store) newOrder(level int, goods bool) ([]OrderItem, int64, int64) {
+// vật, món chế biến theo cấp món nếu built có công trình làm món đó: xưởng hoặc máy ép), mỗi loại 1–4 đơn vị (món chế biến: một
+// loại mỗi đơn, 1–2 món; quả chỉ có khi fruits[id] = người chơi đang có cây loại đó). Thưởng xu = ceil(1.35 × tổng giá đơn vị), XP = ceil(xu / 10).
+func (s *Store) newOrder(level int, built map[string]int, fruits map[string]bool) ([]OrderItem, int64, int64) {
 	var pool []Item
 	for _, it := range Items {
-		if it.Level <= level && (it.Kind != "goods" || goods) {
+		if it.Level <= level && (it.Kind != "goods" || goodsBuilt(it.ID, built)) && (it.Kind != "fruit" || fruits[it.ID]) {
 			pool = append(pool, it)
 		}
 	}
@@ -1051,6 +1078,11 @@ func (op *farmOp) fillOrders(userID int64) error {
 	if err != nil {
 		return err
 	}
+	trees, err := loadTrees(op.ctx, op.tx, userID)
+	if err != nil {
+		return err
+	}
+	fruits := treeFruitSet(trees)
 	for slot := range FarmOrderSlots {
 		o, ok := orders[slot]
 		if ok && (len(o.Items) > 0 || o.NextAt > op.unix()) {
@@ -1061,7 +1093,7 @@ func (op *farmOp) fillOrders(userID int64) error {
 				return err
 			}
 		}
-		items, xu, xp := op.s.newOrder(levelFor(f.XP), built[kitchenID] > 0)
+		items, xu, xp := op.s.newOrder(levelFor(f.XP), built, fruits)
 		raw, _ := json.Marshal(items)
 		if _, err := op.tx.ExecContext(op.ctx,
 			`INSERT INTO farm_orders (user_id, slot, items, xu, xp) VALUES (?, ?, ?, ?, ?)`,
@@ -1219,6 +1251,9 @@ func (s *Store) fillFarmV2(ctx context.Context, v *FarmView, ownerID int64, f fa
 		v.Animals[i] = av
 	}
 	if err := s.fillKitchen(ctx, v, ownerID, now); err != nil {
+		return err
+	}
+	if err := s.fillOrchard(ctx, v, ownerID, f, now); err != nil {
 		return err
 	}
 	if !v.Me {

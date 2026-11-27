@@ -103,6 +103,19 @@ export type FarmView = {
     fed?: number;
     bought?: Record<string, number>;
     hungry?: number;
+    /** gieo tất cả: số ô vừa gieo */
+    planted?: number;
+    /** một lượt /auto */
+    auto?: {
+      harvested: number;
+      planted: number;
+      fed: number;
+      fruits: number;
+      crafted: number;
+      collected: number;
+      spent: number;
+      skipped: string[];
+    };
   };
   dog?: boolean;
   // phần 2: kho, chăn nuôi, đơn hàng, mở rộng đất (máy chủ cũ không có: để tuỳ chọn)
@@ -123,6 +136,66 @@ export type FarmView = {
   couple_requests?: CoupleRequest[];
   couple_sent?: CoupleRequest | null;
   couple_state?: "partner" | "can_propose" | "sent" | "incoming";
+  // vườn cây ăn quả: trees và orchard_spots ai xem cũng có, tree_kinds chỉ vườn mình
+  trees?: TreeView[];
+  tree_kinds?: FruitTree[];
+  orchard_spots?: number;
+};
+
+/** Một cây trong vườn: growing (đang lớn) | fruiting (đang ra quả) | ready (có quả để hái). */
+export type TreeView = {
+  spot: number;
+  tree: string;
+  state: "growing" | "fruiting" | "ready";
+  /** RFC3339 */
+  ready_at: string;
+};
+
+/** Cấp mở chỗ trồng cây: chỗ 0-2 cấp 5, 3-5 cấp 8, 6-8 cấp 12, 9-11 cấp 16 (khớp máy chủ). */
+export const ORCHARD_SPOTS = 12;
+export const orchardUnlockLevel = (spot: number) => [5, 8, 12, 16][Math.min(3, Math.floor(spot / 3))];
+/** Chỗ trồng thứ i trên bản đồ (đơn vị ô): lưới 4 × 3. */
+export const orchardSpotXY = (i: number): Spot => ({ x: 16 + 1.6 * (i % 4), y: 3 + 1.6 * Math.floor(i / 4) });
+
+/** Trạng thái ô tính lại theo đồng hồ (máy chủ gửi lúc tải, cây vẫn lớn tiếp giữa hai lần tải). */
+export function liveState(
+  p: Plot,
+  now: number,
+): { state: PlotState; progress: number; left: number } {
+  if (p.state === "empty") return { state: "empty", progress: 0, left: 0 };
+  const planted = p.planted_at ? new Date(p.planted_at).getTime() : now;
+  const ready = p.ready_at ? new Date(p.ready_at).getTime() : now;
+  const wither = p.wither_at ? new Date(p.wither_at).getTime() : Infinity;
+  if (p.state === "withered" || now >= wither)
+    return { state: "withered", progress: 1, left: 0 };
+  if (now >= ready) return { state: "ripe", progress: 1, left: wither - now };
+  const total = Math.max(1, ready - planted);
+  return {
+    state: "growing",
+    progress: Math.min(0.999, Math.max(0, (now - planted) / total)),
+    left: ready - now,
+  };
+}
+
+/** Cây đã có quả chưa (khớp máy chủ: ready, hoặc tới giờ ready_at) và còn bao lâu (ms, không âm). */
+export function treeLive(t: TreeView, now: number): { ready: boolean; left: number } {
+  const left = Math.max(0, new Date(t.ready_at).getTime() - now);
+  return { ready: t.state === "ready" || left <= 0, left };
+}
+
+export type FruitTree = {
+  id: string;
+  name: string;
+  emoji: string;
+  fruit: string;
+  fruit_name: string;
+  fruit_emoji: string;
+  price: number;
+  level: number;
+  mature_sec: number;
+  cycle_sec: number;
+  fruit_price: number;
+  xp: number;
 };
 
 export type Couple = {
@@ -189,10 +262,13 @@ export type Recipe = {
   price: number;
   xp: number;
   level: number;
+  /** Công trình có lò làm món này. */
+  building: "kitchen" | "juicer";
 };
 
-/** Một lò của xưởng đang nấu / đã xong (lò trống không có trong danh sách). */
+/** Một lò của xưởng hoặc máy ép nước đang làm / đã xong (lò trống không có trong danh sách). */
 export type Job = {
+  building: "kitchen" | "juicer";
   slot: number;
   recipe: string;
   ready_at: string;
@@ -204,14 +280,14 @@ export type Item = {
   name: string;
   emoji: string;
   price: number;
-  kind: "crop" | "product" | "goods";
+  kind: "crop" | "product" | "fruit" | "goods";
   level: number;
   /** Giá mua 1 đơn vị ở chợ (nông sản làm thức ăn); không có: không bán ở chợ. */
   buy_price?: number;
 };
 
 export type Building = {
-  id: "coop" | "pasture" | "kitchen";
+  id: "coop" | "pasture" | "kitchen" | "juicer";
   name: string;
   built: boolean;
   cap: number;
@@ -336,7 +412,7 @@ export function effAnimalSec(sec: number, p?: Perks) {
   return p ? Math.floor((sec * (100 - p.animal_pct)) / 100) : sec;
 }
 
-/** Chỉ nông sản và sản phẩm chăn nuôi được thưởng giá bán; món chế biến (goods) giữ giá gốc. */
+/** Chỉ nông sản, sản phẩm chăn nuôi và quả được thưởng giá bán; món chế biến (goods) giữ giá gốc. */
 function sellPerks(kind: string, p?: Perks) {
   return kind === "goods" ? undefined : p;
 }

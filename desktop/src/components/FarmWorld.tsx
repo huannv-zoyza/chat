@@ -9,13 +9,18 @@ import {
 } from "react";
 import {
   formatLeft,
+  orchardSpotXY,
+  orchardUnlockLevel,
+  ORCHARD_SPOTS,
   tendPlan,
+  treeLive,
   type Animal,
   type Crop,
   type FarmView,
   type Plot,
   type PlotState,
   type Spot,
+  type TreeView,
 } from "../lib/farm";
 import { SvgEmo, SvgLabel } from "./Emoji";
 
@@ -53,6 +58,24 @@ const kitchenRect = (s: Spot) => ({
   w: 2.6,
   d: 1.9,
 });
+
+/** Máy ép nước: chỗ mặc định (16,13) và cỡ vẽ bên trong khối 2 × 2 ô nó chiếm (store/farm_v2.go). */
+const JUICER_SPOT: Spot = { x: 16, y: 13 };
+const juicerRect = (s: Spot) => ({
+  gx: s.x + 0.2,
+  gy: s.y + 0.15,
+  w: 1.6,
+  d: 1.6,
+});
+/** Màu quả trên cây theo loại cây giống. */
+const FRUIT_COLOR: Record<string, string> = {
+  cam: "#ff9f1c",
+  tao: "#e63946",
+  chuoi: "#ffe14d",
+  xoai: "#ffb347",
+  dua: "#8b6b4a",
+  nho: "#7b3fa0",
+};
 
 /** Danh mục vật nuôi dự phòng: xem vườn hàng xóm máy chủ không gửi animal_kinds. */
 const ANIMAL_FALLBACK: Record<
@@ -876,6 +899,12 @@ export type WorldHandlers = {
   onBuild: (id: "coop" | "pasture") => void;
   onTend: (id: "coop" | "pasture") => void;
   onKitchen: () => void;
+  onJuicer: () => void;
+  /** bấm cây: ready thì hái, chưa thì cho biết còn bao lâu */
+  onTree: (t: TreeView) => void;
+  /** bấm chỗ trồng trống: mở cửa hàng cây giống */
+  onOrchardSpot: (spot: number) => void;
+  onOrchardHarvest: () => void;
   onExpand: () => void;
   onStorage: () => void;
   onOrders: () => void;
@@ -920,11 +949,28 @@ export function FarmWorld({
   const coop = view.buildings?.find((b) => b.id === "coop");
   const pasture = view.buildings?.find((b) => b.id === "pasture");
   const kitchen = view.buildings?.find((b) => b.id === "kitchen");
-  const jobs = view.jobs ?? [];
+  const jobs = (view.jobs ?? []).filter(
+    (j) => (j.building ?? "kitchen") === "kitchen",
+  );
   const kitchenOn = (kitchen?.built ?? false) || jobs.length > 0;
   const KITCHEN = kitchenRect(kitchen?.spot ?? KITCHEN_SPOT);
   // đang dời / chọn chỗ cho xưởng: xưởng thật ẩn đi, vẽ bản nháp ở chỗ đang chọn
   const placingKitchen = placing?.id === "kitchen";
+  const juicer = view.buildings?.find((b) => b.id === "juicer");
+  const juicerJobs = (view.jobs ?? []).filter((j) => j.building === "juicer");
+  const juicerOn = (juicer?.built ?? false) || juicerJobs.length > 0;
+  const JUICER = juicerRect(juicer?.spot ?? JUICER_SPOT);
+  const placingJuicer = placing?.id === "juicer";
+  const juicerDone = juicerJobs.filter(
+    (j) => j.state === "ready" || new Date(j.ready_at).getTime() <= now,
+  );
+  const juicerWorking = juicerJobs.length > juicerDone.length;
+  // vườn cây ăn quả
+  const orchardOpen = view.orchard_spots ?? 0;
+  const treeBySpot = new Map((view.trees ?? []).map((t) => [t.spot, t]));
+  const treeKinds = new Map((view.tree_kinds ?? []).map((k) => [k.id, k]));
+  const readyTrees = (view.trees ?? []).filter((t) => treeLive(t, now).ready);
+  const perTree = 3 + (view.perks?.harvest_bonus ?? 0);
   const jobDone = jobs.filter(
     (j) => j.state === "ready" || new Date(j.ready_at).getTime() <= now,
   );
@@ -1123,21 +1169,54 @@ export function FarmWorld({
         <Pine key={`lp${j}`} x={-0.4} y={j} s={1.05} />
       ),
     );
-  // vườn cây ăn quả (bên phải ruộng)
-  for (let i = 0; i < 6; i++) {
-    const x = 16 + (i % 3) * 1.6;
-    const y = 3 + Math.floor(i / 3) * 1.7;
-    add(
-      x,
-      y,
-      <Tree
-        key={`o${i}`}
-        x={x}
-        y={y}
-        s={0.95}
-        fruit={i % 2 ? "#ff9f1c" : "#e63946"}
-      />,
-    );
+  // vườn cây ăn quả (bên phải ruộng): 12 chỗ lưới 4 × 3
+  for (let i = 0; i < ORCHARD_SPOTS; i++) {
+    const { x, y } = orchardSpotXY(i);
+    const t = treeBySpot.get(i);
+    if (i >= orchardOpen) {
+      // chỗ khoá chỉ nói với chủ vườn
+      if (me)
+        add(
+          x,
+          y,
+          <g key={`os${i}`}>
+            <SpotStake x={x} y={y} locked />
+            <OrchardTag x={x} y={y} text={`🔒 Mở ở cấp ${orchardUnlockLevel(i)}`} />
+          </g>,
+        );
+    } else if (!t) {
+      add(
+        x,
+        y,
+        <SpotStake
+          key={`os${i}`}
+          x={x}
+          y={y}
+          onClick={me ? () => h.onOrchardSpot(i) : undefined}
+          tip={me ? "Trồng cây ăn quả" : undefined}
+        />,
+      );
+    } else {
+      const live = treeLive(t, now);
+      const young = t.state === "growing" && !live.ready;
+      add(
+        x,
+        y,
+        <g
+          key={`os${i}`}
+          className={me ? "iso-click" : undefined}
+          onClick={me ? () => h.onTree(t) : undefined}
+        >
+          <title>{treeKinds.get(t.tree)?.name ?? "Cây ăn quả"}</title>
+          <Tree
+            x={x}
+            y={y}
+            s={young ? 0.5 : 0.95}
+            fruit={live.ready ? (FRUIT_COLOR[t.tree] ?? "#ff9f1c") : undefined}
+          />
+        </g>,
+      );
+    }
   }
   add(
     11.5,
@@ -1308,6 +1387,19 @@ export function FarmWorld({
       />,
     );
 
+  if (juicerOn && !placingJuicer)
+    add(
+      JUICER.gx + JUICER.w,
+      JUICER.gy + JUICER.d,
+      <Juicer
+        key="juicer"
+        r={JUICER}
+        working={juicerWorking}
+        onClick={me ? h.onJuicer : undefined}
+        label={me ? "🧃 Máy ép" : undefined}
+      />,
+    );
+
   things.sort((a, b) => a.depth - b.depth);
 
   // nhãn đồng hồ / "Trộm!" và bong bóng vật nuôi: vẽ sau cùng để không vật nào che
@@ -1428,6 +1520,77 @@ export function FarmWorld({
             </text>
           </g>
         )}
+      </g>,
+    );
+  }
+
+  if (juicerOn && !placingJuicer && juicerDone.length > 0) {
+    const [bx, by] = pt(
+      JUICER.gx + JUICER.w / 2,
+      JUICER.gy + JUICER.d / 2,
+      100,
+    );
+    const r = juicerDone[0].recipe;
+    hud.push(
+      <g
+        key="juicer-ready"
+        className={`iso-bubble is-ready${me ? " iso-click" : ""}`}
+        transform={`translate(${bx}, ${by})`}
+        onClick={me ? h.onJuicer : undefined}
+      >
+        <circle r={18} />
+        <SvgEmo
+          e={view.recipes?.find((x) => x.id === r)?.emoji ?? "🧃"}
+          x={0}
+          y={7}
+          size={20}
+        />
+        {juicerDone.length > 1 && (
+          <g transform="translate(15, -13)" className="iso-count">
+            <circle r={9} />
+            <text y={4} textAnchor="middle">
+              {juicerDone.length}
+            </text>
+          </g>
+        )}
+      </g>,
+    );
+  }
+  // quả lơ lửng trên cây đã chín
+  readyTrees.forEach((t) => {
+    if (t.spot >= orchardOpen) return;
+    const { x, y } = orchardSpotXY(t.spot);
+    const [bx, by] = pt(x, y);
+    hud.push(
+      <g
+        key={`tree-ready${t.spot}`}
+        className={`iso-bubble is-ready${me ? " iso-click" : ""}`}
+        transform={`translate(${bx}, ${by - 100})`}
+        onClick={me ? () => h.onTree(t) : undefined}
+      >
+        <circle r={14} />
+        <SvgEmo
+          e={treeKinds.get(t.tree)?.fruit_emoji ?? "🍊"}
+          x={0}
+          y={6}
+          size={16}
+        />
+      </g>,
+    );
+  });
+  // biển hái tất cả: chỉ ở vườn mình
+  if (me && !placing && readyTrees.length > 0) {
+    const [sx, sy] = pt(16 + 2.4, 3 - 0.9);
+    const text = `🧺 Hái ${readyTrees.length * perTree} quả`;
+    hud.push(
+      <g
+        key="orchard-harvest"
+        className={`iso-click iso-sign is-tend${busy ? " is-busy" : ""}`}
+        transform={`translate(${sx}, ${sy - 30})`}
+        onClick={busy ? undefined : h.onOrchardHarvest}
+      >
+        <rect x={-62} y={-15} width={124} height={28} rx={14} />
+        <SvgLabel text={text} y={4} />
       </g>,
     );
   }
@@ -1569,6 +1732,9 @@ export function FarmWorld({
               {placingKitchen && (
                 <Workshop r={kitchenRect(placing.spot)} working={false} />
               )}
+              {placingJuicer && (
+                <Juicer r={juicerRect(placing.spot)} working={false} />
+              )}
             </g>
           </>
         )}
@@ -1619,6 +1785,18 @@ export function FarmWorld({
             onClick={h.onKitchen}
           />
         )}
+        {me && !placing && !juicerOn && juicer && (
+          <BuildSign
+            r={JUICER}
+            text={
+              view.level < juicer.level
+                ? `Máy ép nước · cấp ${juicer.level}`
+                : `Xây máy ép · ${juicer.price}🪙`
+            }
+            locked={view.level < juicer.level}
+            onClick={h.onJuicer}
+          />
+        )}
         {!placing && expandArea && view.expansion?.next && (
           <g
             className="iso-click iso-sign"
@@ -1653,6 +1831,135 @@ export function FarmWorld({
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * Máy ép nước: thùng ép xanh bạc hà, mái hiên sọc cam, ly nước ép khổng lồ trên nóc. Lò đang ép thì
+ * ly sủi bọt; có món xong thì bong bóng món nảy trên nóc (vẽ ở lớp hud).
+ */
+function Juicer({
+  r,
+  working,
+  onClick,
+  label,
+}: {
+  r: { gx: number; gy: number; w: number; d: number };
+  working: boolean;
+  onClick?: () => void;
+  label?: string;
+}) {
+  const { gx: x, gy: y, w, d } = r;
+  const h = 34;
+  const P = (a: number, b: number, z: number) => pt(x + a, y + b, z);
+  const cup = P(w / 2, d / 2, h);
+  const stripes = [0, 1, 2, 3];
+  return (
+    <g className={onClick ? "iso-click" : undefined} onClick={onClick}>
+      <Shadow x={x + w * 0.55} y={y + d * 0.65} r={1.2} o={0.2} />
+      <Box
+        x={x}
+        y={y}
+        w={w}
+        d={d}
+        h={h}
+        top="#bfeede"
+        left="#a6e3cf"
+        right="#86cdb6"
+        stroke="#3f8a73"
+      />
+      {/* quầy cửa sổ mặt trước-trái */}
+      <polygon
+        points={poly([
+          P(w * 0.15, d, 12),
+          P(w * 0.85, d, 12),
+          P(w * 0.85, d, 26),
+          P(w * 0.15, d, 26),
+        ])}
+        fill={working ? "#ffd56b" : "#e9f7ff"}
+        stroke="#3f8a73"
+        strokeWidth={1.5}
+      />
+      {/* mái hiên sọc cam trắng phía trước-trái */}
+      {stripes.map((i) => {
+        const a = (w * i) / stripes.length;
+        const b = (w * (i + 1)) / stripes.length;
+        return (
+          <polygon
+            key={i}
+            points={poly([
+              P(a, d, h - 4),
+              P(b, d, h - 4),
+              P(b, d + 0.35, h - 12),
+              P(a, d + 0.35, h - 12),
+            ])}
+            fill={i % 2 ? "#fff6e0" : "#ff9a3c"}
+            stroke="#c4651a"
+            strokeWidth={1}
+          />
+        );
+      })}
+      {/* ly nước ép trên nóc */}
+      <polygon
+        points={`${cup[0] - 15},${cup[1] - 34} ${cup[0] + 15},${cup[1] - 34} ${cup[0] + 10},${cup[1]} ${cup[0] - 10},${cup[1]}`}
+        fill="#ffb24a"
+        stroke="#c4651a"
+        strokeWidth={1.5}
+        strokeLinejoin="round"
+      />
+      <ellipse
+        cx={cup[0]}
+        cy={cup[1] - 34}
+        rx={15}
+        ry={5}
+        fill="#ffd28a"
+        stroke="#c4651a"
+        strokeWidth={1.2}
+      />
+      <line
+        x1={cup[0] + 4}
+        y1={cup[1] - 36}
+        x2={cup[0] + 11}
+        y2={cup[1] - 52}
+        stroke="#e63946"
+        strokeWidth={3}
+        strokeLinecap="round"
+      />
+      {working && (
+        <g className="iso-smoke" aria-hidden>
+          {[0, 1, 2].map((i) => (
+            <circle
+              key={i}
+              cx={cup[0]}
+              cy={cup[1] - 52}
+              r={5 + i * 2}
+              style={{ animationDelay: `${i * 0.9}s` }}
+            />
+          ))}
+        </g>
+      )}
+      {label && (
+        <g transform={`translate(${P(w, d, 0)[0] + 30}, ${P(w, d, 0)[1] - 6})`}>
+          <rect
+            x={-40}
+            y={-14}
+            width={80}
+            height={24}
+            rx={12}
+            fill="#fff8e6"
+            stroke="#7a4b22"
+            strokeWidth={2.5}
+          />
+          <SvgLabel
+            text={label}
+            y={3}
+            fontSize={12}
+            fontWeight={800}
+            fill="#4a2f14"
+          />
+        </g>
+      )}
+    </g>
   );
 }
 
@@ -1850,6 +2157,61 @@ function Pond() {
         ry={7}
         fill="rgba(255,255,255,0.45)"
       />
+    </g>
+  );
+}
+
+/** Cọc đất đánh dấu chỗ trồng cây (trống hoặc còn khoá). */
+function SpotStake({
+  x,
+  y,
+  locked = false,
+  onClick,
+  tip,
+}: {
+  x: number;
+  y: number;
+  locked?: boolean;
+  onClick?: () => void;
+  tip?: string;
+}) {
+  const [cx, cy] = pt(x, y);
+  return (
+    <g
+      className={`iso-stake${onClick ? " iso-click" : ""}${locked ? " is-locked" : ""}`}
+      onClick={onClick}
+    >
+      {tip && <title>{tip}</title>}
+      <ellipse
+        cx={cx}
+        cy={cy + 2}
+        rx={22}
+        ry={11}
+        fill={locked ? "#8a7a62" : "#8a5a2c"}
+        opacity={locked ? 0.45 : 0.7}
+      />
+      <rect
+        x={cx - 2}
+        y={cy - 18}
+        width={4}
+        height={20}
+        rx={1.5}
+        fill="#c79a5b"
+        stroke="#7a4b22"
+        strokeWidth={1}
+      />
+      {onClick && <circle cx={cx} cy={cy - 20} r={4} fill="#7bd36b" />}
+    </g>
+  );
+}
+
+/** Nhãn nhỏ trên chỗ trồng cây ("Mở ở cấp N"). */
+function OrchardTag({ x, y, text }: { x: number; y: number; text: string }) {
+  const [cx, cy] = pt(x, y);
+  return (
+    <g transform={`translate(${cx}, ${cy - 30})`} className="iso-sign is-build is-locked">
+      <rect x={-48} y={-10} width={96} height={19} rx={9.5} />
+      <SvgLabel text={text} y={3} fontSize={10} />
     </g>
   );
 }

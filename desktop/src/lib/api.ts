@@ -590,6 +590,10 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     farmLeaderboard: () => request<import("./farm").LeaderRow[]>("GET", "/api/farm/leaderboard"),
     farmPlant: (plot: number, crop: string) =>
       request<import("./farm").FarmView>("POST", "/api/farm/plant", { plot, crop }),
+    farmPlantAll: (crop: string) =>
+      request<import("./farm").FarmView>("POST", "/api/farm/plant", { all: true, crop }),
+    farmAuto: (opts: { crop?: string; kitchen_recipe?: string; juicer_recipe?: string; buy_feed: boolean }) =>
+      request<import("./farm").FarmView>("POST", "/api/farm/auto", opts),
     farmHarvest: (plot: number | "all") =>
       request<import("./farm").FarmView>("POST", "/api/farm/harvest", plot === "all" ? { all: true } : { plot }),
     farmClear: (plot: number) => request<import("./farm").FarmView>("POST", "/api/farm/clear", { plot }),
@@ -618,6 +622,11 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
       request<import("./farm").FarmView>("POST", "/api/farm/animals/feed", id === "all" ? { all: true } : { id }),
     farmCollect: (id: number | "all") =>
       request<import("./farm").FarmView>("POST", "/api/farm/animals/collect", id === "all" ? { all: true } : { id }),
+    farmPlantTree: (spot: number, tree: string) =>
+      request<import("./farm").FarmView>("POST", "/api/farm/orchard/plant", { spot, tree }),
+    farmHarvestTree: (spot: number | "all") =>
+      request<import("./farm").FarmView>("POST", "/api/farm/orchard/harvest", spot === "all" ? { all: true } : { spot }),
+    farmRemoveTree: (spot: number) => request<import("./farm").FarmView>("DELETE", `/api/farm/orchard/${spot}`),
     farmTend: (building: "coop" | "pasture") =>
       request<import("./farm").FarmView>("POST", `/api/farm/buildings/${building}/tend`),
     farmPropose: (userId: number) =>
@@ -629,8 +638,15 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     farmGift: (item: string, qty: number) =>
       request<import("./farm").FarmView>("POST", "/api/farm/couple/gift", { item, qty }),
     farmCraft: (recipe: string) => request<import("./farm").FarmView>("POST", "/api/farm/craft", { recipe }),
-    farmCraftCollect: (slot: number | "all") =>
-      request<import("./farm").FarmView>("POST", "/api/farm/craft/collect", slot === "all" ? { all: true } : { slot }),
+    farmCraftFill: (recipe: string) =>
+      request<import("./farm").FarmView>("POST", "/api/farm/craft", { recipe, fill: true }),
+    /** Lấy món xong ở một lò (building mặc định: xưởng) hoặc "all" (building bỏ trống: mọi công trình). */
+    farmCraftCollect: (slot: number | "all", building?: "kitchen" | "juicer") =>
+      request<import("./farm").FarmView>(
+        "POST",
+        "/api/farm/craft/collect",
+        slot === "all" ? { all: true, ...(building ? { building } : {}) } : { slot, ...(building ? { building } : {}) },
+      ),
     farmDeliver: (orderId: number) => request<import("./farm").FarmView>("POST", `/api/farm/orders/${orderId}/deliver`),
     farmDiscard: (orderId: number) => request<import("./farm").FarmView>("DELETE", `/api/farm/orders/${orderId}`),
     listIntegrations: (channelId: number) => request<Integration[]>("GET", `/api/channels/${channelId}/integrations`),

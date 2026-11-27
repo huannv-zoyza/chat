@@ -16,7 +16,6 @@ import (
 //	GET  /api/farm/users/{userId}          nông trại người khác (tính nhiệm vụ "visit")
 //	GET  /api/farm/neighbors               hàng xóm: mọi người dùng thật trừ mình, bot, AI
 //	GET  /api/farm/leaderboard             top 20 theo XP
-//	POST /api/farm/plant      {plot, crop}
 //	POST /api/farm/harvest    {plot} | {all: true}
 //	POST /api/farm/clear      {plot}
 //	POST /api/farm/water      {user_id, plot}
@@ -27,15 +26,20 @@ import (
 //	POST /api/farm/quests/{questId}/claim  ("chest" = rương thưởng ngày)
 //	POST /api/farm/sell       {item, qty} | {all: true}
 //	POST /api/farm/storage/upgrade
-//	POST /api/farm/buildings/{id}          xây coop | pasture | kitchen   {x, y} tuỳ chọn: chỗ đặt
+//	POST /api/farm/buildings/{id}          xây coop | pasture | kitchen | juicer   {x, y} tuỳ chọn: chỗ đặt
 //	POST /api/farm/buildings/{id}/move     {x, y}  dời công trình tự do (xưởng)
 //	POST /api/farm/buildings/{id}/upgrade
 //	POST /api/farm/buildings/{id}/tend     chăm nhanh cả chuồng (coop | pasture): thu + cho ăn, tự mua thức ăn thiếu
 //	POST /api/farm/animals    {kind}       mua con vật
 //	POST /api/farm/animals/feed    {id} | {all: true}
 //	POST /api/farm/animals/collect {id} | {all: true}
-//	POST /api/farm/craft      {recipe}     nấu một món ở lò trống của xưởng
-//	POST /api/farm/craft/collect {slot} | {all: true}
+//	POST /api/farm/craft      {recipe, fill?} nấu một món ở lò trống của công trình của món (fill: mọi lò trống)
+//	POST /api/farm/craft/collect {building?, slot} | {all: true, building?}  (building mặc định: xưởng khi có slot)
+//	POST /api/farm/plant           {plot, crop} | {all: true, crop}  gieo một ô / mọi ô trống (dọn ô héo, tới khi hết xu)
+//	POST /api/farm/auto            {crop?, kitchen_recipe?, juicer_recipe?, buy_feed}  làm hết mọi việc một lần
+//	POST /api/farm/orchard/plant   {spot, tree}       trồng cây ăn quả vào chỗ trống
+//	POST /api/farm/orchard/harvest {spot} | {all: true}  hái quả
+//	DELETE /api/farm/orchard/{spot}                   chặt cây
 //	POST /api/farm/couple/propose  {user_id}          ngỏ lời kết đôi
 //	POST /api/farm/couple/respond  {user_id, accept}  trả lời lời ngỏ
 //	DELETE /api/farm/couple/propose                   rút lại lời ngỏ của mình
@@ -158,8 +162,13 @@ func decodePlotReq(w http.ResponseWriter, r *http.Request, allowAll bool) (farmP
 }
 
 func (a *API) farmPlant(w http.ResponseWriter, r *http.Request) {
-	req, ok := decodePlotReq(w, r, false)
+	req, ok := decodePlotReq(w, r, true)
 	if !ok {
+		return
+	}
+	if req.All {
+		res, err := a.store.FarmPlantAll(r.Context(), currentUser(r).ID, req.Crop)
+		a.farmRespond(w, r, res, err)
 		return
 	}
 	res, err := a.store.FarmPlant(r.Context(), currentUser(r).ID, *req.Plot, req.Crop)
@@ -339,26 +348,47 @@ func (a *API) farmTend(w http.ResponseWriter, r *http.Request) {
 	a.farmRespond(w, r, res, err)
 }
 
-func (a *API) farmCraft(w http.ResponseWriter, r *http.Request) {
+func (a *API) farmAuto(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Recipe string `json:"recipe"`
+		Crop          string `json:"crop"`
+		KitchenRecipe string `json:"kitchen_recipe"`
+		JuicerRecipe  string `json:"juicer_recipe"`
+		BuyFeed       bool   `json:"buy_feed"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	res, err := a.store.FarmCraft(r.Context(), currentUser(r).ID, req.Recipe)
+	res, err := a.store.FarmAuto(r.Context(), currentUser(r).ID, store.AutoOpts{
+		Crop: req.Crop, KitchenRecipe: req.KitchenRecipe, JuicerRecipe: req.JuicerRecipe, BuyFeed: req.BuyFeed})
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmCraft(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Recipe string `json:"recipe"`
+		Fill   bool   `json:"fill"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	craft := a.store.FarmCraft
+	if req.Fill {
+		craft = a.store.FarmCraftFill
+	}
+	res, err := craft(r.Context(), currentUser(r).ID, req.Recipe)
 	a.farmRespond(w, r, res, err)
 }
 
 func (a *API) farmCraftCollect(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Slot int  `json:"slot"`
-		All  bool `json:"all"`
+		Building string `json:"building"` // rỗng: xưởng khi lấy một lò, mọi công trình khi all
+		Slot     int    `json:"slot"`
+		All      bool   `json:"all"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	res, err := a.store.FarmCraftCollect(r.Context(), currentUser(r).ID, req.Slot, req.All)
+	res, err := a.store.FarmCraftCollect(r.Context(), currentUser(r).ID, req.Building, req.Slot, req.All)
 	a.farmRespond(w, r, res, err)
 }
 
@@ -421,5 +451,51 @@ func (a *API) farmDeliverOrder(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) farmDiscardOrder(w http.ResponseWriter, r *http.Request) {
 	res, err := a.store.FarmDiscardOrder(r.Context(), currentUser(r).ID, orderID(r))
+	a.farmRespond(w, r, res, err)
+}
+
+type farmTreeReq struct {
+	Spot *int   `json:"spot"`
+	Tree string `json:"tree"`
+	All  bool   `json:"all"`
+}
+
+func (a *API) farmPlantTree(w http.ResponseWriter, r *http.Request) {
+	var req farmTreeReq
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.Spot == nil {
+		writeError(w, http.StatusBadRequest, "Thiếu chỗ trồng cây.")
+		return
+	}
+	res, err := a.store.FarmPlantTree(r.Context(), currentUser(r).ID, *req.Spot, req.Tree)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmHarvestTree(w http.ResponseWriter, r *http.Request) {
+	var req farmTreeReq
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.Spot == nil && !req.All {
+		writeError(w, http.StatusBadRequest, "Thiếu chỗ trồng cây.")
+		return
+	}
+	spot := 0
+	if req.Spot != nil {
+		spot = *req.Spot
+	}
+	res, err := a.store.FarmHarvestTree(r.Context(), currentUser(r).ID, spot, req.All)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmRemoveTree(w http.ResponseWriter, r *http.Request) {
+	spot, err := strconv.Atoi(r.PathValue("spot"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Chỗ trồng cây không hợp lệ.")
+		return
+	}
+	res, err := a.store.FarmRemoveTree(r.Context(), currentUser(r).ID, spot)
 	a.farmRespond(w, r, res, err)
 }

@@ -352,3 +352,112 @@ khói bếp) và `recipes: {id, name, emoji, inputs: {item, qty}[], time_sec, pr
   thấy; `gifts_left` chỉ chủ vườn); chủ vườn có thêm `couple_requests: {user, at}[]` và `couple_sent`; xem vườn
   người khác có `couple_state`: `partner` | `can_propose` | `sent` | `incoming` | không có (một trong hai đã có
   đôi). `gained` thêm `love`, `love_up`. `neighbors[].partner`.
+
+# Phần 5: Vườn cây ăn quả, Máy ép nước, Tự động
+
+Thiết kế: `docs/superpowers/specs/2026-11-27-farm-orchard-juice-auto-design.md`. Phần này thêm nội dung cho cấp
+5–18 và các nút "làm hết" cho người có nhiều ô, chuồng, cây, lò.
+
+## 12. Vườn cây ăn quả
+
+- Cây trồng **một lần, hái nhiều lần** (khác ruộng: không bị xoá sau khi thu). Bảng `farm_trees`
+  (migration 000032): `id, user_id, spot, tree, planted_at, ready_at, cycles`, duy nhất `(user_id, spot)`.
+  `ready_at` là giây unix cây có quả (lần đầu: lớn xong); `cycles` là số lần đã hái (0 = đang lớn).
+- Có **12** chỗ trồng (`spot` 0..11, lưới 4×3, vùng `{15.5, 2.5, 6.5, 4.8}` thuộc `blocked` trên bản đồ). Số chỗ mở theo
+  cấp: dưới cấp 5 khoá; cấp 5 → **3**; cấp 8 → **6**; cấp 12 → **9**; cấp 16 → **12**.
+- **Trồng** (`POST /api/farm/orchard/plant {spot, tree}`): chỗ đã mở và còn trống, đủ cấp của cây, đủ xu (trừ giá
+  cây giống). Cây ra quả lần đầu sau `mature_sec × (100 − grow_pct) / 100` (`grow_pct` theo cấp lúc trồng).
+- **Hái** (`POST /api/farm/orchard/harvest {spot} | {all:true}`): mỗi cây chín cho `3 + harvest_bonus` quả vào kho
+  và `xp` của cây; cây bắt đầu chu kỳ mới `cycle_sec × (100 − grow_pct) / 100`, `cycles` tăng 1. Hái một cây chưa
+  có quả: "Cây chưa có quả."; chỗ không có cây: "Chỗ này chưa có cây."; `all` mà chưa cây nào chín: "Chưa có cây
+  nào có quả để hái.". Kho không đủ chỗ cho cả một lượt quả của một cây thì "kho đầy"; `all` hái theo thứ tự chỗ
+  tới khi hết chỗ trong kho (cây nào không vừa thì để lại).
+- **Chặt** (`DELETE /api/farm/orchard/{spot}`): xoá cây, không hoàn tiền, để trồng loại khác.
+- Trạng thái cây: `growing` (chưa ra quả lần nào), `fruiting` (đang chờ lần ra quả kế), `ready`.
+- Quả là `Item` kind `fruit` (id quả = id cây), `Level` = cấp cây, không mua ở chợ, bán ở kho theo `price` có cộng
+  `sell_pct`. Đơn hàng xe tải chỉ có quả loại nào khi chủ vườn đang có ít nhất một cây loại đó.
+
+| id | Cây | Quả (emoji) | Cấp | Giá cây | Lớn | Chu kỳ | Giá quả | XP/lần hái |
+|---|---|---|---|---|---|---|---|---|
+| `cam` | Cây cam | Cam 🍊 | 5 | 300 | 2 giờ | 1 giờ | 18 | 4 |
+| `tao` | Cây táo | Táo 🍎 | 7 | 500 | 3 giờ | 1,5 giờ | 26 | 6 |
+| `chuoi` | Cây chuối | Chuối 🍌 | 9 | 700 | 4 giờ | 2 giờ | 34 | 8 |
+| `xoai` | Cây xoài | Xoài 🥭 | 11 | 1000 | 6 giờ | 3 giờ | 48 | 11 |
+| `dua` | Cây dừa | Dừa 🥥 | 14 | 1500 | 8 giờ | 4 giờ | 65 | 15 |
+| `nho` | Cây nho | Nho 🍇 | 18 | 2200 | 10 giờ | 5 giờ | 90 | 20 |
+
+FarmView thêm: `trees: {spot, tree, state, ready_at}[]` và `orchard_spots` (ai xem cũng thấy), `tree_kinds`
+(danh mục trên, chỉ khi `me`: `id, name, emoji, fruit, fruit_name, fruit_emoji, price, level, mature_sec, cycle_sec,
+fruit_price, xp`). Hái trả `gained: {xp, level_up?, items}`.
+
+## 13. Máy ép nước
+
+- Công trình `juicer` "Máy ép nước" (tự do, **2 × 2** ô, chỗ mặc định `(16, 13)`, dời được như xưởng, xem §10): giá xây
+  **800**, cần **cấp 6**; có **2 lò**, nâng cấp (**1600** xu) lên **4 lò**. `buildings[].cap` là số lò.
+- Mỗi lò thuộc một công trình: bảng `farm_jobs` có thêm cột `building` (mặc định `kitchen`), khoá chính
+  `(user_id, building, slot)` (migration 000033 dựng lại bảng, giữ nguyên job xưởng đang chạy). `Recipe` thêm trường
+  `building` (`kitchen` | `juicer`); nấu, thu, view đều theo công trình của món.
+- **Nấu** (`POST /api/farm/craft {recipe, fill?}`): kiểm tra như §9 nhưng theo công trình của món. Chưa xây máy ép:
+  "Cần xây Máy ép nước trước."; hết lò: "Các lò của Máy ép nước đều đang bận." (xưởng giữ lời cũ). Không `fill`: nấu ở lò
+  trống số nhỏ nhất. `fill: true`: nấu liên tiếp ở mọi lò trống của công trình tới khi hết lò hoặc hết nguyên liệu;
+  chỉ báo lỗi khi không bắt đầu được lò nào (lỗi như nấu một món).
+- **Lấy món** (`POST /api/farm/craft/collect {building?, slot} | {all:true, building?}`): `building` là `kitchen` |
+  `juicer`, giá trị khác báo "công trình không hợp lệ". Bỏ trống: lấy một lò thì mặc định xưởng; `all` thì mọi công
+  trình. `all` lấy tới khi kho đầy.
+- Món làm ra là `Item` kind `goods` (cùng id món), bán theo `price`, không cộng `sell_pct`. Đơn hàng chỉ đòi món của
+  công trình đã xây; mỗi đơn vẫn nhiều nhất một loại `goods`.
+
+| id | Món | emoji | Nguyên liệu | Thời gian | Giá | XP | Cấp |
+|---|---|---|---|---|---|---|---|
+| `nuoc_cam` | Nước cam | 🧃 | 3 cam | 20 phút | 85 | 8 | 6 |
+| `nuoc_tao` | Nước táo | 🍏 | 3 táo | 30 phút | 120 | 10 | 7 |
+| `sinh_to_chuoi` | Sinh tố chuối | 🧋 | 2 chuối, 1 sữa | 40 phút | 215 | 14 | 9 |
+| `nuoc_xoai` | Nước xoài | 🫙 | 3 xoài | 1 giờ | 215 | 18 | 11 |
+| `nuoc_thap_cam` | Nước ép thập cẩm | 🍹 | 1 cam, 1 táo, 1 xoài, 1 cà rốt | 2 giờ | 165 | 14 | 12 |
+| `nuoc_dua` | Nước dừa | 🌴 | 2 dừa | 45 phút | 195 | 16 | 14 |
+| `nuoc_nho` | Nước nho | 🍷 | 4 nho | 90 phút | 540 | 32 | 18 |
+
+FarmView: `jobs[]` thêm `building`; `recipes[]` thêm `building` (chỉ khi `me`; gồm cả món xưởng ở §9 và món máy ép).
+
+## 14. Tự động
+
+Chỉ áp dụng cho nông trại của chính mình. Không có tác vụ nền trên máy chủ: tự động chỉ chạy khi app đang mở.
+
+### Máy chủ
+
+- **Gieo tất cả** `POST /api/farm/plant {all:true, crop}` (thay `{plot, crop}`): dọn mọi ô héo, gieo `crop` vào các ô trống
+  theo thứ tự tới khi hết xu (thiếu xu thì gieo một phần). Cần đủ cấp. Không có ô trống: lỗi; không đủ xu cho ô nào:
+  "không đủ xu". `gained: {planted, xu: -tiền hạt}`.
+- **Hái tất cả** và **nấu đầy lò**: xem §12 (`orchard/harvest {all:true}`) và §13 (`craft {recipe, fill:true}`).
+- **Làm hết** `POST /api/farm/auto`, body `{crop?, kitchen_recipe?, juicer_recipe?, buy_feed}`. Tất cả trong **một
+  giao dịch**, theo thứ tự:
+  1. thu hoạch mọi ô chín;
+  2. gieo `crop` (nếu có; "không có ô trống" thì bỏ qua lặng lẽ);
+  3. chăm chuồng gà rồi đồng cỏ (thu + cho ăn; `buy_feed` tắt: chỉ dùng thức ăn trong kho, không tốn xu; "không có gì
+     để thu hay cho ăn" và "không có thức ăn" bỏ qua lặng lẽ);
+  4. hái mọi cây chín còn vừa kho;
+  5. thu mọi lò đã xong của xưởng và máy ép (kho đầy thì không thu, không báo lỗi);
+  6. lấp lò xưởng bằng `kitchen_recipe`, rồi lò máy ép bằng `juicer_recipe` (món phải thuộc đúng công trình, không thì
+     "Món X không làm ở đây.").
+- **SAVEPOINT mỗi bước**: bước gặp lỗi nghiệp vụ (`FarmError` hoặc không đủ xu) bị hoàn lại mọi ghi của riêng bước đó,
+  lý do ghi vào `skipped` dạng `"<nhãn>: <lỗi>"` (nhãn: Thu hoạch, Gieo, Chuồng gà, Đồng cỏ, Vườn cây, Thu món, Xưởng,
+  Máy ép), các bước khác vẫn chạy. Lỗi khác (DB) hoàn lại và dừng cả lượt.
+- Kết quả: `gained` gộp mọi bước (`xu` = −tổng đã tiêu, `xp`, `level_up`, `items`, `fed`, `planted`...) và
+  `gained.auto = {harvested, planted, fed, fruits, crafted, collected, spent, skipped: string[]}`. `harvested` = số ô thu,
+  `fruits` = số quả hái, `collected` = số sản phẩm chăn nuôi + món đã thu, `crafted` = số lò vừa bắt đầu, `spent` = xu đã
+  trả cho hạt giống và thức ăn (số dương).
+- Không có `harvested + planted + fed + fruits + crafted + collected` nào thì lỗi `ErrFarmNothingAuto`: "Chưa có việc
+  gì để làm." (cả giao dịch hoàn lại).
+
+### Giao diện (`desktop/src/lib/farmAuto.ts`, `components/Farm.tsx`)
+
+- Cài đặt `{on, crop?, kitchen_recipe?, juicer_recipe?, buy_feed}` lưu ở settings key `farm-auto:<userId>`; thiếu hoặc
+  hỏng thì mặc định tắt (`buy_feed` mặc định **tắt**, không bao giờ tự bật mua thức ăn).
+- `autoPending(view, now, settings)` ước lượng lạc quan còn việc không: ô chín, ô trống / héo khi đã chọn cây, vật nuôi
+  sẵn sàng hoặc đói (có thức ăn trong kho hoặc `buy_feed`), cây có quả, lò xong, lò trống đủ nguyên liệu cho món đã chọn.
+  Nút "⚡ Làm hết" (một chạm, gọi `/auto` rồi báo `autoSummary`, chỉ liệt kê phần khác 0) hiện khi `autoPending`; "🌱 Gieo
+  tất cả" khi có ô trống (chưa chọn cây thì mở cửa hàng hạt).
+- Công tắc "🤖 Tự động" (kèm popover cài đặt cây, món xưởng, món máy ép, mua thức ăn): khi bật và đang ở vườn **của mình**
+  (không phải đi thăm), cứ **30 giây** kiểm tra `autoPending` và gọi `/auto` nếu còn việc; không chạy chồng khi đang bận.
+  Gặp **lỗi** thì **tạm dừng 5 phút** và hiện toast một lần; riêng "Chưa có việc gì để làm." thì không hiện toast (nhưng
+  vẫn tạm dừng).

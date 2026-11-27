@@ -20,6 +20,10 @@ import {
   hasNextLevel,
   perkGains,
   formatLeft,
+  orchardUnlockLevel,
+  ORCHARD_SPOTS,
+  liveState,
+  treeLive,
   useFarmOpen,
   type Animal,
   type Crop,
@@ -33,9 +37,19 @@ import {
   type Quest,
   type Item,
   type Recipe,
+  type FruitTree,
+  type TreeView,
   type Spot,
   spotProblem,
 } from "../lib/farm";
+import {
+  autoPending,
+  autoSummary,
+  emptyPlots,
+  loadAuto,
+  saveAuto,
+  type FarmAutoSettings,
+} from "../lib/farmAuto";
 import { playCoinSound } from "../lib/sound";
 import { useChat } from "../state/ChatProvider";
 import { Emo, emo } from "./Emoji";
@@ -60,26 +74,6 @@ function useServerNow(serverNow: string | undefined) {
     return () => window.clearInterval(t);
   }, []);
   return now + offset.current;
-}
-
-/** Trạng thái ô tính lại theo đồng hồ (máy chủ gửi lúc tải, cây vẫn lớn tiếp giữa hai lần tải). */
-function liveState(
-  p: Plot,
-  now: number,
-): { state: PlotState; progress: number; left: number } {
-  if (p.state === "empty") return { state: "empty", progress: 0, left: 0 };
-  const planted = p.planted_at ? new Date(p.planted_at).getTime() : now;
-  const ready = p.ready_at ? new Date(p.ready_at).getTime() : now;
-  const wither = p.wither_at ? new Date(p.wither_at).getTime() : Infinity;
-  if (p.state === "withered" || now >= wither)
-    return { state: "withered", progress: 1, left: 0 };
-  if (now >= ready) return { state: "ripe", progress: 1, left: wither - now };
-  const total = Math.max(1, ready - planted);
-  return {
-    state: "growing",
-    progress: Math.min(0.999, Math.max(0, (now - planted) / total)),
-    left: ready - now,
-  };
 }
 
 /** Ngày / chiều / tối theo giờ máy người xem: trời đổi màu theo. */
@@ -115,6 +109,7 @@ type Tab =
   | "orders"
   | "storage"
   | "kitchen"
+  | "orchard"
   | "shop"
   | "neighbors"
   | "log"
@@ -124,6 +119,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "orders", label: "Đơn hàng", icon: "🚚" },
   { id: "storage", label: "Kho", icon: "🏚️" },
   { id: "kitchen", label: "Xưởng", icon: "🍳" },
+  { id: "orchard", label: "Vườn & Ép", icon: "🍊" },
   { id: "shop", label: "Cửa hàng", icon: "🛒" },
   { id: "neighbors", label: "Hàng xóm", icon: "🏡" },
   { id: "log", label: "Nhật ký", icon: "📜" },
@@ -155,6 +151,9 @@ function Farm() {
   // mua / xây từ bản đồ phải hỏi lại: chạm nhầm trên bản đồ dễ hơn bấm nút trong cửa hàng
   const [confirm, setConfirm] = useState<ConfirmBuy | null>(null);
   const [giftOpen, setGiftOpen] = useState(false);
+  // chỗ trồng cây đang chọn (bấm chỗ trống trên bản đồ) và cây đang hỏi chặt
+  const [treeSpot, setTreeSpot] = useState<number | null>(null);
+  const [chop, setChop] = useState<TreeView | null>(null);
   // đang chọn chỗ xây / dời công trình tự do (xưởng...) trên bản đồ
   const [placing, setPlacing] = useState<{
     id: string;
@@ -259,6 +258,8 @@ function Farm() {
     plot: number | null,
     fn: () => Promise<FarmView>,
     okText?: string | ((f: FarmView) => string | undefined),
+    /** có: lỗi giao cho người gọi (vòng tự động) thay vì hiện ở thanh lỗi */
+    onError?: (msg: string) => void,
   ) => {
     if (busy) return;
     setBusy(true);
@@ -329,7 +330,8 @@ function Farm() {
       else if (okMsg) showToast(okMsg, g?.hungry ? "bad" : "good");
       return true;
     } catch (err) {
-      setError(errMsg(err));
+      if (onError) onError(errMsg(err));
+      else setError(errMsg(err));
       if (view && !view.me)
         api
           .visitFarm(view.user.id)
@@ -341,6 +343,59 @@ function Farm() {
     }
     return false;
   };
+
+  // ---- tự động: "Làm hết", "Gieo tất cả" và vòng 30 giây ----
+  const meId = state.me.id;
+  const [auto, setAuto] = useState<FarmAutoSettings>(() => loadAuto(meId));
+  const [autoOpen, setAutoOpen] = useState(false);
+  const pausedUntil = useRef(0);
+  const patchAuto = (p: Partial<FarmAutoSettings>) =>
+    setAuto((a) => {
+      const n = { ...a, ...p };
+      saveAuto(meId, n);
+      return n;
+    });
+  const autoOpts = () => ({
+    crop: auto.crop,
+    kitchen_recipe: auto.kitchen_recipe,
+    juicer_recipe: auto.juicer_recipe,
+    buy_feed: auto.buy_feed,
+  });
+  const runAuto = (prefix: string, onError?: (m: string) => void) =>
+    act(
+      null,
+      () => api.farmAuto(autoOpts()),
+      (f) => (f.gained?.auto ? autoSummary(f.gained.auto, prefix) : undefined),
+      onError,
+    );
+  const plantAll = () => {
+    if (!auto.crop) {
+      setTab("shop");
+      return showToast("Chọn loại cây để gieo tất cả");
+    }
+    const crop = auto.crop;
+    void act(
+      null,
+      () => api.farmPlantAll(crop),
+      (f) => `🌱 Đã gieo ${f.gained?.planted ?? 0} ô`,
+    );
+  };
+  // tick mới nhất cho vòng lặp (tránh closure cũ), không bao giờ chồng hai lượt
+  const autoTick = useRef<() => void>(() => {});
+  autoTick.current = () => {
+    if (busy || visit || !mine || !auto.on) return;
+    if (Date.now() < pausedUntil.current) return;
+    if (!autoPending(mine, now, auto)) return;
+    void runAuto("🤖", (m) => {
+      pausedUntil.current = Date.now() + 5 * 60_000;
+      if (m !== "Chưa có việc gì để làm.") showToast(m, "bad");
+    });
+  };
+  useEffect(() => {
+    if (!auto.on || visit) return;
+    const t = window.setInterval(() => autoTick.current(), 30_000);
+    return () => window.clearInterval(t);
+  }, [auto.on, visit]);
 
   const goVisit = async (userId: number) => {
     setError(null);
@@ -494,15 +549,64 @@ function Farm() {
     if (!view?.me || busy) return;
     const k = view.buildings?.find((b) => b.id === "kitchen");
     const done = (view.jobs ?? []).filter(
-      (j) => new Date(j.ready_at).getTime() <= now,
+      (j) =>
+        (j.building ?? "kitchen") === "kitchen" &&
+        new Date(j.ready_at).getTime() <= now,
     ).length;
     setTab("kitchen");
-    if (done > 0) return void act(-1, () => api.farmCraftCollect("all"));
+    if (done > 0) return void act(-1, () => api.farmCraftCollect("all", "kitchen"));
     if (k && !k.built && view.level >= k.level)
       return startPlacing("kitchen", "build");
     if (k && !k.built)
       return showToast(
         `Lên cấp ${k.level} để xây xưởng chế biến: biến rau củ, trứng, sữa thành món giá cao.`,
+      );
+    scrollToPanel();
+  };
+
+  /** "Đã hái 3 🍊, 3 🍎" từ kết quả hái cây. */
+  const harvestText = (f: FarmView) => {
+    const catalog = f.items ?? view?.items ?? [];
+    const parts = Object.entries(f.gained?.items ?? {}).map(
+      ([id, n]) => `${n} ${catalog.find((x) => x.id === id)?.emoji ?? "📦"}`,
+    );
+    return parts.length ? `Đã hái ${parts.join(", ")}` : undefined;
+  };
+  /** Bấm cây: có quả thì hái, chưa thì cho biết còn bao lâu. */
+  const onTree = (t: TreeView) => {
+    if (!view?.me || busy) return;
+    const k = view.tree_kinds?.find((x) => x.id === t.tree);
+    const live = treeLive(t, now);
+    if (live.ready)
+      return void act(-1, () => api.farmHarvestTree(t.spot), harvestText);
+    showToast(
+      `${k?.name ?? "Cây"} còn ${formatLeft(live.left)} nữa mới có quả.`,
+    );
+  };
+  /** Bấm chỗ trống trên bản đồ: mở cửa hàng cây giống ở tab Vườn & Ép với chỗ đó. */
+  const onOrchardSpot = (spot: number) => {
+    if (!view?.me || busy) return;
+    setTreeSpot(spot);
+    setTab("orchard");
+    scrollToPanel();
+  };
+  const onOrchardHarvest = () => {
+    if (!view?.me || busy) return;
+    void act(-1, () => api.farmHarvestTree("all"), harvestText);
+  };
+  /** Bấm máy ép trên bản đồ: có món xong thì lấy hết, chưa xây thì xây (đủ cấp), còn lại mở tab Vườn & Ép. */
+  const onJuicer = () => {
+    if (!view?.me || busy) return;
+    const j = view.buildings?.find((b) => b.id === "juicer");
+    const done = jobsReady(view, now, "juicer");
+    setTab("orchard");
+    if (done > 0)
+      return void act(-1, () => api.farmCraftCollect("all", "juicer"));
+    if (j && !j.built && view.level >= j.level)
+      return startPlacing("juicer", "build");
+    if (j && !j.built)
+      return showToast(
+        `Lên cấp ${j.level} để xây máy ép nước: biến trái cây thành nước ép giá cao.`,
       );
     scrollToPanel();
   };
@@ -618,7 +722,8 @@ function Farm() {
                 ) : (
                 <div className="farm-banner">
                   {view.me ? (
-                    ripeCount > 0 ? (
+                    <>
+                    {ripeCount > 0 ? (
                       <button
                         type="button"
                         className="farm-harvest-all"
@@ -631,7 +736,55 @@ function Farm() {
                       </button>
                     ) : (
                       <span className="farm-tip">{fieldTip(view, now)}</span>
-                    )
+                    )}
+                    {autoPending(view, now, auto) && (
+                      <button
+                        type="button"
+                        className="farm-auto-btn"
+                        disabled={busy}
+                        onClick={() => void runAuto("⚡")}
+                      >
+                        <Emo e="⚡" /> Làm hết
+                      </button>
+                    )}
+                    {emptyPlots(view, now) > 0 && (
+                      <button
+                        type="button"
+                        className="farm-auto-btn"
+                        disabled={busy}
+                        onClick={plantAll}
+                      >
+                        <Emo e="🌱" /> Gieo tất cả
+                      </button>
+                    )}
+                    <div className="farm-auto">
+                      <button
+                        type="button"
+                        className={`farm-auto-btn${auto.on ? " is-on" : ""}`}
+                        aria-pressed={auto.on}
+                        onClick={() => patchAuto({ on: !auto.on })}
+                      >
+                        <Emo e="🤖" /> Tự động
+                      </button>
+                      <button
+                        type="button"
+                        className="farm-auto-btn farm-auto-gear"
+                        aria-label="Cài đặt tự động"
+                        aria-expanded={autoOpen}
+                        onClick={() => setAutoOpen((o) => !o)}
+                      >
+                        <Emo e="⚙️" />
+                      </button>
+                      {autoOpen && (
+                        <AutoSettings
+                          view={view}
+                          value={auto}
+                          onChange={patchAuto}
+                          onClose={() => setAutoOpen(false)}
+                        />
+                      )}
+                    </div>
+                    </>
                   ) : (
                     <span className="farm-tip is-visit">
                       <Emo e="🫣" />
@@ -735,6 +888,10 @@ function Farm() {
                   onStorage={() => openTab("storage")}
                   onOrders={() => openTab("orders")}
                   onKitchen={onKitchen}
+                  onJuicer={onJuicer}
+                  onTree={onTree}
+                  onOrchardSpot={onOrchardSpot}
+                  onOrchardHarvest={onOrchardHarvest}
                 />
                 <div className="farm-pops" aria-hidden>
                   {pops.map((x) => (
@@ -795,6 +952,9 @@ function Farm() {
                   )}
                   {t.id === "kitchen" && mine && jobsReady(mine, now) > 0 && (
                     <i className="farm-tab-count">{jobsReady(mine, now)}</i>
+                  )}
+                  {t.id === "orchard" && mine && orchardReady(mine, now) > 0 && (
+                    <i className="farm-tab-count">{orchardReady(mine, now)}</i>
                   )}
                 </button>
               ))}
@@ -874,6 +1034,7 @@ function Farm() {
               )}
               {tab === "kitchen" && mine && (
                 <KitchenPanel
+                  building="kitchen"
                   farm={mine}
                   now={now}
                   busy={busy}
@@ -893,8 +1054,69 @@ function Farm() {
                       `Đang làm ${r.name.toLowerCase()} ${r.emoji}`,
                     )
                   }
+                  onFill={(r) =>
+                    void act(
+                      -1,
+                      () => api.farmCraftFill(r.id),
+                      `Đã làm đầy lò ${r.emoji}`,
+                    )
+                  }
                   onCollect={(slot) =>
-                    void act(-1, () => api.farmCraftCollect(slot))
+                    void act(-1, () => api.farmCraftCollect(slot, "kitchen"))
+                  }
+                />
+              )}
+              {tab === "orchard" && mine && (
+                <OrchardPanel
+                  farm={mine}
+                  now={now}
+                  busy={busy}
+                  spot={treeSpot}
+                  onPick={setTreeSpot}
+                  onPlant={(spot, k) =>
+                    void act(
+                      -1,
+                      () => api.farmPlantTree(spot, k.id),
+                      `Đã trồng ${k.name.toLowerCase()} ${k.emoji}`,
+                    ).then((ok) => {
+                      if (ok) setTreeSpot(null);
+                    })
+                  }
+                  onHarvestAll={onOrchardHarvest}
+                  onChop={setChop}
+                  juicer={
+                    <KitchenPanel
+                      building="juicer"
+                      farm={mine}
+                      now={now}
+                      busy={busy}
+                      onBuild={() => startPlacing("juicer", "build")}
+                      onMove={() => startPlacing("juicer", "move")}
+                      onUpgrade={() =>
+                        void act(
+                          -1,
+                          () => api.farmUpgradeBuilding("juicer"),
+                          "Máy ép có thêm lò 🔥",
+                        )
+                      }
+                      onCraft={(r) =>
+                        void act(
+                          -1,
+                          () => api.farmCraft(r.id),
+                          `Đang ép ${r.name.toLowerCase()} ${r.emoji}`,
+                        )
+                      }
+                      onFill={(r) =>
+                        void act(
+                          -1,
+                          () => api.farmCraftFill(r.id),
+                          `Đã làm đầy lò ${r.emoji}`,
+                        )
+                      }
+                      onCollect={(slot) =>
+                        void act(-1, () => api.farmCraftCollect(slot, "juicer"))
+                      }
+                    />
                   }
                 />
               )}
@@ -904,7 +1126,7 @@ function Farm() {
                   now={now}
                   busy={busy}
                   onBuild={(id) =>
-                    id === "kitchen"
+                    id === "kitchen" || id === "juicer"
                       ? startPlacing(id, "build")
                       : void act(-1, () => api.farmBuild(id), "Đã xây xong 🔨")
                   }
@@ -914,7 +1136,9 @@ function Farm() {
                       () => api.farmUpgradeBuilding(id),
                       id === "kitchen"
                         ? "Xưởng có thêm lò 🔥"
-                        : "Chuồng đã rộng hơn 🔨",
+                        : id === "juicer"
+                          ? "Máy ép có thêm lò 🔥"
+                          : "Chuồng đã rộng hơn 🔨",
                     )
                   }
                   onBuyAnimal={(k) =>
@@ -974,6 +1198,39 @@ function Farm() {
             if (ok) setGiftOpen(false);
           }}
         />
+      )}
+      {chop && mine && (
+        <Dialog
+          title="Chặt cây?"
+          onClose={() => setChop(null)}
+          className="farm-confirm"
+        >
+          <div className="farm-confirm-body">
+            <span className="farm-confirm-icon" aria-hidden>
+              <Emo e="🪓" />
+            </span>
+            <p>
+              Chặt cây {mine.tree_kinds?.find((k) => k.id === chop.tree)?.name}?
+              Không hoàn lại tiền cây giống.
+            </p>
+          </div>
+          <div className="farm-confirm-actions">
+            <button type="button" className="btn" onClick={() => setChop(null)}>
+              Để sau
+            </button>
+            <button
+              type="button"
+              className="btn btn-danger"
+              onClick={() => {
+                const t = chop;
+                setChop(null);
+                void act(-1, () => api.farmRemoveTree(t.spot), "Đã chặt cây 🪓");
+              }}
+            >
+              Chặt cây
+            </button>
+          </div>
+        </Dialog>
       )}
       {confirm && mine && (
         <ConfirmBuyDialog
@@ -1299,8 +1556,21 @@ const QUEST_ICON: Record<string, string> = {
 };
 
 /** Số lò của xưởng đã nấu xong, chờ lấy. */
-const jobsReady = (f: FarmView, now: number) =>
-  (f.jobs ?? []).filter((j) => new Date(j.ready_at).getTime() <= now).length;
+const jobsReady = (
+  f: FarmView,
+  now: number,
+  building: "kitchen" | "juicer" = "kitchen",
+) =>
+  (f.jobs ?? []).filter(
+    (j) =>
+      (j.building ?? "kitchen") === building &&
+      new Date(j.ready_at).getTime() <= now,
+  ).length;
+
+/** Số việc chờ ở tab Vườn & Ép: cây có quả + lò máy ép đã xong. */
+const orchardReady = (f: FarmView, now: number) =>
+  (f.trees ?? []).filter((t) => treeLive(t, now).ready).length +
+  jobsReady(f, now, "juicer");
 
 const questsReady = (f: FarmView) =>
   (f.quests ?? []).filter((q) => q.done && !q.claimed).length +
@@ -1974,7 +2244,15 @@ function ShopPanel({
           <div key={b.id} className="shop-card">
             <span className="shop-icon" aria-hidden>
               <Emo
-                e={b.id === "coop" ? "🛖" : b.id === "kitchen" ? "🍳" : "🌿"}
+                e={
+                  b.id === "coop"
+                    ? "🛖"
+                    : b.id === "kitchen"
+                      ? "🍳"
+                      : b.id === "juicer"
+                        ? "🧃"
+                        : "🌿"
+                }
               />
             </span>
             <div>
@@ -1985,6 +2263,10 @@ function ShopPanel({
                     ? b.built
                       ? `${b.cap} lò nấu${b.upgrade_price ? ` · thêm 2 lò ${b.upgrade_price} 🪙` : ""}`
                       : `Nấu món giá cao từ nông sản, trứng, sữa · cần cấp ${b.level}`
+                    : b.id === "juicer"
+                      ? b.built
+                        ? `${b.cap} lò ép${b.upgrade_price ? ` · thêm 2 lò ${b.upgrade_price} 🪙` : ""}`
+                        : `Ép trái cây thành nước giá cao · cần cấp ${b.level}`
                     : b.built
                       ? `Đang nuôi ${count}/${b.cap} con${b.upgrade_price ? ` · nới chuồng ${b.upgrade_price} 🪙` : ""}`
                       : `Xây để nuôi ${b.id === "coop" ? "gà" : "bò, dê, cừu, heo"} · cần cấp ${b.level}`,
@@ -1999,7 +2281,7 @@ function ShopPanel({
                   disabled={busy || balance < b.upgrade_price}
                   onClick={() => onUpgradeBuilding(b.id)}
                 >
-                  {b.id === "kitchen" ? "+2 lò" : "Nới"} · {b.upgrade_price}{" "}
+                  {b.id === "kitchen" || b.id === "juicer" ? "+2 lò" : "Nới"} · {b.upgrade_price}{" "}
                   <Emo e="🪙" />
                 </button>
               ) : (
@@ -2130,7 +2412,38 @@ function ShopPanel({
    Xưởng chế biến
    ========================================================= */
 
+/** Chữ riêng của từng công trình có lò (xưởng / máy ép nước). */
+const CRAFT_COPY = {
+  kitchen: {
+    emoji: "🍳",
+    name: "Xưởng chế biến",
+    title: "Xưởng",
+    slots: "Lò nấu",
+    list: "Món chế biến",
+    verb: "Nấu",
+    intro:
+      "Biến rau củ, trứng, sữa trong kho thành món ngon bán giá gấp rưỡi, xe tải còn đặt mua giá cao hơn. Có 2 lò, nâng lên 4 lò.",
+    move: "Chọn chỗ khác trên bản đồ cho xưởng",
+    unbuilt: "Chưa xây",
+    busy: "Lò bận",
+  },
+  juicer: {
+    emoji: "🧃",
+    name: "Máy ép nước",
+    title: "Máy ép",
+    slots: "Lò ép",
+    list: "Nước ép",
+    verb: "Ép",
+    intro:
+      "Ép trái cây trong kho thành nước ép bán giá cao, xe tải cũng đặt mua. Có 2 lò, nâng lên 4 lò.",
+    move: "Chọn chỗ khác trên bản đồ cho máy ép",
+    unbuilt: "Chưa xây",
+    busy: "Lò bận",
+  },
+} as const;
+
 function KitchenPanel({
+  building,
   farm,
   now,
   busy,
@@ -2138,8 +2451,10 @@ function KitchenPanel({
   onMove,
   onUpgrade,
   onCraft,
+  onFill,
   onCollect,
 }: {
+  building: "kitchen" | "juicer";
   farm: FarmView;
   now: number;
   busy: boolean;
@@ -2147,23 +2462,31 @@ function KitchenPanel({
   onMove: () => void;
   onUpgrade: () => void;
   onCraft: (r: Recipe) => void;
+  onFill: (r: Recipe) => void;
   onCollect: (slot: number | "all") => void;
 }) {
-  const k = farm.buildings?.find((b) => b.id === "kitchen");
-  const recipes = farm.recipes ?? [];
+  const copy = CRAFT_COPY[building];
+  const k = farm.buildings?.find((b) => b.id === building);
+  const recipes = (farm.recipes ?? []).filter(
+    (r) => (r.building ?? "kitchen") === building,
+  );
   if (!k || recipes.length === 0)
     return (
-      <EmptyState icon="clock" title="Xưởng chưa mở">
-        Xưởng chế biến sẽ có sau khi máy chủ cập nhật.
+      <EmptyState icon="clock" title={`${copy.title} chưa mở`}>
+        {copy.name} sẽ có sau khi máy chủ cập nhật.
       </EmptyState>
     );
   const balance = farm.wallet?.balance ?? 0;
   const stock = farm.storage?.stock ?? {};
   const items = new Map((farm.items ?? []).map((i) => [i.id, i]));
   const byRecipe = new Map(recipes.map((r) => [r.id, r]));
-  const jobs = new Map((farm.jobs ?? []).map((j) => [j.slot, j]));
+  const jobs = new Map(
+    (farm.jobs ?? [])
+      .filter((j) => (j.building ?? "kitchen") === building)
+      .map((j) => [j.slot, j]),
+  );
   const free = k.built ? k.cap - jobs.size : 0;
-  const done = jobsReady(farm, now);
+  const done = jobsReady(farm, now, building);
   const sorted = [...recipes].sort(
     (a, b) =>
       Number(a.level > farm.level) - Number(b.level > farm.level) ||
@@ -2181,14 +2504,11 @@ function KitchenPanel({
       {!k.built ? (
         <div className="shop-card kitchen-intro">
           <span className="shop-icon" aria-hidden>
-            <Emo e="🍳" />
+            <Emo e={copy.emoji} />
           </span>
           <div>
-            <b>Xưởng chế biến</b>
-            <small>
-              Biến rau củ, trứng, sữa trong kho thành món ngon bán giá gấp
-              rưỡi, xe tải còn đặt mua giá cao hơn. Có 2 lò, nâng lên 4 lò.
-            </small>
+            <b>{copy.name}</b>
+            <small>{copy.intro}</small>
           </div>
           <button
             type="button"
@@ -2203,14 +2523,14 @@ function KitchenPanel({
         <>
           <div className="kitchen-head">
             <b>
-              Lò nấu {jobs.size}/{k.cap}
+              {copy.slots} {jobs.size}/{k.cap}
             </b>
             <span className="kitchen-head-actions">
               <button
                 type="button"
                 className="btn btn-sm"
                 onClick={onMove}
-                title="Chọn chỗ khác trên bản đồ cho xưởng"
+                title={copy.move}
               >
                 Đổi chỗ
               </button>
@@ -2283,7 +2603,7 @@ function KitchenPanel({
         </>
       )}
 
-      <h3 className="farm-h">Món chế biến</h3>
+      <h3 className="farm-h">{copy.list}</h3>
       <ul className="recipe-list">
         {sorted.map((r) => {
           const locked = farm.level < r.level;
@@ -2291,11 +2611,11 @@ function KitchenPanel({
           const block = locked
             ? `Cấp ${r.level}`
             : !k.built
-              ? "Chưa xây"
+              ? copy.unbuilt
               : short
                 ? "Thiếu"
                 : free <= 0
-                  ? "Lò bận"
+                  ? copy.busy
                   : null;
           return (
             <li
@@ -2330,18 +2650,208 @@ function KitchenPanel({
                   <Emo e="🪙" /> · +{r.xp} XP
                 </small>
               </div>
-              <button
-                type="button"
-                className="btn btn-sm btn-primary"
-                disabled={!!block || busy}
-                onClick={() => onCraft(r)}
-              >
-                {block ?? "Nấu"}
-              </button>
+              <span className="recipe-actions">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  disabled={!!block || busy}
+                  onClick={() => onCraft(r)}
+                >
+                  {block ?? copy.verb}
+                </button>
+                {!block && free > 1 && (
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={busy}
+                    onClick={() => onFill(r)}
+                    title="Cho món này vào mọi lò còn trống"
+                  >
+                    Làm đầy lò
+                  </button>
+                )}
+              </span>
             </li>
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+/* =========================================================
+   Vườn cây ăn quả + máy ép nước
+   ========================================================= */
+
+function OrchardPanel({
+  farm,
+  now,
+  busy,
+  spot,
+  onPick,
+  onPlant,
+  onHarvestAll,
+  onChop,
+  juicer,
+}: {
+  farm: FarmView;
+  now: number;
+  busy: boolean;
+  spot: number | null;
+  onPick: (spot: number | null) => void;
+  onPlant: (spot: number, k: FruitTree) => void;
+  onHarvestAll: () => void;
+  onChop: (t: TreeView) => void;
+  juicer: ReactNode;
+}) {
+  const kinds = farm.tree_kinds ?? [];
+  const open = farm.orchard_spots ?? 0;
+  const trees = farm.trees ?? [];
+  const bySpot = new Map(trees.map((t) => [t.spot, t]));
+  const kindOf = new Map(kinds.map((k) => [k.id, k]));
+  const balance = farm.wallet?.balance ?? 0;
+  const readyN = trees.filter((t) => treeLive(t, now).ready).length;
+  // chỗ đã chọn (bấm trên bản đồ) nếu còn trống, không thì chỗ trống đầu tiên đã mở
+  const isFree = (i: number) => i < open && !bySpot.has(i);
+  const target =
+    spot !== null && isFree(spot)
+      ? spot
+      : Array.from({ length: ORCHARD_SPOTS }, (_, i) => i).find(isFree);
+  const sorted = [...kinds].sort((a, b) => a.level - b.level);
+  const fruitCount = 3 + (farm.perks?.harvest_bonus ?? 0);
+  return (
+    <div className="farm-section">
+      {kinds.length === 0 ? (
+        <EmptyState icon="clock" title="Vườn cây chưa mở">
+          Vườn cây ăn quả sẽ có sau khi máy chủ cập nhật.
+        </EmptyState>
+      ) : (
+        <>
+          <div className="kitchen-head">
+            <b>
+              Vườn cây {trees.length}/{open}
+            </b>
+            {readyN > 0 && (
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                disabled={busy}
+                onClick={onHarvestAll}
+              >
+                {emo(`🧺 Hái ${readyN * fruitCount} quả`)}
+              </button>
+            )}
+          </div>
+          {open === 0 && (
+            <p className="farm-hint">
+              Vườn cây mở ở cấp {orchardUnlockLevel(0)}.
+            </p>
+          )}
+          {trees.length > 0 && (
+            <ul className="orchard-trees">
+              {trees.map((t) => {
+                const k = kindOf.get(t.tree);
+                const live = treeLive(t, now);
+                return (
+                  <li key={t.spot} className={live.ready ? "is-ready" : ""}>
+                    <span className="stock-emoji" aria-hidden>
+                      <Emo e={k?.emoji ?? "🌳"} />
+                    </span>
+                    <div>
+                      <b>{k?.name ?? t.tree}</b>
+                      <small>
+                        Chỗ {t.spot + 1} ·{" "}
+                        {live.ready
+                          ? "có quả, bấm cây để hái"
+                          : t.state === "growing"
+                            ? `lớn, còn ${formatLeft(live.left)}`
+                            : `ra quả sau ${formatLeft(live.left)}`}
+                      </small>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={busy}
+                      onClick={() => onChop(t)}
+                      title="Chặt cây"
+                    >
+                      <Emo e="🪓" /> Chặt
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <h3 className="farm-h">
+            Cây giống
+            {target !== undefined && (
+              <small className="farm-h-note"> · trồng vào chỗ {target + 1}</small>
+            )}
+          </h3>
+          {open > 0 && target === undefined && (
+            <p className="farm-hint">
+              Hết chỗ trống.{" "}
+              {open < ORCHARD_SPOTS &&
+                `Mở thêm chỗ ở cấp ${orchardUnlockLevel(open)}.`}
+            </p>
+          )}
+          <ul className="recipe-list">
+            {sorted.map((k) => {
+              const block =
+                farm.level < k.level
+                  ? `Cấp ${k.level}`
+                  : open === 0
+                    ? `Mở ở cấp ${orchardUnlockLevel(0)}`
+                    : target === undefined
+                      ? "Hết chỗ"
+                      : balance < k.price
+                        ? "Thiếu xu"
+                        : null;
+              return (
+                <li
+                  key={k.id}
+                  className={`recipe-card${farm.level < k.level ? " is-locked" : ""}${!block ? " is-ready" : ""}`}
+                >
+                  <span className="stock-emoji" aria-hidden>
+                    <Emo e={k.emoji} />
+                  </span>
+                  <div className="recipe-main">
+                    <b>{k.name}</b>
+                    <small>
+                      <Emo e="⏱️" /> {formatGrow(effGrowSec(k.mature_sec, farm.perks))}{" "}
+                      ra quả, rồi mỗi {formatGrow(effGrowSec(k.cycle_sec, farm.perks))}
+                    </small>
+                    <small>
+                      {fruitCount} <Emo e={k.fruit_emoji} /> {k.fruit_name.toLowerCase()} mỗi lần ·{" "}
+                      {effSellPrice(k.fruit_price, "fruit", farm.perks)}{" "}
+                      <Emo e="🪙" />/quả · +{k.xp} XP
+                    </small>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    disabled={!!block || busy}
+                    onClick={() => target !== undefined && onPlant(target, k)}
+                  >
+                    {emo(block ?? `Trồng · ${k.price} 🪙`)}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          {spot !== null && (
+            <button
+              type="button"
+              className="btn btn-sm orchard-clear"
+              onClick={() => onPick(null)}
+            >
+              Bỏ chọn chỗ {spot + 1}
+            </button>
+          )}
+        </>
+      )}
+      <h3 className="farm-h">Máy ép nước</h3>
+      {juicer}
     </div>
   );
 }
@@ -2799,5 +3309,64 @@ export function FarmSidebarCard() {
         <span className="farm-card-badge">{info.ripe}</span>
       )}
     </button>
+  );
+}
+
+/** Cửa sổ nhỏ chọn cây và công thức cho chế độ tự động. */
+function AutoSettings({
+  view,
+  value,
+  onChange,
+  onClose,
+}: {
+  view: FarmView;
+  value: FarmAutoSettings;
+  onChange: (p: Partial<FarmAutoSettings>) => void;
+  onClose: () => void;
+}) {
+  const crops = view.crops.filter((c) => c.level <= view.level);
+  const recipes = (b: "kitchen" | "juicer") =>
+    (view.recipes ?? []).filter(
+      (r) => (r.building ?? "kitchen") === b && r.level <= view.level,
+    );
+  const sel = (
+    label: string,
+    v: string | undefined,
+    opts: { id: string; name: string; emoji: string }[],
+    set: (id: string | undefined) => void,
+  ) => (
+    <label className="farm-auto-field">
+      <span>{label}</span>
+      <select value={v ?? ""} onChange={(e) => set(e.target.value || undefined)}>
+        <option value="">— không —</option>
+        {opts.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.emoji} {o.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+  return (
+    <div className="farm-auto-pop" role="dialog" aria-label="Cài đặt tự động">
+      {sel("Cây gieo", value.crop, crops, (id) => onChange({ crop: id }))}
+      {sel("Món ở xưởng", value.kitchen_recipe, recipes("kitchen"), (id) =>
+        onChange({ kitchen_recipe: id }),
+      )}
+      {sel("Món ở máy ép", value.juicer_recipe, recipes("juicer"), (id) =>
+        onChange({ juicer_recipe: id }),
+      )}
+      <label className="farm-auto-check">
+        <input
+          type="checkbox"
+          checked={value.buy_feed}
+          onChange={(e) => onChange({ buy_feed: e.target.checked })}
+        />
+        Tự mua thức ăn khi thiếu
+      </label>
+      <button type="button" className="btn btn-sm" onClick={onClose}>
+        Xong
+      </button>
+    </div>
   );
 }

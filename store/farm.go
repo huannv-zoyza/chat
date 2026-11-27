@@ -137,6 +137,7 @@ func farmErr(format string, a ...any) error { return &FarmError{Msg: fmt.Sprintf
 
 var (
 	ErrFarmBadPlot      = &FarmError{"Ô đất không hợp lệ."}
+	ErrFarmNoEmptyPlot  = &FarmError{"Không còn ô trống để gieo."}
 	ErrFarmUnknownCrop  = &FarmError{"Không có loại cây này."}
 	ErrFarmPlotBusy     = &FarmError{"Ô này đang có cây rồi."}
 	ErrFarmEmptyPlot    = &FarmError{"Ô này chưa trồng gì."}
@@ -226,6 +227,9 @@ type Gained struct {
 	Fed    int              `json:"fed,omitempty"`
 	Bought map[string]int64 `json:"bought,omitempty"`
 	Hungry int              `json:"hungry,omitempty"`
+	// Gieo tất cả (FarmPlantAll): số ô vừa gieo. Auto: báo cáo một lượt FarmAuto.
+	Planted int         `json:"planted,omitempty"`
+	Auto    *AutoReport `json:"auto,omitempty"`
 }
 
 type FarmView struct {
@@ -273,6 +277,19 @@ type FarmView struct {
 	CoupleRequests []CoupleRequest `json:"couple_requests,omitempty"`
 	CoupleSent     *CoupleRequest  `json:"couple_sent,omitempty"`
 	CoupleState    string          `json:"couple_state,omitempty"`
+
+	// Vườn cây ăn quả (farm_orchard.go): trees và orchard_spots ai xem cũng thấy, tree_kinds chỉ khi me.
+	Trees        []TreeView  `json:"trees"`
+	TreeKinds    []FruitTree `json:"tree_kinds,omitempty"`
+	OrchardSpots int         `json:"orchard_spots"`
+}
+
+// TreeView: một cây trong vườn. State: growing | fruiting | ready.
+type TreeView struct {
+	Spot    int    `json:"spot"`
+	Tree    string `json:"tree"`
+	State   string `json:"state"`
+	ReadyAt string `json:"ready_at"` // RFC3339
 }
 
 type Neighbor struct {
@@ -632,13 +649,66 @@ func (op *farmOp) hasAct(plotID, actorID int64, action string) (bool, error) {
 
 /* ---------- Hành động của chủ nông trại ---------- */
 
+// cropFor: loại cây cropID, kiểm tra đủ cấp theo xp của chủ.
+func cropFor(cropID string, xp int64) (Crop, error) {
+	c, ok := cropByID(cropID)
+	if !ok {
+		return c, ErrFarmUnknownCrop
+	}
+	if levelFor(xp) < c.Level {
+		return c, farmErr("Cần đạt cấp %d mới trồng được %s.", c.Level, c.Name)
+	}
+	return c, nil
+}
+
+// plantPlots: gieo c vào các ô trống idxs (người gọi đã kiểm tra ô trống và cấp), mỗi ô trả tiền hạt.
+// Thời gian lớn rút ngắn theo cấp của chủ (grow_pct). Trả số ô đã gieo.
+func (op *farmOp) plantPlots(userID int64, f farmRow, c Crop, idxs []int) (int, error) {
+	for _, idx := range idxs {
+		if err := op.spend(userID, c.Seed, "Mua hạt "+c.Name); err != nil {
+			return 0, err
+		}
+		bug := op.s.rand() < FarmBugChance
+		if _, err := op.tx.ExecContext(op.ctx, `
+			INSERT INTO farm_plots (user_id, idx, crop, planted_at, ready_at, bug) VALUES (?, ?, ?, ?, ?, ?)`,
+			userID, idx, c.ID, op.unix(), op.unix()+c.GrowSec*int64(100-farmPerks(levelFor(f.XP)).GrowPct)/100, bug); err != nil {
+			return 0, err
+		}
+		if c.Level >= 3 {
+			if err := op.bump(userID, "plant_rare", 1); err != nil {
+				return 0, err
+			}
+		}
+	}
+	if len(idxs) > 0 {
+		if err := op.bump(userID, "plant", int64(len(idxs))); err != nil {
+			return 0, err
+		}
+	}
+	return len(idxs), nil
+}
+
+// clearWithered: dọn các ô héo trong plots, trả số ô đã dọn.
+func (op *farmOp) clearWithered(plots []plotRow) (int, error) {
+	n := 0
+	for _, p := range plots {
+		if p.state(op.unix()) != stateWithered {
+			continue
+		}
+		if _, err := op.tx.ExecContext(op.ctx, `DELETE FROM farm_plots WHERE id = ?`, p.ID); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
+}
+
 // FarmPlant: gieo cropID vào ô idx của userID.
 func (s *Store) FarmPlant(ctx context.Context, userID int64, idx int, cropID string) (FarmResult, error) {
 	res := FarmResult{OwnerID: userID}
 	var err error
 	res.Wallets, err = s.farmTx(ctx, func(op *farmOp) error {
-		c, ok := cropByID(cropID)
-		if !ok {
+		if _, ok := cropByID(cropID); !ok {
 			return ErrFarmUnknownCrop
 		}
 		f, err := ensureFarm(ctx, op.tx, userID)
@@ -648,8 +718,9 @@ func (s *Store) FarmPlant(ctx context.Context, userID int64, idx int, cropID str
 		if idx < 0 || idx >= f.Plots {
 			return ErrFarmBadPlot
 		}
-		if levelFor(f.XP) < c.Level {
-			return farmErr("Cần đạt cấp %d mới trồng được %s.", c.Level, c.Name)
+		c, err := cropFor(cropID, f.XP)
+		if err != nil {
+			return err
 		}
 		p, err := loadPlot(ctx, op.tx, userID, idx)
 		if err != nil {
@@ -661,21 +732,66 @@ func (s *Store) FarmPlant(ctx context.Context, userID int64, idx int, cropID str
 			}
 			return ErrFarmPlotBusy
 		}
-		if err := op.spend(userID, c.Seed, "Mua hạt "+c.Name); err != nil {
+		_, err = op.plantPlots(userID, f, c, []int{idx})
+		return err
+	})
+	return res, err
+}
+
+// plantAll: dọn mọi ô héo rồi gieo cropID vào các ô trống theo thứ tự, tới khi hết xu. Trả số ô đã gieo;
+// không gieo được ô nào thì trả lỗi (không có ô trống / thiếu xu / thiếu cấp).
+func (op *farmOp) plantAll(userID int64, cropID string) (int, error) {
+	f, err := ensureFarm(op.ctx, op.tx, userID)
+	if err != nil {
+		return 0, err
+	}
+	c, err := cropFor(cropID, f.XP)
+	if err != nil {
+		return 0, err
+	}
+	plots, err := loadPlots(op.ctx, op.tx, userID)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := op.clearWithered(plots); err != nil {
+		return 0, err
+	}
+	used := map[int]bool{}
+	for _, p := range plots {
+		if p.state(op.unix()) != stateWithered {
+			used[p.Idx] = true
+		}
+	}
+	var empty []int
+	for i := 0; i < f.Plots; i++ {
+		if !used[i] {
+			empty = append(empty, i)
+		}
+	}
+	if len(empty) == 0 {
+		return 0, ErrFarmNoEmptyPlot
+	}
+	w, err := loadWallet(op.ctx, op.tx, userID)
+	if err != nil {
+		return 0, err
+	}
+	afford := max(w.Balance, 0) / c.Seed
+	if afford == 0 {
+		return 0, ErrInsufficientBalance
+	}
+	return op.plantPlots(userID, f, c, empty[:min(int64(len(empty)), afford)])
+}
+
+// FarmPlantAll: gieo cropID vào mọi ô trống (dọn ô héo trước) tới khi hết xu.
+func (s *Store) FarmPlantAll(ctx context.Context, userID int64, cropID string) (FarmResult, error) {
+	res := FarmResult{OwnerID: userID}
+	var err error
+	res.Wallets, err = s.farmTx(ctx, func(op *farmOp) error {
+		n, err := op.plantAll(userID, cropID)
+		if err != nil {
 			return err
 		}
-		bug := s.rand() < FarmBugChance
-		if _, err := op.tx.ExecContext(ctx, `
-			INSERT INTO farm_plots (user_id, idx, crop, planted_at, ready_at, bug) VALUES (?, ?, ?, ?, ?, ?)`,
-			userID, idx, c.ID, op.unix(), op.unix()+c.GrowSec*int64(100-farmPerks(levelFor(f.XP)).GrowPct)/100, bug); err != nil {
-			return err
-		}
-		if err := op.bump(userID, "plant", 1); err != nil {
-			return err
-		}
-		if c.Level >= 3 {
-			return op.bump(userID, "plant_rare", 1)
-		}
+		res.Gained = &Gained{Planted: n}
 		return nil
 	})
 	return res, err
@@ -727,48 +843,55 @@ func (s *Store) FarmHarvest(ctx context.Context, userID int64, idx int, all bool
 			}
 			ripe = append(ripe, *p)
 		}
-		room, err := op.storageRoom(userID)
-		if err != nil {
-			return err
-		}
-		f, err := ensureFarm(ctx, op.tx, userID)
-		if err != nil {
-			return err
-		}
-		bonus := farmPerks(levelFor(f.XP)).HarvestBonus
-		var xp, n int64
-		items := map[string]int64{}
-		for i := range ripe {
-			p := &ripe[i]
-			u := harvestUnits(p, bonus)
-			if u > room {
-				continue
-			}
-			room -= u
-			n++
-			items[p.Crop.ID] += u
-			xp += p.Crop.XP
-			if _, err := op.tx.ExecContext(ctx, `DELETE FROM farm_plots WHERE id = ?`, p.ID); err != nil {
-				return err
-			}
-			if err := op.addStock(userID, p.Crop.ID, u); err != nil {
-				return err
-			}
-		}
-		if n == 0 {
-			return ErrFarmStorageFull
-		}
-		if err := op.bump(userID, "harvest", n); err != nil {
-			return err
-		}
-		lv, err := op.addXP(userID, xp)
-		if err != nil {
-			return err
-		}
-		res.Gained = &Gained{XP: xp, LevelUp: lv, Items: items}
-		return nil
+		g, _, err := op.harvestPlots(userID, ripe)
+		res.Gained = g
+		return err
 	})
 	return res, err
+}
+
+// harvestPlots: thu các ô chín trong ripe (cắt theo sức chứa kho; chủ nhận harvest_bonus), xoá ô, nông
+// sản vào kho, cộng XP. Trả Gained và số ô đã thu; kho không vừa ô nào thì ErrFarmStorageFull.
+func (op *farmOp) harvestPlots(userID int64, ripe []plotRow) (*Gained, int64, error) {
+	room, err := op.storageRoom(userID)
+	if err != nil {
+		return nil, 0, err
+	}
+	f, err := ensureFarm(op.ctx, op.tx, userID)
+	if err != nil {
+		return nil, 0, err
+	}
+	bonus := farmPerks(levelFor(f.XP)).HarvestBonus
+	var xp, n int64
+	items := map[string]int64{}
+	for i := range ripe {
+		p := &ripe[i]
+		u := harvestUnits(p, bonus)
+		if u > room {
+			continue
+		}
+		room -= u
+		n++
+		items[p.Crop.ID] += u
+		xp += p.Crop.XP
+		if _, err := op.tx.ExecContext(op.ctx, `DELETE FROM farm_plots WHERE id = ?`, p.ID); err != nil {
+			return nil, 0, err
+		}
+		if err := op.addStock(userID, p.Crop.ID, u); err != nil {
+			return nil, 0, err
+		}
+	}
+	if n == 0 {
+		return nil, 0, ErrFarmStorageFull
+	}
+	if err := op.bump(userID, "harvest", n); err != nil {
+		return nil, 0, err
+	}
+	lv, err := op.addXP(userID, xp)
+	if err != nil {
+		return nil, 0, err
+	}
+	return &Gained{XP: xp, LevelUp: lv, Items: items}, n, nil
 }
 
 // FarmClear: dọn ô có cây đã héo.
@@ -784,7 +907,7 @@ func (s *Store) FarmClear(ctx context.Context, userID int64, idx int) (FarmResul
 		case stateEmpty:
 			return ErrFarmEmptyPlot
 		case stateWithered:
-			_, err = op.tx.ExecContext(ctx, `DELETE FROM farm_plots WHERE id = ?`, p.ID)
+			_, err = op.clearWithered([]plotRow{*p})
 			return err
 		default:
 			return ErrFarmNotWithered

@@ -16745,3 +16745,118 @@ button.villager:focus-visible .villager-name {
     animation: none;
   }
 }
+
+/* vườn cây ăn quả & máy ép nước */
+.recipe-actions {
+  display: grid;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+.iso-stake.is-locked {
+  pointer-events: none;
+}
+.iso-stake.iso-click:hover ellipse {
+  opacity: 0.95;
+}
+.orchard-trees {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0 0 0.4rem;
+  padding: 0;
+  list-style: none;
+}
+.orchard-trees li {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.4rem 0.6rem;
+  border: 2px solid #ead7b0;
+  border-radius: 14px;
+  background: #fffdf6;
+}
+.orchard-trees li.is-ready {
+  border-color: #9fd38a;
+  background: #f6fcf0;
+}
+.orchard-trees li > div {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.orchard-trees small,
+.farm-h-note {
+  color: var(--muted);
+  font-size: var(--step--2);
+  font-weight: 600;
+}
+.orchard-clear {
+  margin-top: 0.4rem;
+}
+.farm-hint {
+  margin: 0.2rem 0 0.4rem;
+  color: var(--muted);
+  font-size: var(--step--1);
+  font-weight: 600;
+}
+
+/* ---- nút tự động và hộp cài đặt ---- */
+.farm-banner {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.farm-auto {
+  position: relative;
+  display: inline-flex;
+  gap: 0.25rem;
+}
+.farm-auto-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.8rem;
+  border: 2px solid var(--wood-dk);
+  border-radius: 999px;
+  background: #fff8e6;
+  color: var(--ink-brown);
+  font-size: 0.85rem;
+  font-weight: 700;
+  box-shadow: 0 2px 0 var(--wood-dk);
+}
+.farm-auto-btn.is-on {
+  background: #b7e07a;
+}
+.farm-auto-btn:disabled {
+  opacity: 0.6;
+}
+.farm-auto-pop {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  z-index: 6;
+  display: grid;
+  gap: 0.5rem;
+  width: 15rem;
+  padding: 0.7rem;
+  border: 3px solid var(--wood-dk);
+  border-radius: 0.9rem;
+  background: #fff8e6;
+  color: var(--ink-brown);
+  box-shadow: 0 4px 0 var(--wood-dk);
+}
+.farm-auto-field {
+  display: grid;
+  gap: 0.15rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.farm-auto-field select {
+  width: 100%;
+  padding: 0.25rem;
+}
+.farm-auto-check {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+}

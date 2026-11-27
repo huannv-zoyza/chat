@@ -31,3 +31,6 @@ func (s *Store) FarmSetStockForTest(ctx context.Context, userID int64, item stri
 func (s *Store) FarmCounterForTest(ctx context.Context, userID int64, key string) (int64, error) {
 	return counter(ctx, s.db, userID, vnDay(s.now()), key)
 }
+
+// LevelXPForTest: XP tối thiểu để đạt cấp lv.
+func LevelXPForTest(lv int) int64 { return levelXP(lv) }

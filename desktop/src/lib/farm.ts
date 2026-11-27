@@ -151,6 +151,18 @@ export type TreeView = {
   ready_at: string;
 };
 
+/** Cấp mở chỗ trồng cây: chỗ 0-2 cấp 5, 3-5 cấp 8, 6-8 cấp 12, 9-11 cấp 16 (khớp máy chủ). */
+export const ORCHARD_SPOTS = 12;
+export const orchardUnlockLevel = (spot: number) => [5, 8, 12, 16][Math.min(3, Math.floor(spot / 3))];
+/** Chỗ trồng thứ i trên bản đồ (đơn vị ô): lưới 4 × 3. */
+export const orchardSpotXY = (i: number): Spot => ({ x: 16 + 1.6 * (i % 4), y: 3 + 1.6 * Math.floor(i / 4) });
+
+/** Cây đã có quả chưa (khớp máy chủ: ready, hoặc tới giờ ready_at) và còn bao lâu (ms, không âm). */
+export function treeLive(t: TreeView, now: number): { ready: boolean; left: number } {
+  const left = Math.max(0, new Date(t.ready_at).getTime() - now);
+  return { ready: t.state === "ready" || left <= 0, left };
+}
+
 export type FruitTree = {
   id: string;
   name: string;
@@ -255,7 +267,7 @@ export type Item = {
 };
 
 export type Building = {
-  id: "coop" | "pasture" | "kitchen";
+  id: "coop" | "pasture" | "kitchen" | "juicer";
   name: string;
   built: boolean;
   cap: number;

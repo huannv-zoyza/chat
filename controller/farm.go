@@ -47,9 +47,13 @@ import (
 //	POST /api/farm/couple/gift     {item, qty}        tặng nông sản cho người thương
 //	POST /api/farm/orders/{id}/deliver
 //	DELETE /api/farm/orders/{id}           huỷ đơn
+//	POST /api/farm/market          {item, qty, price}  treo hàng trong kho lên chợ đen (giá cả lô)
+//	POST /api/farm/market/{id}/buy                    mua cả lô
+//	DELETE /api/farm/market/{id}                      gỡ lô của mình, hàng về kho
 //
 // Hành động trả FarmView của nông trại vừa tác động (kèm "gained" / "dog" nếu có). Ví đổi thì người đó
 // nhận wallet.updated; người khác tưới / bắt sâu / trộm / bị chó đuổi thì chủ nhận farm.updated {log}.
+// Chợ đen đổi (treo / mua / gỡ) thì mọi người nhận farm.market để tải lại.
 
 type farmUpdatedEvent struct {
 	Type string          `json:"type"`
@@ -128,6 +132,9 @@ func (a *API) farmRespond(w http.ResponseWriter, r *http.Request, res store.Farm
 	}
 	if res.Log != nil && notify != me {
 		a.hub.ToUser(notify, mustJSON(farmUpdatedEvent{Type: "farm.updated", Log: res.Log}))
+	}
+	if res.Market {
+		a.hub.ToAll(mustJSON(map[string]string{"type": "farm.market"}))
 	}
 	v, err := a.store.GetFarm(r.Context(), res.OwnerID, me)
 	if err != nil {
@@ -456,7 +463,7 @@ func (a *API) farmGift(w http.ResponseWriter, r *http.Request) {
 	a.farmRespond(w, r, res, err)
 }
 
-// orderID: id đơn trên đường dẫn (không hợp lệ thì 0, store báo "Không tìm thấy đơn hàng này.").
+// orderID: id {id} trên đường dẫn (đơn hàng, lô chợ đen); không hợp lệ thì 0, store báo không tìm thấy.
 func orderID(r *http.Request) int64 {
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	return id
@@ -515,5 +522,29 @@ func (a *API) farmRemoveTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := a.store.FarmRemoveTree(r.Context(), currentUser(r).ID, spot)
+	a.farmRespond(w, r, res, err)
+}
+
+// Chợ đen (store/farm_market.go).
+func (a *API) farmMarketList(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Item  string `json:"item"`
+		Qty   int64  `json:"qty"`
+		Price int64  `json:"price"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	res, err := a.store.FarmMarketList(r.Context(), currentUser(r).ID, req.Item, req.Qty, req.Price)
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmMarketBuy(w http.ResponseWriter, r *http.Request) {
+	res, err := a.store.FarmMarketBuy(r.Context(), currentUser(r).ID, orderID(r))
+	a.farmRespond(w, r, res, err)
+}
+
+func (a *API) farmMarketCancel(w http.ResponseWriter, r *http.Request) {
+	res, err := a.store.FarmMarketCancel(r.Context(), currentUser(r).ID, orderID(r))
 	a.farmRespond(w, r, res, err)
 }

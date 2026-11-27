@@ -11,6 +11,7 @@ import { ApiError, type Wallet } from "../lib/api";
 import { displayName } from "../lib/format";
 import {
   farmEvents,
+  farmMarketEvents,
   effAnimalSec,
   effGrowSec,
   effSellPrice,
@@ -40,6 +41,7 @@ import {
   type FruitTree,
   type TreeView,
   type Spot,
+  type MarketListing,
   spotProblem,
 } from "../lib/farm";
 import {
@@ -113,6 +115,7 @@ type Tab =
   | "kitchen"
   | "orchard"
   | "shop"
+  | "market"
   | "neighbors"
   | "log"
   | "top";
@@ -123,6 +126,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "kitchen", label: "Xưởng", icon: "🍳" },
   { id: "orchard", label: "Vườn & Ép", icon: "🍊" },
   { id: "shop", label: "Cửa hàng", icon: "🛒" },
+  { id: "market", label: "Chợ đen", icon: "🕶️" },
   { id: "neighbors", label: "Hàng xóm", icon: "🏡" },
   { id: "log", label: "Nhật ký", icon: "📜" },
   { id: "top", label: "Xếp hạng", icon: "🏆" },
@@ -254,6 +258,9 @@ function Farm() {
       }),
     [loadMine, showToast, mine?.crops],
   );
+
+  // chợ đen chung toàn server vừa đổi (ai đó treo / mua / gỡ hàng)
+  useEffect(() => farmMarketEvents.on(() => void loadMine()), [loadMine]);
 
   /** Gọi một hành động, áp kết quả, bay số "+xu" lên ô vừa làm. */
   const act = async (
@@ -1197,6 +1204,35 @@ function Farm() {
                       "Chó giữ nhà đã về canh vườn 🐕",
                     )
                   }
+                />
+              )}
+              {tab === "market" && mine && (
+                <BlackMarketPanel
+                  farm={mine}
+                  now={now}
+                  busy={busy}
+                  onList={(item, qty, price) =>
+                    void act(
+                      -1,
+                      () => api.farmMarketList(item, qty, price),
+                      "Đã treo hàng lên chợ đen 🕶️",
+                    )
+                  }
+                  onBuy={(l) =>
+                    void act(
+                      -1,
+                      () => api.farmMarketBuy(l.id),
+                      "Mua được hàng chợ đen, đã cất vào kho 📦",
+                    )
+                  }
+                  onCancel={(l) =>
+                    void act(
+                      -1,
+                      () => api.farmMarketCancel(l.id),
+                      "Đã gỡ hàng, đồ về lại kho.",
+                    )
+                  }
+                  onVisit={goVisit}
                 />
               )}
               {tab === "log" && mine && (
@@ -3152,6 +3188,248 @@ function MarketList({
 }
 
 /* =========================================================
+   Chợ đen: 10 chỗ chung toàn server, giá do người bán đặt
+   ========================================================= */
+
+function BlackMarketPanel({
+  farm,
+  now,
+  busy,
+  onList,
+  onBuy,
+  onCancel,
+  onVisit,
+}: {
+  farm: FarmView;
+  now: number;
+  busy: boolean;
+  onList: (item: string, qty: number, price: number) => void;
+  onBuy: (l: MarketListing) => void;
+  onCancel: (l: MarketListing) => void;
+  onVisit: (id: number) => void;
+}) {
+  const [selling, setSelling] = useState(false);
+  const m = farm.market;
+  if (!m)
+    return (
+      <EmptyState icon="clock" title="Chợ đen chưa mở">
+        Chợ đen sẽ có sau khi máy chủ cập nhật.
+      </EmptyState>
+    );
+  const items = farm.items ?? [];
+  const balance = farm.wallet?.balance ?? 0;
+  const mineCount = m.listings.filter((l) => l.mine).length;
+  const full = m.used >= m.slots;
+  const capped = mineCount >= m.per_user;
+  const free = Math.max(0, m.slots - m.used);
+  return (
+    <div className="farm-section">
+      <div className={`storage-cap${full ? " is-full" : ""}`}>
+        <div>
+          <b>
+            Chợ đen {m.used}/{m.slots} chỗ
+          </b>
+          <span className="quest-bar">
+            <i style={{ width: `${(m.used / Math.max(1, m.slots)) * 100}%` }} />
+          </span>
+        </div>
+        <button
+          type="button"
+          className="btn btn-sm btn-primary"
+          disabled={busy || full || capped}
+          title={
+            full
+              ? "Chợ đã kín chỗ"
+              : capped
+                ? `Mỗi người treo tối đa ${m.per_user} lô`
+                : undefined
+          }
+          onClick={() => setSelling(true)}
+        >
+          Treo hàng
+        </button>
+      </div>
+      <p className="farm-foot">
+        Cả server dùng chung {m.slots} chỗ, kín chỗ thì không ai treo thêm được.
+        Mỗi người tối đa {m.per_user} lô, lô treo quá 24 giờ tự về kho. Người
+        mua trả đúng giá bạn đặt.
+      </p>
+      {m.listings.length === 0 ? (
+        <EmptyState icon="clock" title="Chợ đen đang vắng">
+          Chưa ai treo hàng. Treo món trong kho với giá bạn muốn để mọi người
+          cùng thấy.
+        </EmptyState>
+      ) : (
+        <ul className="stock-list market-list">
+          {m.listings.map((l) => {
+            const it = items.find((i) => i.id === l.item);
+            const left = new Date(l.expires_at).getTime() - now;
+            return (
+              <li key={l.id} className={l.mine ? "is-mine" : undefined}>
+                <span className="stock-emoji" aria-hidden>
+                  <Emo e={it?.emoji ?? "📦"} />
+                </span>
+                <span className="stock-main">
+                  <b>
+                    {it?.name ?? l.item} ×{l.qty} ·{" "}
+                    {l.price.toLocaleString("vi-VN")} <Emo e="🪙" />
+                  </b>
+                  <small>
+                    <button
+                      type="button"
+                      className="market-seller"
+                      onClick={() => !l.mine && onVisit(l.seller.id)}
+                      disabled={l.mine}
+                    >
+                      {l.mine ? "Của bạn" : displayName(l.seller)}
+                    </button>{" "}
+                    · còn {formatLeft(left)}
+                  </small>
+                </span>
+                {l.mine ? (
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={busy}
+                    onClick={() => onCancel(l)}
+                  >
+                    Gỡ
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    disabled={busy || balance < l.price}
+                    title={balance < l.price ? "Không đủ xu" : undefined}
+                    onClick={() => onBuy(l)}
+                  >
+                    Mua
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {free > 0 && m.listings.length > 0 && (
+        <p className="farm-foot">Còn {free} chỗ trống.</p>
+      )}
+      {selling && (
+        <MarketSellDialog
+          farm={farm}
+          busy={busy}
+          onClose={() => setSelling(false)}
+          onList={(item, qty, price) => {
+            setSelling(false);
+            onList(item, qty, price);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function MarketSellDialog({
+  farm,
+  busy,
+  onClose,
+  onList,
+}: {
+  farm: FarmView;
+  busy: boolean;
+  onClose: () => void;
+  onList: (item: string, qty: number, price: number) => void;
+}) {
+  const stock = farm.storage?.stock ?? {};
+  const maxQty = farm.market?.max_qty ?? 50;
+  const maxPrice = farm.market?.max_price ?? 1_000_000;
+  const items = (farm.items ?? []).filter((i) => (stock[i.id] ?? 0) > 0);
+  const [pick, setPick] = useState<string | null>(items[0]?.id ?? null);
+  const [qty, setQty] = useState(1);
+  const [price, setPrice] = useState(0);
+  const it = items.find((i) => i.id === pick);
+  const have = it ? Math.min(stock[it.id] ?? 0, maxQty) : 0;
+  const n = Math.max(1, Math.min(qty, have));
+  // giá tham khảo: bán ở kho được bao nhiêu
+  const ref = it ? effSellTotal(it.price, it.kind, n, farm.perks) : 0;
+  const ok = !!it && have > 0 && price >= 1 && price <= maxPrice;
+  return (
+    <Dialog title="Treo hàng lên chợ đen" onClose={onClose} className="farm-gift-dialog">
+      {items.length === 0 ? (
+        <p className="muted">Kho đang trống, chưa có gì để treo bán.</p>
+      ) : (
+        <>
+          <ul className="gift-grid">
+            {items.map((i) => (
+              <li key={i.id}>
+                <button
+                  type="button"
+                  className={`gift-item${pick === i.id ? " is-on" : ""}`}
+                  onClick={() => {
+                    setPick(i.id);
+                    setQty((q) => Math.min(q, stock[i.id] ?? 1));
+                  }}
+                  title={i.name}
+                >
+                  <Emo e={i.emoji} />
+                  <small>×{stock[i.id]}</small>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {it && (
+            <div className="market-form">
+              <label className="field">
+                <span>
+                  Số {it.name.toLowerCase()} <small>(có {stock[it.id]}, tối đa {have})</small>
+                </span>
+                <input
+                  type="number"
+                  min={1}
+                  max={have}
+                  value={qty || ""}
+                  onChange={(e) =>
+                    setQty(Math.max(0, Math.min(have, Math.floor(Number(e.target.value) || 0))))
+                  }
+                />
+              </label>
+              <label className="field">
+                <span>
+                  Giá cả lô (xu) <small>bán ở kho được {ref.toLocaleString("vi-VN")}</small>
+                </span>
+                <input
+                  type="number"
+                  min={1}
+                  max={maxPrice}
+                  value={price || ""}
+                  placeholder={String(ref)}
+                  onChange={(e) =>
+                    setPrice(Math.max(0, Math.min(maxPrice, Math.floor(Number(e.target.value) || 0))))
+                  }
+                />
+              </label>
+            </div>
+          )}
+          <div className="farm-confirm-actions">
+            <button type="button" className="btn" onClick={onClose}>
+              Để sau
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy || !ok}
+              onClick={() => it && onList(it.id, n, price)}
+            >
+              Treo {n} <Emo e={it?.emoji} /> · {price.toLocaleString("vi-VN")} <Emo e="🪙" />
+            </button>
+          </div>
+        </>
+      )}
+    </Dialog>
+  );
+}
+
+/* =========================================================
    Nhật ký & xếp hạng
    ========================================================= */
 
@@ -3177,6 +3455,14 @@ function logText(l: FarmLog, crops: Crop[], items: Item[] = []): string {
     case "gift": {
       const it = items.find((i) => i.id === l.crop);
       return `🎁 ${who} tặng bạn ${l.xu ?? 1} ${it?.emoji ?? "📦"} ${it?.name.toLowerCase() ?? ""}`.trim();
+    }
+    case "market_sold": {
+      const it = items.find((i) => i.id === l.crop);
+      return `🕶️ ${who} mua lô ${it?.emoji ?? "📦"} ${it?.name.toLowerCase() ?? ""} của bạn ở chợ đen, bạn được ${(l.xu ?? 0).toLocaleString("vi-VN")} xu`;
+    }
+    case "market_expired": {
+      const it = items.find((i) => i.id === l.crop);
+      return `⏰ Lô ${l.xu ?? 1} ${it?.emoji ?? "📦"} ${it?.name.toLowerCase() ?? ""} ở chợ đen hết hạn, đã về kho`;
     }
   }
 }

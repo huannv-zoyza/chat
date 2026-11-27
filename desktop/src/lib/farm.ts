@@ -56,9 +56,34 @@ export type FarmLog = {
     | "propose"
     | "couple"
     | "breakup"
-    | "gift";
+    | "gift"
+    | "market_sold"
+    | "market_expired";
+  /** id cây / món (gift, market_*) */
   crop?: string;
+  /** xu; số lượng với gift và market_expired */
   xu?: number;
+};
+
+/** Một lô ở chợ đen (chung toàn server). price là giá cả lô. */
+export type MarketListing = {
+  id: number;
+  slot: number;
+  seller: PublicUser;
+  item: string;
+  qty: number;
+  price: number;
+  expires_at: string;
+  mine: boolean;
+};
+
+export type MarketView = {
+  slots: number;
+  used: number;
+  per_user: number;
+  max_qty: number;
+  max_price: number;
+  listings: MarketListing[];
 };
 
 /** Đặc quyền theo cấp, khớp farmPerks ở máy chủ. */
@@ -146,6 +171,8 @@ export type FarmView = {
   trees?: TreeView[];
   tree_kinds?: FruitTree[];
   orchard_spots?: number;
+  /** chợ đen chung toàn server, chỉ vườn mình */
+  market?: MarketView;
 };
 
 /** Một cây trong vườn: growing (đang lớn) | fruiting (đang ra quả) | ready (có quả để hái). */
@@ -392,6 +419,21 @@ export const farmEvents = {
     logSubs.add(f);
     return () => {
       logSubs.delete(f);
+    };
+  },
+};
+
+/* ---------- sự kiện "farm.market": chợ đen vừa đổi, ai đang mở nông trại thì tải lại ---------- */
+
+const marketSubs = new Set<() => void>();
+export const farmMarketEvents = {
+  emit() {
+    marketSubs.forEach((f) => f());
+  },
+  on(f: () => void) {
+    marketSubs.add(f);
+    return () => {
+      marketSubs.delete(f);
     };
   },
 };

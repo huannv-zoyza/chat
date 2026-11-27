@@ -471,3 +471,36 @@ Chỉ áp dụng cho nông trại của chính mình. Không có tác vụ nền
   (không phải đi thăm), cứ **30 giây** kiểm tra `autoPending` và gọi `/auto` nếu còn việc; không chạy chồng khi đang bận.
   Gặp **lỗi** thì **tạm dừng 5 phút** và hiện toast một lần; riêng "Chưa có việc gì để làm." thì không hiện toast (nhưng
   vẫn tạm dừng).
+
+# Phần 6: Chợ đen
+
+## 15. Chợ đen
+
+Người chơi treo hàng trong kho của mình lên một chợ **chung toàn server** với giá tự đặt; ai cũng thấy và mua được.
+
+- **10 chỗ** cho cả server (bảng `farm_market`, migration 000034, cột `slot` 0..9 `UNIQUE`). Kín 10 chỗ thì không ai
+  treo thêm được: "Chợ đen đã kín 10 chỗ, chờ có người mua hoặc gỡ hàng nhé." Mỗi người tối đa **3** lô cùng lúc
+  ("Bạn đã treo đủ 3 món ở chợ đen.") để một người không chiếm hết chợ. Lô mới vào chỗ trống có số nhỏ nhất.
+- **Treo** (`POST /api/farm/market {item, qty, price}`): món bất kỳ trong kho (nông sản, sản phẩm, quả, món chế biến),
+  `qty` 1..50, `price` là giá **cả lô** 1..1.000.000 xu. Hàng rời kho ngay (chợ giữ hộ). Thiếu hàng: "Trong kho không
+  đủ <n> <tên> để treo bán.". Không tốn phí.
+- **Mua** (`POST /api/farm/market/{id}/buy`): mua nguyên lô. Người mua trả `price` (`spend`, thiếu xu: "Không đủ xu."),
+  kho người mua phải đủ chỗ cho cả lô (không thì "kho đầy"). Người bán nhận `price` qua `earn` (đang nợ thì tự trừ 50%).
+  Không mua hàng của mình. Lô vừa bị người khác mua / gỡ / hết hạn: "Món này đã bán hoặc bị gỡ rồi.". Không tính
+  nhiệm vụ `earn`, không cộng XP (tránh hai người mua đi bán lại cày nhiệm vụ).
+- **Gỡ** (`DELETE /api/farm/market/{id}`): chỉ người bán ("Đây không phải hàng của bạn."), hàng về kho (cần đủ chỗ).
+- **Hết hạn**: lô treo quá **24 giờ** tự về kho người bán (được vượt sức chứa kho, vì là hàng của họ), ghi nhật ký
+  `market_expired` (`crop` = món, `xu` = số lượng). Dọn lô quá hạn khi có thao tác chợ và khi mở nông trại của mình.
+- Nhật ký người bán khi có người mua: `market_sold` (`actor` = người mua, `crop` = món, `xu` = giá), kèm
+  `farm.updated` tới người bán. Mọi thay đổi ở chợ (treo / mua / gỡ) bắn `{ "type": "farm.market" }` tới **mọi người**
+  để ai đang mở nông trại tải lại.
+
+FarmView (chỉ khi `me`) thêm:
+
+```ts
+market: { slots: 10; used: number; per_user: 3; max_qty: 50; max_price: 1000000;
+          listings: { id; slot; seller: PublicUser; item; qty; price; expires_at; mine: boolean }[] };
+```
+
+Giao diện: tab "🕶️ Chợ đen" (`BlackMarketPanel` trong `components/Farm.tsx`): thanh `used/slots`, danh sách lô (Mua / Gỡ),
+nút "Treo hàng" mở hộp chọn món, số lượng và giá (gợi ý giá bán ở kho), tắt khi chợ kín hoặc đã treo đủ 3 lô.

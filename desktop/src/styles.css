@@ -15526,6 +15526,18 @@ button.villager:focus-visible .villager-name {
 .iso-sign.is-build rect {
   fill: #ffe9a8;
 }
+.iso-sign.is-tend rect {
+  fill: #c9f0a8;
+  stroke: #3f7a22;
+  filter: drop-shadow(0 3px 0 #3f7a22);
+}
+.iso-sign.is-tend text {
+  fill: #234d10;
+}
+.iso-sign.is-tend.is-busy {
+  opacity: 0.5;
+  pointer-events: none;
+}
 .iso-expand polygon {
   fill: rgb(255 255 255 / 0.12);
   stroke: rgb(255 255 255 / 0.85);

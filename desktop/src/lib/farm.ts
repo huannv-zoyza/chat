@@ -324,3 +324,75 @@ export function formatGrow(sec: number) {
   if (h) return `${h} giờ`;
   return `${m} phút`;
 }
+
+export type TendPlan = {
+  collect: number;
+  feed: number;
+  buy: Record<string, number>;
+  cost: number;
+  hungryLeft: number;
+};
+
+/**
+ * Dự tính "chăm nhanh" một chuồng, khớp máy chủ: thu con chín (trong giới hạn chỗ kho), rồi cho mọi con đói ăn,
+ * lấy từ kho trước, thiếu thì mua ở chợ nếu đủ cấp và đủ xu. Không có gì để làm: null.
+ */
+export function tendPlan(
+  view: FarmView,
+  building: "coop" | "pasture",
+  now: number,
+): TendPlan | null {
+  const kinds = new Map((view.animal_kinds ?? []).map((k) => [k.id, k]));
+  const items = new Map((view.items ?? []).map((i) => [i.id, i]));
+  const animals = (view.animals ?? []).filter(
+    (a) => kinds.get(a.kind)?.building === building,
+  );
+  const isReady = (a: Animal) =>
+    a.state === "ready" ||
+    (a.state === "producing" &&
+      !!a.ready_at &&
+      new Date(a.ready_at).getTime() <= now);
+  let room = view.storage ? view.storage.cap - view.storage.used : 0;
+  const stock = { ...(view.storage?.stock ?? {}) };
+  const balance = view.wallet?.balance;
+  let collect = 0;
+  let feed = 0;
+  let hungryLeft = 0;
+  let cost = 0;
+  const buy: Record<string, number> = {};
+  for (const a of animals) {
+    let hungry = a.state === "hungry";
+    if (isReady(a)) {
+      if (room <= 0) continue;
+      room--;
+      collect++;
+      hungry = true;
+    }
+    if (!hungry) continue;
+    const k = kinds.get(a.kind);
+    if (!k) continue;
+    const have = stock[k.feed] ?? 0;
+    const take = Math.min(have, k.feed_qty);
+    const need = k.feed_qty - take;
+    if (need > 0) {
+      const it = items.get(k.feed);
+      const price = it?.buy_price ?? 0;
+      const add = price * need;
+      if (
+        !it ||
+        price <= 0 ||
+        view.level < it.level ||
+        (balance !== undefined && cost + add > balance)
+      ) {
+        hungryLeft++;
+        continue;
+      }
+      cost += add;
+      buy[k.feed] = (buy[k.feed] ?? 0) + need;
+    }
+    stock[k.feed] = have - take;
+    feed++;
+  }
+  if (collect === 0 && feed === 0) return null;
+  return { collect, feed, buy, cost, hungryLeft };
+}

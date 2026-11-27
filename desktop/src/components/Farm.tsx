@@ -251,7 +251,7 @@ function Farm() {
   const act = async (
     plot: number | null,
     fn: () => Promise<FarmView>,
-    okText?: string,
+    okText?: string | ((f: FarmView) => string | undefined),
   ) => {
     if (busy) return;
     setBusy(true);
@@ -304,7 +304,10 @@ function Farm() {
           `🎉 Lên cấp ${g.level_up}! Mở khoá cây mới trong cửa hàng hạt.`,
           "level",
         );
-      else if (okText) showToast(okText);
+      else if (okText) {
+        const t = typeof okText === "function" ? okText(f) : okText;
+        if (t) showToast(t, g?.hungry ? "bad" : "good");
+      }
       return true;
     } catch (err) {
       setError(errMsg(err));
@@ -665,6 +668,13 @@ function Farm() {
                   live={(p) => liveState(p, now)}
                   onPlot={onPlot}
                   onAnimal={onAnimal}
+                  onTend={(id) =>
+                    void act(
+                      -1,
+                      () => api.farmTend(id),
+                      (f) => tendToast(f, view),
+                    )
+                  }
                   onBuild={(id) => {
                     const b = view.buildings?.find((x) => x.id === id);
                     setConfirm({
@@ -1202,6 +1212,25 @@ function SeedPicker({
 /* =========================================================
    Nhiệm vụ
    ========================================================= */
+
+/** Lời báo sau khi chăm nhanh một chuồng. */
+function tendToast(f: FarmView, before: FarmView | null): string | undefined {
+  const g = f.gained;
+  if (!g) return undefined;
+  const collected = Object.values(g.items ?? {}).reduce((a, b) => a + b, 0);
+  const catalog = f.items ?? before?.items ?? [];
+  const bought = Object.entries(g.bought ?? {})
+    .map(
+      ([id, n]) =>
+        `${n}${catalog.find((x) => x.id === id)?.emoji ?? f.crops.find((c) => c.id === id)?.emoji ?? "📦"}`,
+    )
+    .join(" ");
+  let t = `Đã thu ${collected} sản phẩm, cho ${g.fed ?? 0} con ăn`;
+  if (bought) t += ` (mua thêm ${bought})`;
+  if (g.hungry)
+    t = `${t}. Còn ${g.hungry} con đói: không đủ xu hoặc chưa đủ cấp mua thức ăn.`;
+  return t;
+}
 
 const QUEST_ICON: Record<string, string> = {
   harvest: "🧺",

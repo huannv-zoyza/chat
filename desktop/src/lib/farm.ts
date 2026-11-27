@@ -111,7 +111,7 @@ export type FarmView = {
     auto?: {
       harvested: number;
       planted: number;
-      watered: number;
+      watered?: number;
       fed: number;
       fruits: number;
       crafted: number;

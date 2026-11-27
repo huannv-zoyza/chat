@@ -436,15 +436,15 @@ Chỉ áp dụng cho nông trại của chính mình. Không có tác vụ nền
   giao dịch**, theo thứ tự:
   1. thu hoạch mọi ô chín;
   2. gieo `crop` (nếu có; "không có ô trống" thì bỏ qua lặng lẽ);
-  3. chăm chuồng gà rồi đồng cỏ (thu + cho ăn; `buy_feed` tắt: chỉ dùng thức ăn trong kho, không tốn xu; "không có gì
+  3. tưới mọi ô đang lớn còn tưới được (không có ô nào thì bỏ qua lặng lẽ), `auto.watered` = số ô;
+  4. chăm chuồng gà rồi đồng cỏ (thu + cho ăn; `buy_feed` tắt: chỉ dùng thức ăn trong kho, không tốn xu; "không có gì
      để thu hay cho ăn" và "không có thức ăn" bỏ qua lặng lẽ);
-  4. hái mọi cây chín còn vừa kho;
-  5. thu mọi lò đã xong của xưởng và máy ép (kho đầy thì không thu, không báo lỗi);
-  2b. tưới mọi ô đang lớn còn tưới được (không có ô nào thì bỏ qua lặng lẽ), `auto.watered` = số ô;
-  6. lấp lò xưởng bằng `kitchen_recipe`, rồi lò máy ép bằng `juicer_recipe` (món phải thuộc đúng công trình, không thì
+  5. hái mọi cây chín còn vừa kho;
+  6. thu mọi lò đã xong của xưởng và máy ép (kho đầy thì không thu, không báo lỗi);
+  7. lấp lò xưởng bằng `kitchen_recipe`, rồi lò máy ép bằng `juicer_recipe` (món phải thuộc đúng công trình, không thì
      "Món X không làm ở đây.").
 - **SAVEPOINT mỗi bước**: bước gặp lỗi nghiệp vụ (`FarmError` hoặc không đủ xu) bị hoàn lại mọi ghi của riêng bước đó,
-  lý do ghi vào `skipped` dạng `"<nhãn>: <lỗi>"` (nhãn: Thu hoạch, Gieo, Chuồng gà, Đồng cỏ, Vườn cây, Thu món, Xưởng,
+  lý do ghi vào `skipped` dạng `"<nhãn>: <lỗi>"` (nhãn: Thu hoạch, Gieo, Tưới, Chuồng gà, Đồng cỏ, Vườn cây, Thu món, Xưởng,
   Máy ép), các bước khác vẫn chạy. Lỗi khác (DB) hoàn lại và dừng cả lượt.
 - Kết quả: `gained` gộp mọi bước (`xu` = −tổng đã tiêu, `xp`, `level_up`, `items`, `fed`, `planted`...) và
   `gained.auto = {harvested, planted, watered, fed, fruits, crafted, collected, spent, skipped: string[]}`. `harvested` = số ô thu,

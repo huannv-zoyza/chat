@@ -920,7 +920,9 @@ export function FarmWorld({
   const coop = view.buildings?.find((b) => b.id === "coop");
   const pasture = view.buildings?.find((b) => b.id === "pasture");
   const kitchen = view.buildings?.find((b) => b.id === "kitchen");
-  const jobs = view.jobs ?? [];
+  const jobs = (view.jobs ?? []).filter(
+    (j) => (j.building ?? "kitchen") === "kitchen",
+  );
   const kitchenOn = (kitchen?.built ?? false) || jobs.length > 0;
   const KITCHEN = kitchenRect(kitchen?.spot ?? KITCHEN_SPOT);
   // đang dời / chọn chỗ cho xưởng: xưởng thật ẩn đi, vẽ bản nháp ở chỗ đang chọn

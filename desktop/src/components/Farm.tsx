@@ -494,10 +494,12 @@ function Farm() {
     if (!view?.me || busy) return;
     const k = view.buildings?.find((b) => b.id === "kitchen");
     const done = (view.jobs ?? []).filter(
-      (j) => new Date(j.ready_at).getTime() <= now,
+      (j) =>
+        (j.building ?? "kitchen") === "kitchen" &&
+        new Date(j.ready_at).getTime() <= now,
     ).length;
     setTab("kitchen");
-    if (done > 0) return void act(-1, () => api.farmCraftCollect("all"));
+    if (done > 0) return void act(-1, () => api.farmCraftCollect("all", "kitchen"));
     if (k && !k.built && view.level >= k.level)
       return startPlacing("kitchen", "build");
     if (k && !k.built)
@@ -1300,7 +1302,11 @@ const QUEST_ICON: Record<string, string> = {
 
 /** Số lò của xưởng đã nấu xong, chờ lấy. */
 const jobsReady = (f: FarmView, now: number) =>
-  (f.jobs ?? []).filter((j) => new Date(j.ready_at).getTime() <= now).length;
+  (f.jobs ?? []).filter(
+    (j) =>
+      (j.building ?? "kitchen") === "kitchen" &&
+      new Date(j.ready_at).getTime() <= now,
+  ).length;
 
 const questsReady = (f: FarmView) =>
   (f.quests ?? []).filter((q) => q.done && !q.claimed).length +
@@ -2161,7 +2167,11 @@ function KitchenPanel({
   const stock = farm.storage?.stock ?? {};
   const items = new Map((farm.items ?? []).map((i) => [i.id, i]));
   const byRecipe = new Map(recipes.map((r) => [r.id, r]));
-  const jobs = new Map((farm.jobs ?? []).map((j) => [j.slot, j]));
+  const jobs = new Map(
+    (farm.jobs ?? [])
+      .filter((j) => (j.building ?? "kitchen") === "kitchen")
+      .map((j) => [j.slot, j]),
+  );
   const free = k.built ? k.cap - jobs.size : 0;
   const done = jobsReady(farm, now);
   const sorted = [...recipes].sort(

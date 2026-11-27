@@ -126,6 +126,9 @@ var buildingDefs = []buildingDef{
 	{ID: "pasture", Name: "Đồng cỏ", Price: 600, Level: 3, Cap: 3, UpgradeCap: 6, UpgradePrice: 900},
 	{ID: kitchenID, Name: "Xưởng chế biến", Price: 500, Level: 4, Cap: 2, UpgradeCap: 4, UpgradePrice: 1200,
 		Size: Size{3, 2}, Default: Spot{12, 12}},
+	// Máy ép nước: chỗ mặc định (16,13) nằm dưới ao vịt, bên phải xưởng, trên đường đá ngang.
+	{ID: juicerID, Name: "Máy ép nước", Price: 800, Level: 6, Cap: 2, UpgradeCap: 4, UpgradePrice: 1600,
+		Size: Size{2, 2}, Default: Spot{16, 13}},
 }
 
 func buildingByID(id string) (buildingDef, bool) {
@@ -492,7 +495,7 @@ func (s *Store) FarmBuild(ctx context.Context, userID int64, id string) (FarmRes
 	return s.FarmBuildAt(ctx, userID, id, nil)
 }
 
-// FarmBuildAt: xây công trình id (coop | pasture | kitchen); công trình tự do đặt ở at (nil: chỗ mặc
+// FarmBuildAt: xây công trình id (coop | pasture | kitchen | juicer); công trình tự do đặt ở at (nil: chỗ mặc
 // định), chỗ phải hợp lệ (farm_place.go).
 func (s *Store) FarmBuildAt(ctx context.Context, userID int64, id string, at *Spot) (FarmResult, error) {
 	res := FarmResult{OwnerID: userID}
@@ -815,7 +818,7 @@ func (s *Store) FarmTend(ctx context.Context, userID int64, building string) (Fa
 	res := FarmResult{OwnerID: userID}
 	var err error
 	res.Wallets, err = s.farmTx(ctx, func(op *farmOp) error {
-		if b, ok := buildingByID(building); !ok || b.ID == "kitchen" {
+		if b, ok := buildingByID(building); !ok || b.movable() {
 			return ErrFarmUnknownBuild
 		}
 		now := op.unix()
@@ -1011,13 +1014,19 @@ func (s *Store) randN(n int) int {
 	return min(max(int(s.rand()*float64(n)), 0), n-1)
 }
 
+// goodsBuilt: món chế biến id có công trình làm ra nó đã xây (built: cấp công trình theo id).
+func goodsBuilt(id string, built map[string]int) bool {
+	r, ok := recipeByID(id)
+	return ok && built[r.Building] > 0
+}
+
 // newOrder: đơn 1–3 loại hàng đã mở khoá ở cấp level (nông sản theo cấp cây, sản phẩm theo cấp con
-// vật, món chế biến theo cấp món nếu goods = đã có xưởng), mỗi loại 1–4 đơn vị (món chế biến: một
+// vật, món chế biến theo cấp món nếu built có công trình làm món đó: xưởng hoặc máy ép), mỗi loại 1–4 đơn vị (món chế biến: một
 // loại mỗi đơn, 1–2 món; quả chỉ có khi fruits[id] = người chơi đang có cây loại đó). Thưởng xu = ceil(1.35 × tổng giá đơn vị), XP = ceil(xu / 10).
-func (s *Store) newOrder(level int, goods bool, fruits map[string]bool) ([]OrderItem, int64, int64) {
+func (s *Store) newOrder(level int, built map[string]int, fruits map[string]bool) ([]OrderItem, int64, int64) {
 	var pool []Item
 	for _, it := range Items {
-		if it.Level <= level && (it.Kind != "goods" || goods) && (it.Kind != "fruit" || fruits[it.ID]) {
+		if it.Level <= level && (it.Kind != "goods" || goodsBuilt(it.ID, built)) && (it.Kind != "fruit" || fruits[it.ID]) {
 			pool = append(pool, it)
 		}
 	}
@@ -1069,7 +1078,7 @@ func (op *farmOp) fillOrders(userID int64) error {
 				return err
 			}
 		}
-		items, xu, xp := op.s.newOrder(levelFor(f.XP), built[kitchenID] > 0, fruits)
+		items, xu, xp := op.s.newOrder(levelFor(f.XP), built, fruits)
 		raw, _ := json.Marshal(items)
 		if _, err := op.tx.ExecContext(op.ctx,
 			`INSERT INTO farm_orders (user_id, slot, items, xu, xp) VALUES (?, ?, ?, ?, ?)`,

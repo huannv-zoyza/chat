@@ -201,7 +201,7 @@ func TestFarmBuildingsAndAnimals(t *testing.T) {
 	e := newFarmEnv(t)
 	alice, bob := e.user("alice"), e.user("bob")
 	v := e.view(alice.ID, alice.ID)
-	if len(v.Buildings) != 3 || v.Buildings[0].ID != "coop" || v.Buildings[0].Built || v.Buildings[0].Cap != 4 ||
+	if len(v.Buildings) != 4 || v.Buildings[0].ID != "coop" || v.Buildings[0].Built || v.Buildings[0].Cap != 4 ||
 		v.Buildings[0].Price != 200 || v.Buildings[0].Level != 2 || v.Buildings[0].UpgradePrice != nil ||
 		v.Buildings[1].ID != "pasture" || v.Buildings[1].Cap != 3 || v.Buildings[1].Price != 600 || v.Buildings[1].Level != 3 ||
 		v.Animals == nil || len(v.Animals) != 0 || len(v.AnimalKinds) != 5 {
@@ -909,20 +909,20 @@ func TestFarmKitchen(t *testing.T) {
 	if nv := e.view(alice.ID, bob.ID); len(nv.Jobs) != 2 || nv.Recipes != nil {
 		t.Fatalf("neighbour view: %+v %+v", nv.Jobs, nv.Recipes)
 	}
-	_, err = e.st.FarmCraftCollect(e.ctx, alice.ID, 0, false)
+	_, err = e.st.FarmCraftCollect(e.ctx, alice.ID, "kitchen", 0, false)
 	wantErr(t, err, store.ErrFarmJobNotReady)
-	_, err = e.st.FarmCraftCollect(e.ctx, alice.ID, 0, true)
+	_, err = e.st.FarmCraftCollect(e.ctx, alice.ID, "kitchen", 0, true)
 	wantErr(t, err, store.ErrFarmNothingCraft)
 
 	e.advance(15 * time.Minute) // salad xong, bắp rang chưa
 	if v := e.view(alice.ID, alice.ID); v.Jobs[0].State != "ready" || v.Jobs[1].State != "working" {
 		t.Fatalf("jobs after 15m: %+v", v.Jobs)
 	}
-	res, err := e.st.FarmCraftCollect(e.ctx, alice.ID, 0, true)
+	res, err := e.st.FarmCraftCollect(e.ctx, alice.ID, "kitchen", 0, true)
 	if err != nil || res.Gained.Items["salad"] != 1 || res.Gained.XP != 4 {
 		t.Fatalf("collect: %v %+v", err, res.Gained)
 	}
-	_, err = e.st.FarmCraftCollect(e.ctx, alice.ID, 0, false)
+	_, err = e.st.FarmCraftCollect(e.ctx, alice.ID, "kitchen", 0, false)
 	wantErr(t, err, store.ErrFarmNoJob)
 	// lò 0 trống lại: nấu tiếp được
 	if _, err := e.st.FarmCraft(e.ctx, alice.ID, "salad"); err != nil {
@@ -935,10 +935,10 @@ func TestFarmKitchen(t *testing.T) {
 	// kho đầy: không lấy được món
 	e.advance(30 * time.Minute)
 	e.setStock(alice.ID, "lua", 60-e.storage(alice.ID).Used)
-	_, err = e.st.FarmCraftCollect(e.ctx, alice.ID, 1, false)
+	_, err = e.st.FarmCraftCollect(e.ctx, alice.ID, "kitchen", 1, false)
 	wantErr(t, err, store.ErrFarmStorageFull)
 	e.setStock(alice.ID, "lua", 0)
-	res, err = e.st.FarmCraftCollect(e.ctx, alice.ID, 0, true)
+	res, err = e.st.FarmCraftCollect(e.ctx, alice.ID, "kitchen", 0, true)
 	if err != nil || res.Gained.Items["salad"] != 1 || res.Gained.Items["bap_rang"] != 1 || res.Gained.XP != 10 {
 		t.Fatalf("collect all: %v %+v", err, res.Gained)
 	}

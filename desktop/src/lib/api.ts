@@ -634,8 +634,15 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     farmGift: (item: string, qty: number) =>
       request<import("./farm").FarmView>("POST", "/api/farm/couple/gift", { item, qty }),
     farmCraft: (recipe: string) => request<import("./farm").FarmView>("POST", "/api/farm/craft", { recipe }),
-    farmCraftCollect: (slot: number | "all") =>
-      request<import("./farm").FarmView>("POST", "/api/farm/craft/collect", slot === "all" ? { all: true } : { slot }),
+    farmCraftFill: (recipe: string) =>
+      request<import("./farm").FarmView>("POST", "/api/farm/craft", { recipe, fill: true }),
+    /** Lấy món xong ở một lò (building mặc định: xưởng) hoặc "all" (building bỏ trống: mọi công trình). */
+    farmCraftCollect: (slot: number | "all", building?: "kitchen" | "juicer") =>
+      request<import("./farm").FarmView>(
+        "POST",
+        "/api/farm/craft/collect",
+        slot === "all" ? { all: true, ...(building ? { building } : {}) } : { slot, ...(building ? { building } : {}) },
+      ),
     farmDeliver: (orderId: number) => request<import("./farm").FarmView>("POST", `/api/farm/orders/${orderId}/deliver`),
     farmDiscard: (orderId: number) => request<import("./farm").FarmView>("DELETE", `/api/farm/orders/${orderId}`),
     listIntegrations: (channelId: number) => request<Integration[]>("GET", `/api/channels/${channelId}/integrations`),

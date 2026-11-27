@@ -17,7 +17,7 @@ import (
 //	GET  /api/farm/neighbors               hàng xóm: mọi người dùng thật trừ mình, bot, AI
 //	GET  /api/farm/leaderboard             top 20 theo XP
 //	POST /api/farm/plant      {plot, crop}
-//	POST /api/farm/harvest    {plot} | {all: true}
+//	POST /api/farm/harvest    {plot} |//	POST /api/farm/craft/collect {building?, slot} | {all: true, building?}  (building mặc định: xưởng khi có slot)
 //	POST /api/farm/clear      {plot}
 //	POST /api/farm/water      {user_id, plot}
 //	POST /api/farm/bug        {user_id, plot}
@@ -25,19 +25,19 @@ import (
 //	POST /api/farm/expand                  (bí danh cũ: /api/farm/buy-plot)
 //	POST /api/farm/buy-dog
 //	POST /api/farm/quests/{questId}/claim  ("chest" = rương thưởng ngày)
-//	POST /api/farm/sell       {item, qty} | {all: true}
+//	POST /api/farm/sell       {item, qty} |//	POST /api/farm/craft/collect {building?, slot} | {all: true, building?}  (building mặc định: xưởng khi có slot)
 //	POST /api/farm/storage/upgrade
 //	POST /api/farm/buildings/{id}          xây coop | pasture | kitchen   {x, y} tuỳ chọn: chỗ đặt
 //	POST /api/farm/buildings/{id}/move     {x, y}  dời công trình tự do (xưởng)
 //	POST /api/farm/buildings/{id}/upgrade
 //	POST /api/farm/buildings/{id}/tend     chăm nhanh cả chuồng (coop | pasture): thu + cho ăn, tự mua thức ăn thiếu
 //	POST /api/farm/animals    {kind}       mua con vật
-//	POST /api/farm/animals/feed    {id} | {all: true}
-//	POST /api/farm/animals/collect {id} | {all: true}
-//	POST /api/farm/craft      {recipe}     nấu một món ở lò trống của xưởng
-//	POST /api/farm/craft/collect {slot} | {all: true}
+//	POST /api/farm/animals/feed    {id} |//	POST /api/farm/craft/collect {building?, slot} | {all: true, building?}  (building mặc định: xưởng khi có slot)
+//	POST /api/farm/animals/collect {id} |//	POST /api/farm/craft/collect {building?, slot} | {all: true, building?}  (building mặc định: xưởng khi có slot)
+//	POST /api/farm/craft      {recipe, fill?} nấu một món ở lò trống của công trình của món (fill: mọi lò trống)
+//	POST /api/farm/craft/collect {building?, slot} | {all: true, building?}  (building mặc định: xưởng khi có slot)| {all: true}
 //	POST /api/farm/orchard/plant   {spot, tree}       trồng cây ăn quả vào chỗ trống
-//	POST /api/farm/orchard/harvest {spot} | {all: true}  hái quả
+//	POST /api/farm/orchard/harvest {spot} |//	POST /api/farm/craft/collect {building?, slot} | {all: true, building?}  (building mặc định: xưởng khi có slot)  hái quả
 //	DELETE /api/farm/orchard/{spot}                   chặt cây
 //	POST /api/farm/couple/propose  {user_id}          ngỏ lời kết đôi
 //	POST /api/farm/couple/respond  {user_id, accept}  trả lời lời ngỏ
@@ -345,23 +345,29 @@ func (a *API) farmTend(w http.ResponseWriter, r *http.Request) {
 func (a *API) farmCraft(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Recipe string `json:"recipe"`
+		Fill   bool   `json:"fill"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	res, err := a.store.FarmCraft(r.Context(), currentUser(r).ID, req.Recipe)
+	craft := a.store.FarmCraft
+	if req.Fill {
+		craft = a.store.FarmCraftFill
+	}
+	res, err := craft(r.Context(), currentUser(r).ID, req.Recipe)
 	a.farmRespond(w, r, res, err)
 }
 
 func (a *API) farmCraftCollect(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Slot int  `json:"slot"`
-		All  bool `json:"all"`
+		Building string `json:"building"` // rỗng: xưởng khi lấy một lò, mọi công trình khi all
+		Slot     int    `json:"slot"`
+		All      bool   `json:"all"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	res, err := a.store.FarmCraftCollect(r.Context(), currentUser(r).ID, req.Slot, req.All)
+	res, err := a.store.FarmCraftCollect(r.Context(), currentUser(r).ID, req.Building, req.Slot, req.All)
 	a.farmRespond(w, r, res, err)
 }
 

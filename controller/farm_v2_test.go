@@ -36,7 +36,7 @@ func TestFarmV2API(t *testing.T) {
 		}
 	}
 	items := raw["items"].([]any)
-	if len(items) != 29 || keys(items[0]) != "buy_price,emoji,id,kind,level,name,price" || items[0].(map[string]any)["price"] != float64(5) ||
+	if len(items) != 36 || keys(items[0]) != "buy_price,emoji,id,kind,level,name,price" || items[0].(map[string]any)["price"] != float64(5) ||
 		items[8].(map[string]any)["id"] != "trung" || items[8].(map[string]any)["kind"] != "product" {
 		t.Fatalf("items: %v", items)
 	}
@@ -46,7 +46,7 @@ func TestFarmV2API(t *testing.T) {
 		t.Fatalf("storage: %v", storage)
 	}
 	b := raw["buildings"].([]any)
-	if len(b) != 3 || keys(b[0]) != "built,cap,id,level,name,price,upgrade_price" || b[0].(map[string]any)["upgrade_price"] != nil {
+	if len(b) != 4 || keys(b[0]) != "built,cap,id,level,name,price,upgrade_price" || b[0].(map[string]any)["upgrade_price"] != nil {
 		t.Fatalf("buildings: %v", b)
 	}
 	kinds := raw["animal_kinds"].([]any)

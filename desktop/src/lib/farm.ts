@@ -217,10 +217,13 @@ export type Recipe = {
   price: number;
   xp: number;
   level: number;
+  /** Công trình có lò làm món này. */
+  building: "kitchen" | "juicer";
 };
 
-/** Một lò của xưởng đang nấu / đã xong (lò trống không có trong danh sách). */
+/** Một lò của xưởng hoặc máy ép nước đang làm / đã xong (lò trống không có trong danh sách). */
 export type Job = {
+  building: "kitchen" | "juicer";
   slot: number;
   recipe: string;
   ready_at: string;

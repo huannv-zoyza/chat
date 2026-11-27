@@ -326,6 +326,15 @@ func (op *farmOp) takeStock(userID int64, item string, qty int64) (bool, error) 
 	return true, err
 }
 
+// sellValue: tiền bán qty đơn vị it với pct (100 + sell_pct). Chỉ nông sản và sản phẩm chăn nuôi được
+// thưởng giá; món chế biến (goods) bán đúng giá gốc để không mua nguyên liệu → chế biến → bán có lãi.
+func sellValue(it Item, qty, pct int64) int64 {
+	if it.Kind != "crop" && it.Kind != "product" {
+		pct = 100
+	}
+	return it.Price * qty * pct / 100
+}
+
 // FarmSell: bán qty đơn vị item trong kho (hoặc bán sạch kho nếu all). Tiền qua earn (đang nợ thì
 // tự trừ 50%), tính vào nhiệm vụ "earn".
 func (s *Store) FarmSell(ctx context.Context, userID int64, itemID string, qty int64, all bool) (FarmResult, error) {
@@ -352,7 +361,7 @@ func (s *Store) FarmSell(ctx context.Context, userID int64, itemID string, qty i
 				if _, err := op.takeStock(userID, it.ID, n); err != nil {
 					return err
 				}
-				total += it.Price * n * pct / 100
+				total += sellValue(it, n, pct)
 			}
 			if total == 0 {
 				return ErrFarmStockEmpty
@@ -371,7 +380,7 @@ func (s *Store) FarmSell(ctx context.Context, userID int64, itemID string, qty i
 			} else if !ok {
 				return farmErr("Trong kho không đủ %d %s để bán.", qty, it.Name)
 			}
-			total = it.Price * qty * pct / 100
+			total = sellValue(it, qty, pct)
 			note = fmt.Sprintf("Bán %d %s", qty, it.Name)
 		}
 		if err := op.earn(userID, total, note); err != nil {

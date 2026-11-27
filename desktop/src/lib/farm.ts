@@ -336,13 +336,20 @@ export function effAnimalSec(sec: number, p?: Perks) {
   return p ? Math.floor((sec * (100 - p.animal_pct)) / 100) : sec;
 }
 
+/** Chỉ nông sản và sản phẩm chăn nuôi được thưởng giá bán; món chế biến (goods) giữ giá gốc. */
+function sellPerks(kind: string, p?: Perks) {
+  return kind === "goods" ? undefined : p;
+}
+
 /** Giá bán một cái sau đặc quyền (chỉ để hiển thị). */
-export function effSellPrice(price: number, p?: Perks) {
+export function effSellPrice(price: number, kind: string, p?: Perks) {
+  p = sellPerks(kind, p);
   return p ? Math.floor((price * (100 + p.sell_pct)) / 100) : price;
 }
 
 /** Tổng tiền bán qty cái, tính trên cả lô như máy chủ. */
-export function effSellTotal(price: number, qty: number, p?: Perks) {
+export function effSellTotal(price: number, kind: string, qty: number, p?: Perks) {
+  p = sellPerks(kind, p);
   return p ? Math.floor((price * qty * (100 + p.sell_pct)) / 100) : price * qty;
 }
 

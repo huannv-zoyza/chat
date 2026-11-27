@@ -2462,7 +2462,7 @@ function StoragePanel({
       </EmptyState>
     );
   const rows = (farm.items ?? []).filter((i) => (st.stock[i.id] ?? 0) > 0);
-  const total = rows.reduce((n, i) => n + effSellTotal(i.price, st.stock[i.id] ?? 0, farm.perks), 0);
+  const total = rows.reduce((n, i) => n + effSellTotal(i.price, i.kind, st.stock[i.id] ?? 0, farm.perks), 0);
   const pct = Math.min(100, (st.used / Math.max(1, st.cap)) * 100);
   return (
     <div className="farm-section">
@@ -2506,7 +2506,7 @@ function StoragePanel({
                   <span className="stock-main">
                     <b>{i.name}</b>
                     <small>
-                      ×{n} · {effSellPrice(i.price, farm.perks)} <Emo e="🪙" />/cái
+                      ×{n} · {effSellPrice(i.price, i.kind, farm.perks)} <Emo e="🪙" />/cái
                     </small>
                   </span>
                   <button

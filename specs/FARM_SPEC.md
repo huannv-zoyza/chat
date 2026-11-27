@@ -55,7 +55,8 @@ Từ cấp 11 không giới hạn: `gap(10) = 500`, `gap(n) = round10(gap(n−1)
 | Thu hoạch thêm `harvest_bonus` | lv/5 đơn vị/vụ | +5 (cấp 25) |
 | Bán giá cao hơn `sell_pct` | 2% × (lv − 1) | 40% (cấp 21) |
 
-Tính theo cấp tại thời điểm hành động (cây đã gieo không đổi giờ chín). Giá bán kho: `floor(price × qty × (100 + sell_pct) / 100)`.
+Tính theo cấp tại thời điểm hành động (cây đã gieo không đổi giờ chín). Giá bán kho: `floor(price × qty × (100 + sell_pct) / 100)`, chỉ cho nông sản (`crop`) và sản phẩm chăn nuôi (`product`); món chế biến (`goods`) bán đúng giá gốc để chặn vòng lặp mua ở chợ → chế biến → bán.
+Đặc quyền cố ý nhân lợi nhuận sản xuất của chính mình (hạt giống → thu hoạch → bán, thức ăn → sản phẩm): đó là phần thưởng của cấp cao, bị giới hạn bởi ô đất, kho và thời gian lớn; đảm bảo không có lãi chỉ áp dụng cho mua đi bán lại ở chợ. Tưới nước vẫn rút ngắn theo `GrowSec/10` gốc.
 
 ### Ô đất
 - Bắt đầu **6 ô**, mua thêm tối đa **12**. Giá ô thứ 7..12: `[200, 300, 450, 600, 800, 1000]`,

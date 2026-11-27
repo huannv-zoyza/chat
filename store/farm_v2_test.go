@@ -944,7 +944,7 @@ func TestFarmKitchen(t *testing.T) {
 	if _, err := e.st.FarmSell(e.ctx, alice.ID, "bap_rang", 1, false); err != nil {
 		t.Fatal(err)
 	}
-	if got := e.balance(alice.ID) - before; got != 93 { // cấp 4: giá bán +6%: 88 × 106 / 100
+	if got := e.balance(alice.ID) - before; got != 88 { // món chế biến bán đúng giá gốc, không thưởng sell_pct
 		t.Fatalf("sold popcorn for %d", got)
 	}
 

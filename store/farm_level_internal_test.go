@@ -73,3 +73,30 @@ func TestFarmPerksNoArbitrage(t *testing.T) {
 		}
 	}
 }
+
+// Món chế biến: nguyên liệu mua ở chợ, bán ở mức thưởng tối đa vẫn không được lãi hơn tổng giá mua.
+func TestFarmPerksNoCraftArbitrage(t *testing.T) {
+	pct := int64(100 + farmPerks(1000).SellPct)
+	for _, r := range Recipes {
+		var buy int64
+		ok := true
+		for _, in := range r.Inputs {
+			it, found := itemByID(in.Item)
+			if !found || it.BuyPrice <= 0 {
+				ok = false
+				break
+			}
+			buy += it.BuyPrice * in.Qty
+		}
+		if !ok {
+			continue
+		}
+		out, found := itemByID(r.ID)
+		if !found {
+			t.Fatalf("recipe %s: no item", r.ID)
+		}
+		if got := sellValue(out, 1, pct); got > buy {
+			t.Fatalf("%s: sell %d > ingredients buy %d", r.ID, got, buy)
+		}
+	}
+}

@@ -33,11 +33,14 @@ trần, nhưng phải an toàn với int64 (dừng khi vượt `math.MaxInt64/2`
 | Bán giá cao hơn `sell_pct` | 2% × (lv − 1) | 40% (cấp 21) |
 
 - Giá mua ở chợ là 150% giá bán cơ bản, nên bán thêm tối đa 40% vẫn thấp hơn giá mua: không có lãi khi mua đi bán lại.
+- `sell_pct` chỉ áp dụng cho nông sản (`crop`) và sản phẩm chăn nuôi (`product`), **không bao giờ** cho món chế biến (`goods`), vốn bán đúng giá gốc. Lý do: chặn vòng lặp mua nguyên liệu ở chợ → chế biến → bán (salad, bắp rang, cơm nắm có lợi nhuận gốc bằng 0, cộng 40% là có lãi).
+- Đặc quyền cố ý nhân lợi nhuận sản xuất của chính mình (hạt giống → thu hoạch → bán, thức ăn → sản phẩm). Đây là phần thưởng của cấp cao, bị giới hạn bởi số ô đất, sức chứa kho và thời gian lớn. Đảm bảo không có lãi chỉ áp dụng cho việc mua đi bán lại ở chợ.
+- Tưới nước vẫn rút ngắn theo `GrowSec/10` gốc (không theo `grow_pct`).
 - Áp dụng:
   - lúc **gieo**: `ready = now + GrowSec × (100 − grow_pct) / 100`;
   - lúc **cho vật nuôi ăn**, mọi đường: cho từng con, cho tất cả, chăm cả chuồng;
   - lúc **chủ vườn thu hoạch**: cộng `harvest_bonus` vào số đơn vị (người trộm không được hưởng);
-  - lúc **bán ở kho** (`FarmSell`): `price × (100 + sell_pct) / 100`, làm tròn xuống. Giao đơn hàng không đổi.
+  - lúc **bán ở kho** (`FarmSell`): `price × (100 + sell_pct) / 100`, làm tròn xuống, chỉ cho `crop`/`product` (`goods` bán giá gốc). Giao đơn hàng không đổi.
 - Đặc quyền tính theo cấp **tại thời điểm hành động**: cây đã gieo không đổi giờ chín.
 
 **API:** `FarmView` thêm `perks: {grow_pct, animal_pct, harvest_bonus, sell_pct}` và `next_perks`

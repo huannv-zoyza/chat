@@ -117,3 +117,26 @@ func TestFarmSellBonus(t *testing.T) {
 		t.Fatalf("level 1: %v %+v", err, res.Gained)
 	}
 }
+
+// Món chế biến bán đúng giá gốc dù cấp cao; nông sản cùng cấp vẫn được thưởng (cả bán lẻ lẫn bán hết).
+func TestFarmSellGoodsNoBonus(t *testing.T) {
+	e := newFarmEnv(t)
+	alice := e.user("alice")
+	e.setXP(alice.ID, 2480) // cấp 11: +20%
+	e.setStock(alice.ID, "salad", 2)
+	e.setStock(alice.ID, "ca_rot", 3)
+	res, err := e.st.FarmSell(e.ctx, alice.ID, "salad", 2, false)
+	if err != nil || res.Gained.Xu != 120 {
+		t.Fatalf("goods: %v %+v", err, res.Gained)
+	}
+	res, err = e.st.FarmSell(e.ctx, alice.ID, "ca_rot", 3, false)
+	if err != nil || res.Gained.Xu != 10*3*120/100 {
+		t.Fatalf("crop: %v %+v", err, res.Gained)
+	}
+	e.setStock(alice.ID, "salad", 2)
+	e.setStock(alice.ID, "ca_rot", 3)
+	res, err = e.st.FarmSell(e.ctx, alice.ID, "", 0, true)
+	if want := int64(120 + 10*3*120/100); err != nil || res.Gained.Xu != want {
+		t.Fatalf("all: %v %+v want %d", err, res.Gained, want)
+	}
+}

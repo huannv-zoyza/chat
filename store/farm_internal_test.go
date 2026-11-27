@@ -31,7 +31,7 @@ func TestDailyQuestsDeterministic(t *testing.T) {
 }
 
 func TestLevelFor(t *testing.T) {
-	for xp, want := range map[int64]int{0: 1, 29: 1, 30: 2, 79: 2, 80: 3, 1899: 9, 1900: 10, 99999: 10} {
+	for xp, want := range map[int64]int{0: 1, 29: 1, 30: 2, 79: 2, 80: 3, 1899: 9, 1900: 10, 2479: 10, 2480: 11} {
 		if got := levelFor(xp); got != want {
 			t.Fatalf("levelFor(%d) = %d, want %d", xp, got, want)
 		}

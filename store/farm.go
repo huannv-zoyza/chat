@@ -50,9 +50,6 @@ func cropByID(id string) (Crop, bool) {
 	return Crop{}, false
 }
 
-// LevelXP[n-1]: tổng XP cần để đạt cấp n (cấp 1..10).
-var LevelXP = []int64{0, 30, 80, 160, 280, 450, 680, 1000, 1400, 1900}
-
 const (
 	FarmStartPlots   = 6
 	FarmMaxPlots     = 20 // ô tối đa (bậc mở rộng cuối, xem ExpandPlots)
@@ -73,16 +70,6 @@ const (
 	FarmChestXP      = 20
 	FarmLogKeep      = 50
 )
-
-func levelFor(xp int64) int {
-	lv := 1
-	for i := 1; i < len(LevelXP); i++ {
-		if xp >= LevelXP[i] {
-			lv = i + 1
-		}
-	}
-	return lv
-}
 
 type questDef struct {
 	ID, Title    string
@@ -248,6 +235,8 @@ type FarmView struct {
 	XP          int64            `json:"xp"`
 	LevelXP     int64            `json:"level_xp"`
 	NextLevelXP *int64           `json:"next_level_xp"`
+	Perks       Perks            `json:"perks"`
+	NextPerks   Perks            `json:"next_perks"`
 	Plots       []Plot           `json:"plots"`
 	PlotCount   int              `json:"plot_count"`
 	MaxPlots    int              `json:"max_plots"`
@@ -678,7 +667,7 @@ func (s *Store) FarmPlant(ctx context.Context, userID int64, idx int, cropID str
 		bug := s.rand() < FarmBugChance
 		if _, err := op.tx.ExecContext(ctx, `
 			INSERT INTO farm_plots (user_id, idx, crop, planted_at, ready_at, bug) VALUES (?, ?, ?, ?, ?, ?)`,
-			userID, idx, c.ID, op.unix(), op.unix()+c.GrowSec, bug); err != nil {
+			userID, idx, c.ID, op.unix(), op.unix()+c.GrowSec*int64(100-farmPerks(levelFor(f.XP)).GrowPct)/100, bug); err != nil {
 			return err
 		}
 		if err := op.bump(userID, "plant", 1); err != nil {
@@ -692,9 +681,10 @@ func (s *Store) FarmPlant(ctx context.Context, userID int64, idx int, cropID str
 	return res, err
 }
 
-// harvestUnits: số đơn vị nông sản một vụ chín cho vào kho: 3 (còn sâu: 2) trừ phần bị trộm, tối thiểu 1.
-func harvestUnits(p *plotRow) int64 {
-	u := int64(FarmHarvestUnits)
+// harvestUnits: số đơn vị nông sản một vụ chín cho vào kho: 3 (còn sâu: 2) cộng thưởng cấp của chủ,
+// trừ phần bị trộm, tối thiểu 1.
+func harvestUnits(p *plotRow, bonus int64) int64 {
+	u := int64(FarmHarvestUnits) + bonus
 	if p.Bug {
 		u--
 	}
@@ -741,11 +731,16 @@ func (s *Store) FarmHarvest(ctx context.Context, userID int64, idx int, all bool
 		if err != nil {
 			return err
 		}
+		f, err := ensureFarm(ctx, op.tx, userID)
+		if err != nil {
+			return err
+		}
+		bonus := farmPerks(levelFor(f.XP)).HarvestBonus
 		var xp, n int64
 		items := map[string]int64{}
 		for i := range ripe {
 			p := &ripe[i]
-			u := harvestUnits(p)
+			u := harvestUnits(p, bonus)
 			if u > room {
 				continue
 			}
@@ -1235,15 +1230,13 @@ func (s *Store) GetFarm(ctx context.Context, ownerID, viewerID int64) (FarmView,
 		return FarmView{}, err
 	}
 	lv := levelFor(f.XP)
+	next := levelXP(lv + 1)
 	v := FarmView{
-		User: owner, Me: me, Level: lv, XP: f.XP, LevelXP: LevelXP[lv-1],
+		User: owner, Me: me, Level: lv, XP: f.XP, LevelXP: levelXP(lv), NextLevelXP: &next,
+		Perks: farmPerks(lv), NextPerks: farmPerks(lv + 1),
 		PlotCount: f.Plots, MaxPlots: FarmMaxPlots, Crops: Crops,
 		Now:        rfc(now),
 		StealsLeft: int(max(0, FarmStealsPerDay-tries)),
-	}
-	if lv < len(LevelXP) {
-		next := LevelXP[lv]
-		v.NextLevelXP = &next
 	}
 	v.Expansion = expansionOf(f.Plots)
 	if n := v.Expansion.Next; n != nil {

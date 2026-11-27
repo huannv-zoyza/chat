@@ -334,6 +334,11 @@ func (s *Store) FarmSell(ctx context.Context, userID int64, itemID string, qty i
 	res.Wallets, err = s.farmTx(ctx, func(op *farmOp) error {
 		var total int64
 		var note string
+		f, err := ensureFarm(ctx, op.tx, userID)
+		if err != nil {
+			return err
+		}
+		pct := int64(100 + farmPerks(levelFor(f.XP)).SellPct) // thưởng giá bán theo cấp
 		if all {
 			stock, err := loadStock(ctx, op.tx, userID)
 			if err != nil {
@@ -347,7 +352,7 @@ func (s *Store) FarmSell(ctx context.Context, userID int64, itemID string, qty i
 				if _, err := op.takeStock(userID, it.ID, n); err != nil {
 					return err
 				}
-				total += it.Price * n
+				total += it.Price * n * pct / 100
 			}
 			if total == 0 {
 				return ErrFarmStockEmpty
@@ -366,7 +371,7 @@ func (s *Store) FarmSell(ctx context.Context, userID int64, itemID string, qty i
 			} else if !ok {
 				return farmErr("Trong kho không đủ %d %s để bán.", qty, it.Name)
 			}
-			total = it.Price * qty
+			total = it.Price * qty * pct / 100
 			note = fmt.Sprintf("Bán %d %s", qty, it.Name)
 		}
 		if err := op.earn(userID, total, note); err != nil {
@@ -642,9 +647,14 @@ func (s *Store) FarmBuyAnimal(ctx context.Context, userID int64, kind string) (F
 }
 
 // startProducing: con vật a vừa được cho ăn, bắt đầu làm sản phẩm (chín sau Kind.TimeSec).
-func (op *farmOp) startProducing(a *animalRow, now int64) error {
-	a.Ready = now + a.Kind.TimeSec
-	_, err := op.tx.ExecContext(op.ctx, `UPDATE farm_animals SET ready_at = ? WHERE id = ?`, a.Ready, a.ID)
+// Thời gian rút ngắn theo cấp hiện tại của chủ (animal_pct).
+func (op *farmOp) startProducing(userID int64, a *animalRow, now int64) error {
+	f, err := ensureFarm(op.ctx, op.tx, userID)
+	if err != nil {
+		return err
+	}
+	a.Ready = now + a.Kind.TimeSec*int64(100-farmPerks(levelFor(f.XP)).AnimalPct)/100
+	_, err = op.tx.ExecContext(op.ctx, `UPDATE farm_animals SET ready_at = ? WHERE id = ?`, a.Ready, a.ID)
 	return err
 }
 
@@ -690,7 +700,7 @@ func (s *Store) FarmFeed(ctx context.Context, userID, id int64, all bool) (FarmR
 			if err != nil || !ok {
 				return false, err
 			}
-			return true, op.startProducing(a, now)
+			return true, op.startProducing(userID, a, now)
 		}
 		if !all {
 			for i := range animals {
@@ -909,7 +919,7 @@ func (s *Store) FarmTend(ctx context.Context, userID int64, building string) (Fa
 				}
 				stock[k.Feed] -= take
 			}
-			if err := op.startProducing(a, now); err != nil {
+			if err := op.startProducing(userID, a, now); err != nil {
 				return err
 			}
 			g.Fed++

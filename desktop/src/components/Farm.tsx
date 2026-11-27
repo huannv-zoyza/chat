@@ -59,6 +59,7 @@ import {
   type FarmAutoSettings,
 } from "../lib/farmAuto";
 import { playCoinSound } from "../lib/sound";
+import { getXmasMusicPref, setXmasMusicPref, startXmasMusic, stopXmasMusic } from "../lib/xmasMusic";
 import { useChat } from "../state/ChatProvider";
 import { Emo, emo } from "./Emoji";
 import { FarmWorld } from "./FarmWorld";
@@ -166,6 +167,14 @@ function Farm() {
   const [sockOpen, setSockOpen] = useState(false);
   const [treeOpen, setTreeOpen] = useState(false);
   const [santaOpen, setSantaOpen] = useState(false);
+  // nhạc Noel: chỉ khi đang sự kiện và người chơi bật (nhớ lựa chọn); tắt khi rời nông trại
+  const [music, setMusic] = useState(getXmasMusicPref);
+  const xmasOn = !!mine?.xmas?.on;
+  useEffect(() => {
+    if (!xmasOn || !music) return;
+    startXmasMusic();
+    return stopXmasMusic;
+  }, [xmasOn, music]);
   const eveGift = () =>
     void act(-1, () => api.farmXmasEveGift(), (f) =>
       showReveal({
@@ -739,6 +748,21 @@ function Farm() {
             </div>
           )}
           <div className="farm-hud-right">
+            {xmasOn && (
+              <button
+                type="button"
+                className="farm-home"
+                aria-pressed={music}
+                onClick={() => {
+                  setMusic(!music);
+                  setXmasMusicPref(!music);
+                }}
+                title={music ? "Tắt nhạc Noel" : "Bật nhạc Noel"}
+                aria-label={music ? "Tắt nhạc Noel" : "Bật nhạc Noel"}
+              >
+                <Emo e={music ? "🎵" : "🔇"} />
+              </button>
+            )}
             {mine?.wallet && (
               <span className="farm-coins" title="Số xu của bạn">
                 <span aria-hidden><Emo e="🪙" /></span>
@@ -1392,6 +1416,15 @@ function Farm() {
                   onSantaSend={() => setSantaOpen(true)}
                   onSantaOpen={() =>
                     void act(-1, () => api.farmXmasSantaOpen(), (f) => {
+                      if (f.gained?.santa_fallback)
+                        return showReveal({
+                          box: "🎅",
+                          title: "Quà bù của Ông già Noel",
+                          prizes: [
+                            { emoji: "🍬", label: `${f.gained.candy ?? 0} Kẹo Noel`, sub: "Ông già Noel bí mật của bạn bận quá, Ông già Noel gửi bù!" },
+                            { emoji: "🪙", label: `${f.gained.xu} xu` },
+                          ],
+                        });
                       const r = socksReveal(f);
                       return showReveal(
                         r && {
@@ -4272,6 +4305,34 @@ function XmasPanel({
           <button type="button" className="btn btn-primary" disabled={busy || x.candy < x.box_cost} onClick={onBox}>
             Mở hộp · {x.box_cost} <Emo e="🍬" />
           </button>
+        </>
+      )}
+
+      {x.on && (
+        <>
+          <h4>
+            <Emo e="📊" /> Cả nhóm chơi Noel
+          </h4>
+          <div className="xmas-stats">
+            {(
+              [
+                ["👥", "người chơi", x.stats.players_today, x.stats.players],
+                ["⛄", "cầu tuyết", x.stats.today.snowballs ?? 0, x.stats.total.snowballs ?? 0],
+                ["🧦", "tất Noel", x.stats.today.socks ?? 0, x.stats.total.socks ?? 0],
+                ["🎅", "đơn Noel", x.stats.today.orders ?? 0, x.stats.total.orders ?? 0],
+                ["🎁", "quà nhặt", x.stats.today.drops ?? 0, x.stats.total.drops ?? 0],
+                ["📦", "hộp bí ẩn", x.stats.today.boxes ?? 0, x.stats.total.boxes ?? 0],
+              ] as const
+            ).map(([e, label, today, total]) => (
+              <div key={label}>
+                <Emo e={e} />
+                <b>{today}</b>
+                <small>
+                  {label} hôm nay · {total} cả mùa
+                </small>
+              </div>
+            ))}
+          </div>
         </>
       )}
 

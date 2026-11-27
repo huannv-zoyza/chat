@@ -663,6 +663,11 @@ export function createApi({ serverUrl, token, onUnauthorized }: Options) {
     farmXmasSantaOpen: () => request<import("./farm").FarmView>("POST", "/api/farm/xmas/santa/open"),
     farmXmasMilestone: (n: number) => request<import("./farm").FarmView>("POST", `/api/farm/xmas/milestones/${n}/claim`),
     farmXmasEveGift: () => request<import("./farm").FarmView>("POST", "/api/farm/xmas/eve-gift"),
+    farmXmasInbox: (since: number) =>
+      request<{ items: { id: number; at: string; kind: string; text: string; from_id?: number }[]; last: number }>(
+        "GET",
+        `/api/farm/xmas/inbox?since=${since}`,
+      ),
     farmXmasDailyGift: () => request<import("./farm").FarmView>("POST", "/api/farm/xmas/daily-gift"),
     farmXmasTop: () => request<import("./farm").XmasTopRow[]>("GET", "/api/farm/xmas/top"),
     farmCraft: (recipe: string) => request<import("./farm").FarmView>("POST", "/api/farm/craft", { recipe }),

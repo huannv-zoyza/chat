@@ -581,3 +581,17 @@ quà ở vườn mình bị nhặt. Tất đang treo hiện trên dây kim tuy�
 
 Sau sự kiện: đồ trang trí Noel (`farm_xmas_decor`) vẫn hiện trên bản đồ vĩnh viễn (chiến tích). Tab Noel ẩn khi hết
 hạn cửa hàng, trừ khi còn tất hoặc quà Ông già Noel bí mật chưa mở.
+
+### 16d. Bổ sung (`store/farm_xmas_extras.go`, migration 000037)
+
+- **Quà bù Ông già Noel bí mật**: tới đêm Noel mà người tặng chưa gửi thì người nhận vẫn mở được quà bù (10 kẹo + 5
+  kẹo mở quà, 200 xu). Tin báo chỉ nói "Ông già Noel đã gửi bù", không nêu tên người quên.
+- **Thống kê theo ngày** (`farm_xmas_stats`, `farm_xmas_active`): mỗi hành động sự kiện +1 (đơn Noel, cầu tuyết, tất,
+  nhặt quà, hộp bí ẩn, góp cây, quà bí mật, quà dưới gốc cây) và ghi người chơi trong ngày. `xmas.stats` trong
+  FarmView; tab Noel có mục "Cả nhóm chơi Noel" (hôm nay / cả mùa).
+- **Tin cho người offline** (`farm_xmas_news`, giữ 300 tin): mọi tin chung và tin riêng đều lưu (tin chung có `skip`
+  là những người đã có tin riêng / tự làm). `GET /api/farm/xmas/inbox?since=N` trả tin trong 2 ngày gần nhất; sự
+  kiện websocket kèm `id` để client đánh dấu đã xem. Mở app: thẻ "Trong lúc bạn vắng mặt" (tối đa 6 dòng); lần đầu
+  trên máy chỉ lấy mốc, không dội tin cũ.
+- **Nhạc Noel**: giai điệu Jingle Bells (dân gian) bằng tiếng chuông WebAudio, nhỏ, lặp; mặc định tắt, nút 🎵/🔇 trên
+  thanh trên nông trại, nhớ lựa chọn; tắt khi rời nông trại hoặc hết sự kiện.

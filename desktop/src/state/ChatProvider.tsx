@@ -633,11 +633,11 @@ export function ChatProvider({ api, serverUrl, token, me, onLogout, onUnauthoriz
       sock.on("farm.market", () => farmMarketEvents.emit()),
       sock.on("farm.xmas", (ev) => {
         // tin Noel chung hiện ở khung XmasNotice (nổi trên cả chat lẫn nông trại); except: người đã có tin riêng
-        if (ev.text && !ev.except?.includes(me.id)) farmXmasPokes.emit({ kind: "news", text: ev.text });
+        if (ev.text && !ev.except?.includes(me.id)) farmXmasPokes.emit({ kind: "news", text: ev.text, id: ev.id });
         farmXmasEvents.emit();
       }),
       sock.on("farm.xmas_me", (ev) => {
-        farmXmasPokes.emit({ kind: ev.kind, text: ev.text, from_id: ev.from_id });
+        farmXmasPokes.emit({ kind: ev.kind, text: ev.text, from_id: ev.from_id, id: ev.id });
         farmXmasEvents.emit();
       }),
       sock.on("nickname.updated", (ev) =>

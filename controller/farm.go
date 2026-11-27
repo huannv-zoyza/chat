@@ -69,6 +69,7 @@ import (
 //	POST /api/farm/xmas/santa/open                    mở quà bí mật (từ đêm Noel)
 //	POST /api/farm/xmas/milestones/{n}/claim          nhận quà mốc kẹo cá nhân
 //	POST /api/farm/xmas/eve-gift                      nhận quà đêm Noel
+//	GET  /api/farm/xmas/inbox?since=N                 tin Noel đã lỡ (tin chung + tin riêng, 2 ngày gần nhất)
 //
 // Tin sự kiện (nhặt quà, trúng đồ hiếm, cây chung lên mốc, quà vừa thả) bắn farm.xmas {text} tới mọi người.
 //
@@ -168,10 +169,15 @@ func (a *API) farmRespond(w http.ResponseWriter, r *http.Request, res store.Farm
 		a.hub.ToAll(mustJSON(map[string]string{"type": "farm.xmas"})) // không text: chỉ tải lại
 	}
 	for _, p := range res.Pokes {
+		id, err := a.store.AddXmasNews(r.Context(), p.UserID, p.Kind, p.Text, p.From, nil)
+		if err != nil {
+			log.Printf("xmas poke: %v", err)
+		}
 		a.hub.ToUser(p.UserID, mustJSON(struct {
 			Type string `json:"type"`
 			store.XmasPoke
-		}{"farm.xmas_me", p}))
+			ID int64 `json:"id,omitempty"`
+		}{"farm.xmas_me", p, id}))
 	}
 	v, err := a.store.GetFarm(r.Context(), res.OwnerID, me)
 	if err != nil {
@@ -621,11 +627,17 @@ func (a *API) farmXmasOpenSocks(w http.ResponseWriter, r *http.Request) {
 
 // farmXmasNews báo cả server tin Giáng sinh; except: id những người client tự bỏ qua (đã có tin riêng).
 func (a *API) farmXmasNews(text string, except ...int64) {
+	// lưu lại để người đang offline vào sau vẫn xem được (lỗi lưu không chặn việc báo)
+	id, err := a.store.AddXmasNews(context.Background(), 0, "news", text, 0, except)
+	if err != nil {
+		log.Printf("xmas news: %v", err)
+	}
 	a.hub.ToAll(mustJSON(struct {
 		Type   string  `json:"type"`
 		Text   string  `json:"text"`
 		Except []int64 `json:"except,omitempty"`
-	}{"farm.xmas", text, except}))
+		ID     int64   `json:"id,omitempty"`
+	}{"farm.xmas", text, except, id}))
 }
 
 func (a *API) farmXmasSnowball(w http.ResponseWriter, r *http.Request) {
@@ -670,6 +682,20 @@ func (a *API) farmXmasTreeClaim(w http.ResponseWriter, r *http.Request) {
 func (a *API) farmXmasDailyGift(w http.ResponseWriter, r *http.Request) {
 	res, err := a.store.FarmXmasDailyGift(r.Context(), currentUser(r).ID)
 	a.farmRespond(w, r, res, err)
+}
+
+// farmXmasInbox: tin Noel từ sau id since (?since=N; thiếu hoặc âm: chỉ trả last để đánh dấu đã xem).
+func (a *API) farmXmasInbox(w http.ResponseWriter, r *http.Request) {
+	since, err := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
+	if err != nil {
+		since = -1
+	}
+	items, last, err := a.store.XmasInbox(r.Context(), currentUser(r).ID, since)
+	if err != nil {
+		internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "last": last})
 }
 
 func (a *API) farmXmasTop(w http.ResponseWriter, r *http.Request) {

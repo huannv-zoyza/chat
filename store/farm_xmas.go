@@ -153,6 +153,7 @@ type XmasView struct {
 	DailyGift     bool           `json:"daily_gift"`     // quà dưới gốc cây hôm nay chưa mở
 	ShopLeft      map[string]int `json:"shop_left"`      // món giới hạn mỗi ngày: còn đổi được mấy lần
 	TreeVouchers  int64          `json:"tree_vouchers"`  // phiếu cây giống đang có
+	Stats         XmasStats      `json:"stats"`          // thống kê sự kiện (cả nhóm)
 	// Cao trào (farm_xmas_finale.go)
 	SpecialDecors []XmasDecor         `json:"special_decors"`
 	Milestones    []XmasMilestoneView `json:"milestones"`
@@ -403,6 +404,9 @@ func (s *Store) FarmXmasDeliver(ctx context.Context, userID int64, slot int) (Fa
 		if err := op.bump(userID, "order", 1); err != nil {
 			return err
 		}
+		if err := op.xmasStat(userID, StatOrders); err != nil {
+			return err
+		}
 		lv, err := op.addXP(userID, o.XP)
 		if err != nil {
 			return err
@@ -537,6 +541,9 @@ func (s *Store) FarmXmasSock(ctx context.Context, fromID, toID int64, itemID str
 		if _, err := op.tx.ExecContext(ctx,
 			`INSERT INTO farm_xmas_socks (from_id, to_id, day, item, qty) VALUES (?, ?, ?, ?, ?)`,
 			fromID, toID, op.day, it.ID, qty); err != nil {
+			return err
+		}
+		if err := op.xmasStat(fromID, StatSocks); err != nil {
 			return err
 		}
 		candy, err := op.addCandy(fromID, XmasSockCandy)
@@ -683,11 +690,11 @@ func (s *Store) fillXmas(ctx context.Context, v *FarmView, ownerID, viewerID int
 	if !xmasShopOpen(day) && ready == 0 {
 		// hết sự kiện vẫn hiện tab Noel nếu còn quà Ông già Noel bí mật chưa mở
 		var santa int
-		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM farm_xmas_santa WHERE target_id = ? AND sent_at > 0 AND opened = 0`,
+		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM farm_xmas_santa WHERE target_id = ? AND opened = 0`,
 			ownerID).Scan(&santa); err != nil {
 			return err
 		}
-		if santa == 0 || now.Before(xmasEveTime()) {
+		if santa == 0 || now.Before(xmasEveTime()) { // santa đếm cả quà bù (người tặng quên gửi)
 			return nil
 		}
 	}

@@ -100,6 +100,9 @@ func (s *Store) FarmXmasSnowball(ctx context.Context, fromID, toID int64) (FarmR
 		if err := op.bump(fromID, snowTryKey, 1); err != nil {
 			return err
 		}
+		if err := op.xmasStat(fromID, StatSnowballs); err != nil {
+			return err
+		}
 		hit := s.rand() < XmasSnowHitChance
 		if _, err := op.tx.ExecContext(ctx, `INSERT INTO farm_xmas_snowballs (from_id, to_id, at, hit) VALUES (?, ?, ?, ?)`,
 			fromID, toID, now, hit); err != nil {
@@ -283,6 +286,9 @@ func (s *Store) FarmXmasClaimDrop(ctx context.Context, userID, dropID int64) (Fa
 		if n, _ := r.RowsAffected(); n == 0 {
 			return ErrXmasDropGone
 		}
+		if err := op.xmasStat(userID, StatDrops); err != nil {
+			return err
+		}
 		g := &Gained{Xu: XmasDropXu}
 		if g.Candy, err = op.addCandy(userID, XmasDropCandy); err != nil {
 			return err
@@ -378,6 +384,9 @@ func (s *Store) FarmXmasDailyGift(ctx context.Context, userID int64) (FarmResult
 		if n, _ := r.RowsAffected(); n == 0 {
 			return ErrXmasGiftTaken
 		}
+		if err := op.xmasStat(userID, StatGifts); err != nil {
+			return err
+		}
 		g := &Gained{}
 		base := int64(XmasDailyGiftMin + s.randN(XmasDailyGiftMax-XmasDailyGiftMin+1))
 		if g.Candy, err = op.addCandy(userID, base); err != nil {
@@ -458,6 +467,9 @@ func (s *Store) FarmXmasBox(ctx context.Context, userID int64) (FarmResult, erro
 			return ErrXmasShopOff
 		}
 		if err := op.spendCandy(userID, XmasBoxCost); err != nil {
+			return err
+		}
+		if err := op.xmasStat(userID, StatBoxes); err != nil {
 			return err
 		}
 		roll := s.rand()
@@ -611,6 +623,9 @@ func (s *Store) FarmXmasTreeDonate(ctx context.Context, userID int64, itemID str
 			return err
 		} else if !ok {
 			return farmErr("Trong kho không đủ %d %s để góp.", qty, it.Name)
+		}
+		if err := op.xmasStat(userID, StatTree); err != nil {
+			return err
 		}
 		before, err := xmasTreeTotal(ctx, op.tx)
 		if err != nil {
@@ -885,6 +900,9 @@ func (s *Store) fillXmasMine(ctx context.Context, x *XmasView, ownerID int64, no
 		}
 	}
 	if x.TreeVouchers, err = counter(ctx, s.db, ownerID, xmasVoucherDay, treeVoucherKey); err != nil {
+		return err
+	}
+	if x.Stats, err = xmasStats(ctx, s.db, day); err != nil {
 		return err
 	}
 	return s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(earned), 0) FROM farm_xmas WHERE user_id = ?`, ownerID).

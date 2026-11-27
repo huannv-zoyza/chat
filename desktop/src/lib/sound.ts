@@ -9,7 +9,7 @@ export const setSoundMessagesPref = (v: boolean) => save("soundMessages", v);
 let audioCtx: AudioContext | null = null;
 let lastMessageSoundTime = 0;
 
-function getAudioContext(): AudioContext | null {
+export function getAudioContext(): AudioContext | null {
   if (typeof window === "undefined") return null;
   const AudioContextClass =
     window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;

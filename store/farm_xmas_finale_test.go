@@ -249,8 +249,15 @@ func TestFarmXmasAfterEvent(t *testing.T) {
 	if d := e.view(a.ID, b.ID).XmasDecor; len(d) != 1 || d[0] != "star" {
 		t.Fatalf("decor gone after event: %v", d)
 	}
+	// binh không gửi quà cho an: an vẫn có quà bù để mở, tab Noel hiện; mở xong thì ẩn
+	if x := e.view(a.ID, a.ID).Xmas; x == nil || !x.Santa.GiftReady {
+		t.Fatalf("fallback gift hidden after event: %+v", x)
+	}
+	if res, err := e.st.FarmXmasSantaOpen(e.ctx, a.ID); err != nil || !res.Gained.SantaFallback {
+		t.Fatalf("fallback after event %v %+v", err, res)
+	}
 	if e.view(a.ID, a.ID).Xmas != nil {
-		t.Fatal("xmas tab should be hidden for a (nothing to open)")
+		t.Fatal("xmas tab should be hidden for a after opening")
 	}
 	// b chưa mở quà bí mật: tab Noel vẫn hiện để mở
 	x := e.view(b.ID, b.ID).Xmas

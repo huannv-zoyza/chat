@@ -16032,6 +16032,13 @@ button.villager:focus-visible .villager-name {
   flex: 1;
   margin: 0;
 }
+.xmas-notice-lines {
+  margin: 0 0 6px;
+  padding-left: 18px;
+  font-size: 14px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
 .xmas-notice-actions {
   display: flex;
   gap: 6px;
@@ -16054,6 +16061,29 @@ button.villager:focus-visible .villager-name {
 }
 .xmas-santa p {
   margin: 4px 0;
+}
+
+.xmas-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+  margin: 6px 0 10px;
+}
+.xmas-stats > div {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 6px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.6);
+}
+.xmas-stats b {
+  font-size: 18px;
+}
+.xmas-stats small {
+  grid-column: 1 / -1;
+  opacity: 0.75;
 }
 
 /* Giới thiệu sự kiện Giáng sinh */

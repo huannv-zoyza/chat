@@ -27,16 +27,19 @@ var (
 )
 
 const (
-	XmasSantaMaxQty     = 10
-	XmasSantaSendCandy  = 5 // người gửi quà bí mật
-	XmasSantaOpenCandy  = 5 // người mở quà bí mật
-	XmasEveCandy        = 20
-	XmasEveXu           = 300
-	xmasMetaDrawn       = "santa_drawn"
-	xmasMetaEve         = "eve_announced"
-	xmasEveClaimQuest   = "eve"
-	xmasMilestoneQuest  = "ms%d"
-	xmasSantaEveDecorID = "bell"
+	XmasSantaMaxQty    = 10
+	XmasSantaSendCandy = 5 // người gửi quà bí mật
+	XmasSantaOpenCandy = 5 // người mở quà bí mật
+	XmasEveCandy       = 20
+	XmasEveXu          = 300
+	// Quà bù: người tặng quên gửi tới đêm Noel thì người nhận vẫn mở được quà của "Ông già Noel".
+	XmasSantaFallbackCandy = 10
+	XmasSantaFallbackXu    = 200
+	xmasMetaDrawn          = "santa_drawn"
+	xmasMetaEve            = "eve_announced"
+	xmasEveClaimQuest      = "eve"
+	xmasMilestoneQuest     = "ms%d"
+	xmasSantaEveDecorID    = "bell"
 )
 
 var (
@@ -331,6 +334,9 @@ func (s *Store) FarmXmasSantaSend(ctx context.Context, userID int64, itemID stri
 			it.ID, qty, op.unix(), userID); err != nil {
 			return err
 		}
+		if err := op.xmasStat(userID, StatSanta); err != nil {
+			return err
+		}
 		g := &Gained{}
 		if g.Candy, err = op.addCandy(userID, XmasSantaSendCandy); err != nil {
 			return err
@@ -355,16 +361,35 @@ func (s *Store) FarmXmasSantaOpen(ctx context.Context, userID int64) (FarmResult
 		if op.now.Before(xmasEveTime()) {
 			return ErrXmasSantaEarly
 		}
-		var from, qty int64
+		var from, qty, sentAt int64
 		var item string
 		err := op.tx.QueryRowContext(ctx, `
-			SELECT user_id, item, qty FROM farm_xmas_santa WHERE target_id = ? AND sent_at > 0 AND opened = 0`, userID).
-			Scan(&from, &item, &qty)
+			SELECT user_id, item, qty, sent_at FROM farm_xmas_santa WHERE target_id = ? AND opened = 0`, userID).
+			Scan(&from, &item, &qty, &sentAt)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrXmasSantaNoGift
 		}
 		if err != nil {
 			return err
+		}
+		if sentAt == 0 { // người tặng quên gửi: Ông già Noel gửi bù, không nêu tên ai quên
+			if _, err := op.tx.ExecContext(ctx, `UPDATE farm_xmas_santa SET opened = 1 WHERE user_id = ?`, from); err != nil {
+				return err
+			}
+			g := &Gained{Xu: XmasSantaFallbackXu, SantaFallback: true}
+			if g.Candy, err = op.addCandy(userID, XmasSantaFallbackCandy+XmasSantaOpenCandy); err != nil {
+				return err
+			}
+			if err := op.earn(userID, XmasSantaFallbackXu, "Quà bù của Ông già Noel"); err != nil {
+				return err
+			}
+			me, err := farmUser(ctx, op.tx, userID)
+			if err != nil {
+				return err
+			}
+			res.News = fmt.Sprintf("🎅 Ông già Noel đã gửi bù quà bí mật cho %s!", userLabel(me))
+			res.Gained = g
+			return nil
 		}
 		if room, err := op.storageRoom(userID); err != nil {
 			return err
@@ -647,8 +672,8 @@ func (s *Store) fillXmasFinale(ctx context.Context, x *XmasView, ownerID int64, 
 		}
 	}
 	if !now.Before(eve) {
-		var n int
-		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM farm_xmas_santa WHERE target_id = ? AND sent_at > 0 AND opened = 0`,
+		var n int // từ đêm Noel: quà đã gửi, hoặc quà bù nếu người tặng quên
+		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM farm_xmas_santa WHERE target_id = ? AND opened = 0`,
 			ownerID).Scan(&n); err != nil {
 			return err
 		}

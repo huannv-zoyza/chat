@@ -171,6 +171,7 @@ func (a *API) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("POST /api/farm/xmas/santa/open", a.requireAuth(a.farmXmasSantaOpen))
 	mux.HandleFunc("POST /api/farm/xmas/milestones/{n}/claim", a.requireAuth(a.farmXmasMilestone))
 	mux.HandleFunc("POST /api/farm/xmas/eve-gift", a.requireAuth(a.farmXmasEveGift))
+	mux.HandleFunc("GET /api/farm/xmas/inbox", a.requireAuth(a.farmXmasInbox))
 	mux.HandleFunc("POST /api/farm/buy-dog", a.requireAuth(a.farmBuyDog))
 	mux.HandleFunc("POST /api/farm/quests/{questId}/claim", a.requireAuth(a.farmClaimQuest))
 	mux.HandleFunc("POST /api/wallet/transfer", a.requireAuth(a.transferCoins))

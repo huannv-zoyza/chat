@@ -251,6 +251,8 @@ type Gained struct {
 	Socks []XmasSock `json:"socks,omitempty"`
 	Snow  string     `json:"snow,omitempty"`  // cầu tuyết: hit | miss | revenge (ném trả)
 	Prize *XmasPrize `json:"prize,omitempty"` // hộp quà bí ẩn vừa mở
+	// quà Ông già Noel bí mật là quà bù (người tặng quên gửi)
+	SantaFallback bool `json:"santa_fallback,omitempty"`
 }
 
 type FarmView struct {

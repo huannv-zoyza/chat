@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { farmScreen, farmXmasPokes, type XmasPoke } from "../lib/farm";
+import { farmScreen, farmXmasPokes, useFarmOpen, type XmasPoke } from "../lib/farm";
 import { ApiError } from "../lib/api";
+import { load, save } from "../lib/storage";
 import { useChat } from "../state/ChatProvider";
 import { Icon } from "./ui";
 
@@ -12,22 +13,52 @@ import { Icon } from "./ui";
 type Item = XmasPoke & { id: number; done?: string; busy?: boolean };
 
 const SHOW_MS = 9000;
+const INBOX_MS = 25000; // thẻ "trong lúc bạn vắng mặt" để lâu hơn
 const MAX = 3;
+const INBOX_LINES = 6;
 let seq = 0;
 
 export function XmasNotice() {
-  const { api } = useChat();
+  const { api, state } = useChat();
   const [items, setItems] = useState<Item[]>([]);
+  const farmOpen = useFarmOpen(); // đang ở nông trại thì không cần nút "Xem vườn"
+  // mốc tin Noel đã xem (theo người dùng, trên máy này): tin mới hơn mà lúc đó offline thì hiện khi mở app
+  const seenKey = `farmXmasSeen.${state.me.id}`;
+
+  const push = (p: XmasPoke, ms = SHOW_MS) => {
+    const id = ++seq;
+    setItems((xs) => [...xs, { ...p, id }].slice(-MAX));
+    window.setTimeout(() => setItems((xs) => xs.filter((x) => x.id !== id)), ms);
+  };
 
   useEffect(
     () =>
       farmXmasPokes.on((p) => {
-        const id = ++seq;
-        setItems((xs) => [...xs, { ...p, id }].slice(-MAX));
-        window.setTimeout(() => setItems((xs) => xs.filter((x) => x.id !== id)), SHOW_MS);
+        if (p.id && p.id > load<number>(seenKey, 0)) save(seenKey, p.id);
+        push(p);
       }),
-    [],
+    [seenKey],
   );
+
+  // mở app: lấy tin Noel đã lỡ. Lần đầu trên máy này thì chỉ lấy mốc, không dội tin cũ.
+  useEffect(() => {
+    let alive = true;
+    const seen = load<number | null>(seenKey, null);
+    api
+      .farmXmasInbox(seen ?? -1)
+      .then(({ items: news, last }) => {
+        if (!alive) return;
+        save(seenKey, Math.max(last, load<number>(seenKey, 0)));
+        if (news.length === 0) return;
+        const lines = news.slice(0, INBOX_LINES).map((n) => n.text);
+        if (news.length > INBOX_LINES) lines.push(`… và ${news.length - INBOX_LINES} tin khác`);
+        push({ kind: "inbox", text: "🎄 Trong lúc bạn vắng mặt:", lines }, INBOX_MS);
+      })
+      .catch(() => {}); // ngoài sự kiện / lỗi mạng: bỏ qua
+    return () => {
+      alive = false;
+    };
+  }, [api, seenKey]);
 
   const patch = (id: number, p: Partial<Item>) => setItems((xs) => xs.map((x) => (x.id === id ? { ...x, ...p } : x)));
   const close = (id: number) => setItems((xs) => xs.filter((x) => x.id !== id));
@@ -56,13 +87,20 @@ export function XmasNotice() {
       {items.map((it) => (
         <div key={it.id} className={`xmas-notice-item is-${it.kind}`}>
           <p>{it.done ?? it.text}</p>
+          {it.lines && (
+            <ul className="xmas-notice-lines">
+              {it.lines.map((l, i) => (
+                <li key={i}>{l}</li>
+              ))}
+            </ul>
+          )}
           <div className="xmas-notice-actions">
             {it.kind === "snowball" && it.from_id && !it.done && (
               <button type="button" className="btn btn-sm btn-primary" disabled={it.busy} onClick={() => void throwBack(it)}>
                 ⛄ Ném trả
               </button>
             )}
-            {(it.kind === "sock" || it.kind === "drop_claimed" || it.done) && !farmScreen.get() && (
+            {(it.kind === "sock" || it.kind === "drop_claimed" || it.kind === "inbox" || it.done) && !farmOpen && (
               <button
                 type="button"
                 className="btn btn-sm"

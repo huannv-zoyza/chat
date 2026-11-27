@@ -134,6 +134,8 @@ export type FarmView = {
     snow?: "hit" | "miss" | "revenge";
     /** hộp quà bí ẩn vừa mở */
     prize?: XmasPrize;
+    /** quà Ông già Noel bí mật là quà bù (người tặng quên gửi) */
+    santa_fallback?: boolean;
     /** chăm nhanh cả chuồng: số con đã cho ăn, thức ăn tự mua, số con còn đói */
     fed?: number;
     bought?: Record<string, number>;
@@ -289,6 +291,8 @@ export type XmasView = {
   shop_left: Record<string, number>;
   /** phiếu cây giống Noel đang có (lần trồng kế tiếp miễn phí) */
   tree_vouchers: number;
+  /** thống kê sự kiện cả nhóm */
+  stats: { today: Record<string, number>; total: Record<string, number>; players_today: number; players: number };
   /** đồ trang trí độc quyền (mốc kẹo cuối, quà đêm Noel), không có trong hộp bí ẩn */
   special_decors: XmasDecor[];
   milestones: { need: number; prize: XmasPrize; claimed: boolean }[];
@@ -576,7 +580,7 @@ export const farmXmasEvents = {
 };
 
 /** Tin Giáng sinh báo riêng mình (bị ném tuyết, có tất mới, tất được mở, quà ở vườn bị nhặt). */
-export type XmasPoke = { kind: string; text: string; from_id?: number };
+export type XmasPoke = { kind: string; text: string; from_id?: number; id?: number; lines?: string[] };
 const pokeSubs = new Set<(p: XmasPoke) => void>();
 export const farmXmasPokes = {
   emit(p: XmasPoke) {

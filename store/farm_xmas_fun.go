@@ -565,7 +565,7 @@ const (
 )
 
 // XmasTreeGoals: các mốc điểm của cây thông chung.
-var XmasTreeGoals = []int64{3000, 10000, 25000, 50000}
+var XmasTreeGoals = []int64{8000, 25000, 60000, 125000} // sự kiện 36 ngày
 
 var (
 	ErrXmasTreeBadQty  = &FarmError{"Mỗi lần góp 1–50 món."}

@@ -142,7 +142,7 @@ func TestFarmXmasMilestones(t *testing.T) {
 	a, b := e.vet("an"), e.vet("binh")
 	_, err := e.st.FarmXmasMilestone(e.ctx, a.ID, 1)
 	wantErr(t, err, store.ErrXmasMilestoneNot)
-	if err := e.st.FarmSetXmasForTest(e.ctx, a.ID, 0, 400); err != nil {
+	if err := e.st.FarmSetXmasForTest(e.ctx, a.ID, 0, store.XmasMilestones[len(store.XmasMilestones)-1].Need); err != nil {
 		t.Fatal(err)
 	}
 	res, err := e.st.FarmXmasMilestone(e.ctx, a.ID, 1)
@@ -239,7 +239,7 @@ func TestFarmXmasAfterEvent(t *testing.T) {
 	if _, err := e.st.FarmXmasSantaSend(e.ctx, a.ID, "sua", 2); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.st.FarmSetXmasForTest(e.ctx, a.ID, 0, 400); err != nil {
+	if err := e.st.FarmSetXmasForTest(e.ctx, a.ID, 0, store.XmasMilestones[len(store.XmasMilestones)-1].Need); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := e.st.FarmXmasMilestone(e.ctx, a.ID, 4); err != nil { // 🌟 ngôi sao

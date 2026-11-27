@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -45,6 +46,18 @@ func (e *farmEnv) deliverAllXmas(id int64) int64 {
 		candy += res.Gained.Candy
 	}
 	return candy
+}
+
+// xuBagMax: số túi xu đổi được mỗi ngày (theo cấu hình XmasShop).
+func xuBagMax(t *testing.T) int {
+	t.Helper()
+	for _, r := range store.XmasShop {
+		if r.ID == "xu" {
+			return r.DailyMax
+		}
+	}
+	t.Fatal("no xu bag in shop")
+	return 0
 }
 
 func TestFarmXmasOffSeason(t *testing.T) {
@@ -125,15 +138,17 @@ func TestFarmXmasOrdersStreakShop(t *testing.T) {
 	}
 	_, err = e.st.FarmXmasBuy(e.ctx, alice.ID, "khong_co")
 	wantErr(t, err, store.ErrXmasNoReward)
-	// túi xu: tối đa 2 lần mỗi ngày (xu dùng chung với cả app)
-	if _, err := e.st.FarmXmasBuy(e.ctx, alice.ID, "xu"); err != nil {
-		t.Fatal(err)
+	// túi xu: giới hạn mỗi ngày (xu dùng chung với cả app)
+	for i := 1; i < xuBagMax(t); i++ {
+		if _, err := e.st.FarmXmasBuy(e.ctx, alice.ID, "xu"); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if left := e.view(alice.ID, alice.ID).Xmas.ShopLeft["xu"]; left != 0 {
 		t.Fatalf("xu bags left %d", left)
 	}
 	_, err = e.st.FarmXmasBuy(e.ctx, alice.ID, "xu")
-	wantMsg(t, err, "Hôm nay bạn đã đổi Túi 500 xu đủ 2 lần rồi, mai đổi tiếp nhé.")
+	wantMsg(t, err, fmt.Sprintf("Hôm nay bạn đã đổi Túi 500 xu đủ %d lần rồi, mai đổi tiếp nhé.", xuBagMax(t)))
 	if err := e.st.FarmSetXmasForTest(e.ctx, alice.ID, 0, 0); err != nil {
 		t.Fatal(err)
 	}
@@ -397,7 +412,7 @@ func TestFarmXmasTreeAndTop(t *testing.T) {
 	wantErr(t, err, store.ErrXmasTreeBadQty)
 	_, err = e.st.FarmXmasTreeClaim(e.ctx, alice.ID, 1)
 	wantErr(t, err, store.ErrXmasTreeNoGoal)
-	res, err := e.st.FarmXmasTreeDonate(e.ctx, alice.ID, "nam", 50) // 50 × 220 = 11000 điểm: qua 2 mốc
+	res, err := e.st.FarmXmasTreeDonate(e.ctx, alice.ID, "nam", 50) // 50 × 220 = 11000 điểm: qua mốc 1
 	// kẹo từ góp cây có trần mỗi ngày: kho to không đổi hết ra kẹo được
 	if err != nil || res.News == "" || res.Gained.Candy != store.XmasTreeCandyDay {
 		t.Fatalf("donate: %v %+v", err, res)
@@ -410,9 +425,17 @@ func TestFarmXmasTreeAndTop(t *testing.T) {
 	if x := e.view(alice.ID, alice.ID).Xmas; x.TreeCandyLeft != 0 || x.Tree.Mine != 11050 {
 		t.Fatalf("tree candy left %d mine %d", x.TreeCandyLeft, x.Tree.Mine)
 	}
-	e.setStock(alice.ID, "nam", 50) // cho lại để phần dưới giữ nguyên số
+	// góp thêm tới khi qua mốc 2 (mốc theo XmasTreeGoals)
+	total := int64(11050)
+	for total < store.XmasTreeGoals[1] {
+		e.setStock(alice.ID, "nam", 50)
+		if _, err := e.st.FarmXmasTreeDonate(e.ctx, alice.ID, "nam", 50); err != nil {
+			t.Fatal(err)
+		}
+		total += 11000
+	}
 	x := e.view(alice.ID, alice.ID).Xmas
-	if x.Tree.Total != 11050 || x.Tree.Mine != 11050 || e.view(bob.ID, bob.ID).XmasTreeLevel != 2 {
+	if x.Tree.Total != total || x.Tree.Mine != total || e.view(bob.ID, bob.ID).XmasTreeLevel != 2 {
 		t.Fatalf("tree %+v", x.Tree)
 	}
 	if _, err := e.st.FarmXmasTreeClaim(e.ctx, alice.ID, 2); err != nil {

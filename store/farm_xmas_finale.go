@@ -70,10 +70,11 @@ type XmasMilestone struct {
 }
 
 var XmasMilestones = []XmasMilestone{
-	{50, XmasPrize{Kind: "xu", Xu: 300}},
-	{120, XmasPrize{Kind: "item", Item: "nam", Qty: 3}},
-	{250, XmasPrize{Kind: "item", Item: "ao_len", Qty: 2}},
-	{400, XmasPrize{Kind: "decor", Decor: "star", Rare: true}},
+	// sự kiện 36 ngày: mốc giãn ra để không ai đạt hết trong tuần đầu
+	{120, XmasPrize{Kind: "xu", Xu: 300}},
+	{300, XmasPrize{Kind: "item", Item: "nam", Qty: 3}},
+	{600, XmasPrize{Kind: "item", Item: "ao_len", Qty: 2}},
+	{1000, XmasPrize{Kind: "decor", Decor: "star", Rare: true}},
 }
 
 func xmasEveTime() time.Time {

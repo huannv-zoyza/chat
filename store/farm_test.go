@@ -348,6 +348,7 @@ func TestFarmStealRace(t *testing.T) {
 
 func TestFarmDog(t *testing.T) {
 	e := newFarmEnv(t)
+	e.at(time.Date(2026, 10, 24, 18, 0, 0, 0, time.UTC)) // test tua 3 ngày: tránh mùa Noel (không trộm được)
 	alice, bob, carol := e.user("alice"), e.user("bob"), e.user("carol")
 	if _, err := e.st.FarmBuyDog(e.ctx, alice.ID); err != nil {
 		t.Fatal(err)

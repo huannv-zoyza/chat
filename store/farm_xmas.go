@@ -21,7 +21,7 @@ import (
 
 // Ngày sự kiện là var để thử nghiệm / đổi lịch không phải sửa logic.
 var (
-	XmasFrom   = "2026-12-20"
+	XmasFrom   = "2026-11-27" // mở sớm cho nhóm chơi cả mùa (36 ngày); thưởng đã siết lại theo độ dài này
 	XmasTo     = "2027-01-01"
 	XmasShopTo = "2027-01-07" // còn một tuần để tiêu kẹo sau sự kiện
 )
@@ -85,7 +85,7 @@ type XmasReward struct {
 }
 
 var XmasShop = []XmasReward{
-	{ID: "xu", Name: "Túi 500 xu", Emoji: "💰", Cost: 15, Xu: 500, DailyMax: 2},
+	{ID: "xu", Name: "Túi 500 xu", Emoji: "💰", Cost: 15, Xu: 500, DailyMax: 1}, // 36 ngày: ~18.000 xu tối đa
 	{ID: "expand", Name: "Phiếu mở rộng đất -50%", Emoji: "🗺️", Cost: 30, Kind: "expand",
 		Note: "Mở rộng lên bậc kế ngay, trả một nửa giá (vẫn cần đủ cấp)"},
 	{ID: "storage", Name: "Phiếu nâng kho miễn phí", Emoji: "🏚️", Cost: 25, Kind: "storage",

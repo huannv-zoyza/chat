@@ -10,7 +10,7 @@ func TestDailyQuestsDeterministic(t *testing.T) {
 	seen := map[string]bool{}
 	for user := int64(1); user <= 20; user++ {
 		for d := 1; d <= 28; d++ {
-			day := fmt.Sprintf("2026-11-%02d", d)
+			day := fmt.Sprintf("2026-10-%02d", d) // ngoài mùa Noel (mùa Noel đổi nhiệm vụ trộm thành ném tuyết)
 			qs := dailyQuests(user, day)
 			ids := map[string]bool{}
 			for _, q := range qs {

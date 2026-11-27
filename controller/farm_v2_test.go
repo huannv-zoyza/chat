@@ -193,9 +193,9 @@ func TestFarmV2API(t *testing.T) {
 	if st := mine["storage"].(map[string]any); st["cap"] != float64(90) || st["next_upgrade"].(map[string]any)["price"] != float64(600) {
 		t.Fatalf("storage after upgrade: %v", st)
 	}
-	// bán sạch kho: 15 rau muống × 5 + 18 cà rốt × 10 + 1 trứng × 22 = 277 (290 → 567, đủ 400 mở rộng)
-	if code, v := e.farm("POST", "/api/farm/sell", alice.Token, map[string]any{"all": true}); code != 200 || v.Gained.Xu != 277 ||
-		v.Wallet.Balance != 567 {
+	// bán sạch kho: 15 rau muống × 5 + 18 cà rốt × 10 + 1 trứng × 22 = 277 gốc; thưởng giá bán theo cấp làm tròn từng món → 281 (290 → 571, đủ 400 mở rộng)
+	if code, v := e.farm("POST", "/api/farm/sell", alice.Token, map[string]any{"all": true}); code != 200 || v.Gained.Xu != 281 ||
+		v.Wallet.Balance != 571 {
 		t.Fatalf("sell all: %d %+v %+v", code, v.Gained, v.Wallet)
 	}
 	code, v = e.farm("POST", "/api/farm/buy-plot", alice.Token, nil)

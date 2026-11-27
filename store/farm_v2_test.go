@@ -321,7 +321,7 @@ func TestFarmFeedAndCollect(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := e.view(alice.ID, alice.ID)
-	wantReady := e.now.Add(20 * time.Minute).UTC().Format(time.RFC3339)
+	wantReady := e.now.Add(1188 * time.Second).UTC().Format(time.RFC3339)
 	if a := v.Animals[0]; a.State != "producing" || a.ReadyAt != wantReady || a.CanFeed || v.Storage.Used != 0 {
 		t.Fatalf("fed hen: %+v storage %+v", a, v.Storage)
 	}
@@ -944,7 +944,7 @@ func TestFarmKitchen(t *testing.T) {
 	if _, err := e.st.FarmSell(e.ctx, alice.ID, "bap_rang", 1, false); err != nil {
 		t.Fatal(err)
 	}
-	if got := e.balance(alice.ID) - before; got != 88 {
+	if got := e.balance(alice.ID) - before; got != 88 { // món chế biến bán đúng giá gốc, không thưởng sell_pct
 		t.Fatalf("sold popcorn for %d", got)
 	}
 

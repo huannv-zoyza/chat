@@ -11,8 +11,14 @@ import { ApiError, type Wallet } from "../lib/api";
 import { displayName } from "../lib/format";
 import {
   farmEvents,
+  effAnimalSec,
+  effGrowSec,
+  effSellPrice,
+  effSellTotal,
   farmScreen,
   formatGrow,
+  hasNextLevel,
+  perkGains,
   formatLeft,
   useFarmOpen,
   type Animal,
@@ -23,6 +29,7 @@ import {
   type Neighbor,
   type Plot,
   type PlotState,
+  type Perks,
   type Quest,
   type Item,
   type Recipe,
@@ -251,7 +258,7 @@ function Farm() {
   const act = async (
     plot: number | null,
     fn: () => Promise<FarmView>,
-    okText?: string,
+    okText?: string | ((f: FarmView) => string | undefined),
   ) => {
     if (busy) return;
     setBusy(true);
@@ -293,18 +300,33 @@ function Farm() {
         if (g.love) pop(at, `+${g.love} 💗`, "love", 320);
         if (g.xu > 0) playCoinSound();
       }
+      const okMsg = okText
+        ? typeof okText === "function"
+          ? okText(f)
+          : okText
+        : undefined;
+      // showToast thay toast cũ, nên khi lên cấp thì nối kết quả hành động vào cùng một toast
+      const withOk = (t: string) => (okMsg ? `${t} ${okMsg}` : t);
       if (g?.love_up) {
         const c = f.couple ?? mine?.couple;
         showToast(
-          `💞 Thân mật lên cấp ${g.love_up}${c ? `: ${c.level_name}` : ""}! Cả hai cùng nhận ${30 * g.love_up} xu.`,
+          withOk(
+            `💞 Thân mật lên cấp ${g.love_up}${c ? `: ${c.level_name}` : ""}! Cả hai cùng nhận ${30 * g.love_up} xu.`,
+          ),
           "level",
         );
       } else if (g?.level_up)
         showToast(
-          `🎉 Lên cấp ${g.level_up}! Mở khoá cây mới trong cửa hàng hạt.`,
+          withOk(
+            `🎉 Lên cấp ${g.level_up}! Mở khoá cây mới trong cửa hàng hạt.${
+              perkGains(mine?.perks, f.perks).length
+                ? ` ${perkGains(mine?.perks, f.perks).join(", ")}.`
+                : ""
+            }`,
+          ),
           "level",
         );
-      else if (okText) showToast(okText);
+      else if (okMsg) showToast(okMsg, g?.hungry ? "bad" : "good");
       return true;
     } catch (err) {
       setError(errMsg(err));
@@ -665,6 +687,13 @@ function Farm() {
                   live={(p) => liveState(p, now)}
                   onPlot={onPlot}
                   onAnimal={onAnimal}
+                  onTend={(id) =>
+                    void act(
+                      -1,
+                      () => api.farmTend(id),
+                      (f) => tendToast(f, view),
+                    )
+                  }
                   onBuild={(id) => {
                     const b = view.buildings?.find((x) => x.id === id);
                     setConfirm({
@@ -1091,26 +1120,56 @@ function fieldTip(view: FarmView, now: number): ReactNode {
    ========================================================= */
 
 function LevelBar({ view }: { view: FarmView }) {
-  const span = view.next_level_xp ? view.next_level_xp - view.level_xp : 1;
-  const pct = view.next_level_xp
+  const [open, setOpen] = useState(false);
+  const hasNext = hasNextLevel(view);
+  const span = hasNext ? view.next_level_xp! - view.level_xp : 1;
+  const pct = hasNext
     ? Math.min(100, ((view.xp - view.level_xp) / span) * 100)
     : 100;
+  const rows: { label: (n: number) => string; get: (p: Perks) => number }[] = [
+    { label: (n) => `🌱 Cây lớn nhanh hơn ${n}%`, get: (p) => p.grow_pct },
+    { label: (n) => `🐓 Vật nuôi làm nhanh hơn ${n}%`, get: (p) => p.animal_pct },
+    { label: (n) => `🧺 Thu hoạch thêm +${n}/vụ`, get: (p) => p.harvest_bonus },
+    { label: (n) => `🪙 Bán giá cao hơn ${n}%`, get: (p) => p.sell_pct },
+  ];
+  const perks = view.perks;
   return (
     <div
       className="farm-level"
-      title={
-        view.next_level_xp
-          ? `${view.xp}/${view.next_level_xp} XP`
-          : "Cấp tối đa"
-      }
+      title={hasNext ? `${view.xp}/${view.next_level_xp} XP` : "Cấp tối đa"}
     >
-      <span className="farm-level-badge">Cấp {view.level}</span>
+      <button
+        type="button"
+        className="farm-level-badge farm-level-badge-btn"
+        aria-expanded={open}
+        disabled={!perks}
+        onClick={() => setOpen((o) => !o)}
+      >
+        Cấp {view.level}
+      </button>
       <span className="farm-level-bar">
         <i style={{ width: `${pct}%` }} />
       </span>
       <span className="farm-level-xp">
-        {view.next_level_xp ? `${view.xp}/${view.next_level_xp} XP` : "Tối đa"}
+        {hasNext ? `${view.xp}/${view.next_level_xp} XP` : "Tối đa"}
       </span>
+      {open && perks && (
+        <ul className="farm-perks">
+          {rows.map((r) => {
+            const cur = r.get(perks);
+            const next = view.next_perks ? r.get(view.next_perks) : cur;
+            return (
+              <li key={r.label(0)}>
+                <Emo e={r.label(cur).slice(0, 2)} />
+                {r.label(cur).slice(2)}{" "}
+                <span className="farm-perk-next">
+                  {next > cur ? `→ ${next}` : "(tối đa)"}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
@@ -1160,7 +1219,7 @@ function SeedPicker({
                   <Emo e={locked ? "🔒" : c.emoji} />
                 </span>
                 <b>{c.name}</b>
-                <span className="seed-time"><Emo e="⏱" /> {formatGrow(c.grow_sec)}</span>
+                <span className="seed-time"><Emo e="⏱" /> {formatGrow(effGrowSec(c.grow_sec, farm.perks))}</span>
                 {locked ? (
                   <span className="seed-lock">Mở ở cấp {c.level}</span>
                 ) : (
@@ -1202,6 +1261,31 @@ function SeedPicker({
 /* =========================================================
    Nhiệm vụ
    ========================================================= */
+
+/** Lời báo sau khi chăm nhanh một chuồng. */
+function tendToast(f: FarmView, before: FarmView | null): string | undefined {
+  const g = f.gained;
+  if (!g) return undefined;
+  const collected = Object.values(g.items ?? {}).reduce((a, b) => a + b, 0);
+  const catalog = f.items ?? before?.items ?? [];
+  const bought = Object.entries(g.bought ?? {})
+    .map(
+      ([id, n]) =>
+        `${n}${catalog.find((x) => x.id === id)?.emoji ?? f.crops.find((c) => c.id === id)?.emoji ?? "📦"}`,
+    )
+    .join(" ");
+  const fed = g.fed ?? 0;
+  const parts: string[] = [];
+  if (collected > 0) parts.push(`Đã thu ${collected} sản phẩm`);
+  if (fed > 0) parts.push(`${collected > 0 ? "cho" : "Đã cho"} ${fed} con ăn`);
+  let t = parts.join(", ");
+  if (bought) t += `${t ? " " : "Đã "}(mua thêm ${bought})`;
+  if (g.hungry) {
+    const warn = `Còn ${g.hungry} con đói: không đủ xu hoặc chưa đủ cấp mua thức ăn.`;
+    t = t ? `${t}. ${warn}` : warn;
+  }
+  return t || undefined;
+}
 
 const QUEST_ICON: Record<string, string> = {
   harvest: "🧺",
@@ -1971,7 +2055,7 @@ function ShopPanel({
                 <small>
                   Ăn {k.feed_qty} <Emo e={feed?.emoji} />{" "}
                   {feed?.name.toLowerCase() ?? k.feed} → <Emo e={prod?.emoji} />{" "}
-                  {prod?.name.toLowerCase()} sau {formatGrow(k.time_sec)}
+                  {prod?.name.toLowerCase()} sau {formatGrow(effAnimalSec(k.time_sec, farm.perks))}
                 </small>
               </div>
               <button
@@ -2031,7 +2115,7 @@ function ShopPanel({
                 <td>
                   <Emo e={c.emoji} /> {c.name}
                 </td>
-                <td>{formatGrow(c.grow_sec)}</td>
+                <td>{formatGrow(effGrowSec(c.grow_sec, farm.perks))}</td>
                 <td>+{c.sell - c.seed}</td>
                 <td>{c.level}</td>
               </tr>
@@ -2378,7 +2462,7 @@ function StoragePanel({
       </EmptyState>
     );
   const rows = (farm.items ?? []).filter((i) => (st.stock[i.id] ?? 0) > 0);
-  const total = rows.reduce((n, i) => n + (st.stock[i.id] ?? 0) * i.price, 0);
+  const total = rows.reduce((n, i) => n + effSellTotal(i.price, i.kind, st.stock[i.id] ?? 0, farm.perks), 0);
   const pct = Math.min(100, (st.used / Math.max(1, st.cap)) * 100);
   return (
     <div className="farm-section">
@@ -2422,7 +2506,7 @@ function StoragePanel({
                   <span className="stock-main">
                     <b>{i.name}</b>
                     <small>
-                      ×{n} · {i.price} <Emo e="🪙" />/cái
+                      ×{n} · {effSellPrice(i.price, i.kind, farm.perks)} <Emo e="🪙" />/cái
                     </small>
                   </span>
                   <button

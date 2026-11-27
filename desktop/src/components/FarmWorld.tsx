@@ -9,6 +9,7 @@ import {
 } from "react";
 import {
   formatLeft,
+  tendPlan,
   type Animal,
   type Crop,
   type FarmView,
@@ -873,6 +874,7 @@ export type WorldHandlers = {
   onPlot: (p: Plot) => void;
   onAnimal: (a: Animal) => void;
   onBuild: (id: "coop" | "pasture") => void;
+  onTend: (id: "coop" | "pasture") => void;
   onKitchen: () => void;
   onExpand: () => void;
   onStorage: () => void;
@@ -1585,6 +1587,26 @@ export function FarmWorld({
             onClick={() => h.onBuild("pasture")}
           />
         )}
+        {me && !placing && coopOn && (
+          <TendSign
+            view={view}
+            building="coop"
+            now={now}
+            r={COOP}
+            busy={busy}
+            onClick={() => h.onTend("coop")}
+          />
+        )}
+        {me && !placing && (pasture?.built ?? pastureAnimals.length > 0) && (
+          <TendSign
+            view={view}
+            building="pasture"
+            now={now}
+            r={PASTURE}
+            busy={busy}
+            onClick={() => h.onTend("pasture")}
+          />
+        )}
         {me && !placing && !kitchenOn && (
           <BuildSign
             r={KITCHEN}
@@ -1852,6 +1874,54 @@ function BuildSign({
     >
       <rect x={-78} y={-15} width={156} height={28} rx={14} />
       <SvgLabel text={`${locked ? "🔒" : "🔨"} ${text}`} y={4} />
+    </g>
+  );
+}
+
+/** Biển "chăm nhanh" trên chuồng: một chạm thu sản phẩm + cho ăn cả chuồng (tự mua thức ăn thiếu). */
+function TendSign({
+  view,
+  building,
+  now,
+  r,
+  busy,
+  onClick,
+}: {
+  view: FarmView;
+  building: "coop" | "pasture";
+  now: number;
+  r: { gx: number; gy: number; w: number; d: number };
+  busy: boolean;
+  onClick: () => void;
+}) {
+  const plan = tendPlan(view, building, now);
+  if (!plan) return null;
+  const emoji = (id: string) =>
+    view.items?.find((i) => i.id === id)?.emoji ??
+    view.crops.find((c) => c.id === id)?.emoji ??
+    "📦";
+  const parts: string[] = [];
+  if (plan.collect > 0)
+    parts.push(`${building === "coop" ? "🥚" : "🧺"} Thu ${plan.collect}`);
+  if (plan.feed > 0) parts.push(`🍽️ Cho ăn ${plan.feed}`);
+  if (plan.cost > 0)
+    parts.push(
+      `mua ${Object.entries(plan.buy)
+        .map(([id, n]) => `${n}${emoji(id)}`)
+        .join(" ")} ${plan.cost}🪙`,
+    );
+  const text = parts.join(" · ");
+  const w = Math.max(110, text.length * 7 + 28);
+  // đặt phía trên khối chuồng để không che đàn vật nuôi
+  const [cx, cy] = pt(r.gx + r.w / 2, r.gy);
+  return (
+    <g
+      className={`iso-click iso-sign is-tend${busy ? " is-busy" : ""}`}
+      transform={`translate(${cx}, ${cy - 34})`}
+      onClick={busy ? undefined : onClick}
+    >
+      <rect x={-w / 2} y={-15} width={w} height={28} rx={14} />
+      <SvgLabel text={text} y={4} />
     </g>
   );
 }

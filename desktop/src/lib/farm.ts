@@ -61,13 +61,24 @@ export type FarmLog = {
   xu?: number;
 };
 
+/** Đặc quyền theo cấp, khớp farmPerks ở máy chủ. */
+export type Perks = {
+  grow_pct: number;
+  animal_pct: number;
+  harvest_bonus: number;
+  sell_pct: number;
+};
+
 export type FarmView = {
   user: PublicUser;
   me: boolean;
   level: number;
   xp: number;
   level_xp: number;
+  /** Luôn có ở máy chủ mới; null (máy chủ cũ) hoặc >= MAX_SAFE_INTEGER nghĩa là không có cấp kế. */
   next_level_xp: number | null;
+  perks?: Perks;
+  next_perks?: Perks;
   plots: Plot[];
   plot_count: number;
   max_plots: number;
@@ -88,6 +99,10 @@ export type FarmView = {
     /** điểm thân mật vừa cộng / cấp thân mật mới (kết đôi) */
     love?: number;
     love_up?: number;
+    /** chăm nhanh cả chuồng: số con đã cho ăn, thức ăn tự mua, số con còn đói */
+    fed?: number;
+    bought?: Record<string, number>;
+    hungry?: number;
   };
   dog?: boolean;
   // phần 2: kho, chăn nuôi, đơn hàng, mở rộng đất (máy chủ cũ không có: để tuỳ chọn)
@@ -312,6 +327,51 @@ export function formatLeft(ms: number) {
   return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
 }
 
+/** Thời gian cây lớn sau đặc quyền (làm tròn xuống như máy chủ). */
+export function effGrowSec(sec: number, p?: Perks) {
+  return p ? Math.floor((sec * (100 - p.grow_pct)) / 100) : sec;
+}
+
+export function effAnimalSec(sec: number, p?: Perks) {
+  return p ? Math.floor((sec * (100 - p.animal_pct)) / 100) : sec;
+}
+
+/** Chỉ nông sản và sản phẩm chăn nuôi được thưởng giá bán; món chế biến (goods) giữ giá gốc. */
+function sellPerks(kind: string, p?: Perks) {
+  return kind === "goods" ? undefined : p;
+}
+
+/** Giá bán một cái sau đặc quyền (chỉ để hiển thị). */
+export function effSellPrice(price: number, kind: string, p?: Perks) {
+  p = sellPerks(kind, p);
+  return p ? Math.floor((price * (100 + p.sell_pct)) / 100) : price;
+}
+
+/** Tổng tiền bán qty cái, tính trên cả lô như máy chủ. */
+export function effSellTotal(price: number, kind: string, qty: number, p?: Perks) {
+  p = sellPerks(kind, p);
+  return p ? Math.floor((price * qty * (100 + p.sell_pct)) / 100) : price * qty;
+}
+
+/** Còn cấp kế tiếp không (máy chủ mới luôn có; int64 bão hoà coi như không). */
+export function hasNextLevel(v: { next_level_xp: number | null }) {
+  return v.next_level_xp != null && v.next_level_xp < Number.MAX_SAFE_INTEGER;
+}
+
+/** Các đặc quyền vừa tăng, để nối vào toast lên cấp. */
+export function perkGains(prev?: Perks, cur?: Perks): string[] {
+  if (!prev || !cur) return [];
+  const out: string[] = [];
+  if (cur.grow_pct > prev.grow_pct)
+    out.push(`Cây lớn nhanh hơn ${cur.grow_pct}%`);
+  if (cur.animal_pct > prev.animal_pct)
+    out.push(`vật nuôi làm nhanh hơn ${cur.animal_pct}%`);
+  if (cur.harvest_bonus > prev.harvest_bonus)
+    out.push(`thu hoạch +${cur.harvest_bonus}/vụ`);
+  if (cur.sell_pct > prev.sell_pct) out.push(`bán giá +${cur.sell_pct}%`);
+  return out;
+}
+
 /** "5 phút", "2 giờ", "1 giờ 30 phút". */
 export function formatGrow(sec: number) {
   const h = Math.floor(sec / 3600);
@@ -319,4 +379,76 @@ export function formatGrow(sec: number) {
   if (h && m) return `${h} giờ ${m} phút`;
   if (h) return `${h} giờ`;
   return `${m} phút`;
+}
+
+export type TendPlan = {
+  collect: number;
+  feed: number;
+  buy: Record<string, number>;
+  cost: number;
+  hungryLeft: number;
+};
+
+/**
+ * Dự tính "chăm nhanh" một chuồng, khớp máy chủ: thu con chín (trong giới hạn chỗ kho), rồi cho mọi con đói ăn,
+ * lấy từ kho trước, thiếu thì mua ở chợ nếu đủ cấp và đủ xu. Không có gì để làm: null.
+ */
+export function tendPlan(
+  view: FarmView,
+  building: "coop" | "pasture",
+  now: number,
+): TendPlan | null {
+  const kinds = new Map((view.animal_kinds ?? []).map((k) => [k.id, k]));
+  const items = new Map((view.items ?? []).map((i) => [i.id, i]));
+  const animals = (view.animals ?? []).filter(
+    (a) => kinds.get(a.kind)?.building === building,
+  );
+  const isReady = (a: Animal) =>
+    a.state === "ready" ||
+    (a.state === "producing" &&
+      !!a.ready_at &&
+      new Date(a.ready_at).getTime() <= now);
+  let room = view.storage ? view.storage.cap - view.storage.used : 0;
+  const stock = { ...(view.storage?.stock ?? {}) };
+  const balance = view.wallet?.balance;
+  let collect = 0;
+  let feed = 0;
+  let hungryLeft = 0;
+  let cost = 0;
+  const buy: Record<string, number> = {};
+  for (const a of animals) {
+    let hungry = a.state === "hungry";
+    if (isReady(a)) {
+      if (room <= 0) continue;
+      room--;
+      collect++;
+      hungry = true;
+    }
+    if (!hungry) continue;
+    const k = kinds.get(a.kind);
+    if (!k) continue;
+    const have = stock[k.feed] ?? 0;
+    const take = Math.min(have, k.feed_qty);
+    const need = k.feed_qty - take;
+    if (need > 0) {
+      const it = items.get(k.feed);
+      const price = it?.buy_price ?? 0;
+      const add = price * need;
+      if (
+        !it ||
+        price <= 0 ||
+        view.level < it.level ||
+        (balance !== undefined && cost + add > balance)
+      ) {
+        hungryLeft++;
+        continue;
+      }
+      cost += add;
+      buy[k.feed] = (buy[k.feed] ?? 0) + need;
+    }
+    stock[k.feed] = have - take;
+    feed++;
+  }
+  if (collect === 0 && feed === 0) return null;
+  return { collect, feed, buy, cost, hungryLeft };
 }

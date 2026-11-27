@@ -289,10 +289,10 @@ func (op *farmOp) finishJobs(userID int64, ready []jobRow) (map[string]int64, in
 
 // collectJobs: lấy mọi món đã xong của công trình building ("" = mọi công trình) vừa kho. Không có gì
 // lấy được (chưa xong, hoặc kho đầy) thì trả items rỗng, XP 0. Cộng XP ở đây.
-func (op *farmOp) collectJobs(userID int64, building string) (map[string]int64, int64, error) {
+func (op *farmOp) collectJobs(userID int64, building string) (map[string]int64, int64, int, error) {
 	jobs, err := loadJobs(op.ctx, op.tx, userID)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, 0, err
 	}
 	now := op.unix()
 	var ready []jobRow
@@ -302,13 +302,13 @@ func (op *farmOp) collectJobs(userID int64, building string) (map[string]int64, 
 		}
 	}
 	if len(ready) == 0 {
-		return map[string]int64{}, 0, nil
+		return map[string]int64{}, 0, 0, nil
 	}
-	items, xp, _, err := op.finishJobs(userID, ready)
+	items, xp, lv, err := op.finishJobs(userID, ready)
 	if errors.Is(err, ErrFarmStorageFull) {
-		return map[string]int64{}, 0, nil
+		return map[string]int64{}, 0, 0, nil
 	}
-	return items, xp, err
+	return items, xp, lv, err
 }
 
 // FarmCraftCollect: lấy món đã xong ở lò slot của công trình building (rỗng: xưởng), hoặc mọi lò đã

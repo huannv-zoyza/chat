@@ -148,3 +148,50 @@ func TestFarmAutoStepRollback(t *testing.T) {
 		t.Fatalf("state %s", st)
 	}
 }
+
+// Sản phẩm vật nuôi đã chín được thu và tính vào Collected dù không có thức ăn để cho ăn tiếp.
+func TestFarmAutoCollectsAnimalProducts(t *testing.T) {
+	e, id := tendFarm(t, 400)
+	e.buyAnimals(id, "ga")
+	if _, err := e.st.FarmTend(e.ctx, id, "coop"); err != nil {
+		t.Fatal(err)
+	}
+	e.setStock(id, "rau_muong", 0)
+	e.setStock(id, "trung", 0)
+	e.advance(time.Hour)
+	res, err := e.st.FarmAuto(e.ctx, id, store.AutoOpts{BuyFeed: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := res.Gained.Auto; a.Collected < 1 || a.Fed != 0 {
+		t.Fatalf("report: %+v", a)
+	}
+	if res.Gained.Items["trung"] < 1 || e.storage(id).Stock["trung"] < 1 {
+		t.Fatalf("egg: %+v %v", res.Gained.Items, e.storage(id).Stock)
+	}
+}
+
+func TestFarmAutoLevelUp(t *testing.T) {
+	e := newFarmEnv(t)
+	alice := e.user("alice")
+	e.setXP(alice.ID, levelXPForTest(3)-1)
+	e.plant(alice.ID, 0, "rau_muong")
+	e.advance(time.Hour)
+	res, err := e.st.FarmAuto(e.ctx, alice.ID, store.AutoOpts{})
+	if err != nil || res.Gained.LevelUp != 3 {
+		t.Fatalf("level up: %v %+v", err, res.Gained)
+	}
+}
+
+func TestFarmAutoTreeLevelUp(t *testing.T) {
+	e := newFarmEnv(t)
+	alice := e.user("alice")
+	e.setXP(alice.ID, levelXPForTest(5))
+	e.plantTree(alice.ID, 0, "cam")
+	e.advance(3 * time.Hour)
+	e.setXP(alice.ID, levelXPForTest(6)-1)
+	res, err := e.st.FarmAuto(e.ctx, alice.ID, store.AutoOpts{})
+	if err != nil || res.Gained.LevelUp != 6 {
+		t.Fatalf("level up: %v %+v", err, res.Gained)
+	}
+}

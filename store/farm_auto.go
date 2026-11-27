@@ -172,6 +172,7 @@ func (s *Store) FarmAuto(ctx context.Context, userID int64, o AutoOpts) (FarmRes
 				}
 				g.add(tg)
 				r.Fed += tg.Fed
+				r.Collected += sumItems(tg.Items)
 				r.Spent -= tg.Xu
 				return nil
 			}); err != nil {
@@ -181,11 +182,12 @@ func (s *Store) FarmAuto(ctx context.Context, userID int64, o AutoOpts) (FarmRes
 
 		// 4. hái cả vườn cây
 		if err := op.step("Vườn cây", &r.Skipped, nil, func() error {
-			items, xp, err := op.harvestTrees(userID, now)
+			items, xp, lv, err := op.harvestTrees(userID, now)
 			if err != nil {
 				return err
 			}
 			g.XP += xp
+			g.LevelUp = max(g.LevelUp, lv)
 			g.addItems(items)
 			r.Fruits += sumItems(items)
 			return nil
@@ -195,11 +197,12 @@ func (s *Store) FarmAuto(ctx context.Context, userID int64, o AutoOpts) (FarmRes
 
 		// 5. thu mọi món đã xong của xưởng và máy ép
 		if err := op.step("Thu món", &r.Skipped, nil, func() error {
-			items, xp, err := op.collectJobs(userID, "")
+			items, xp, lv, err := op.collectJobs(userID, "")
 			if err != nil {
 				return err
 			}
 			g.XP += xp
+			g.LevelUp = max(g.LevelUp, lv)
 			g.addItems(items)
 			r.Collected += sumItems(items)
 			return nil

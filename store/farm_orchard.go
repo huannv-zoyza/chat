@@ -195,19 +195,19 @@ func (op *farmOp) harvestRows(userID int64, rows []*treeRow, level int) (map[str
 
 // harvestTrees hái mọi cây đã chín mà cả lượt quả còn vừa kho, theo thứ tự chỗ (cây nào không vừa thì
 // dừng, vì mọi cây cho cùng số quả). Không có cây nào hái được thì trả items rỗng, XP 0. Cộng XP ở đây.
-func (op *farmOp) harvestTrees(userID int64, now int64) (map[string]int64, int64, error) {
+func (op *farmOp) harvestTrees(userID int64, now int64) (map[string]int64, int64, int, error) {
 	f, err := ensureFarm(op.ctx, op.tx, userID)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, 0, err
 	}
 	lv := levelFor(f.XP)
 	trees, err := loadTrees(op.ctx, op.tx, userID)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, 0, err
 	}
 	room, err := op.storageRoom(userID)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, 0, err
 	}
 	var pick []*treeRow
 	yield := treeYield(lv)
@@ -219,16 +219,17 @@ func (op *farmOp) harvestTrees(userID int64, now int64) (map[string]int64, int64
 		pick = append(pick, &trees[i])
 	}
 	if len(pick) == 0 {
-		return map[string]int64{}, 0, nil
+		return map[string]int64{}, 0, 0, nil
 	}
 	items, xp, err := op.harvestRows(userID, pick, lv)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, 0, err
 	}
-	if _, err := op.addXP(userID, xp); err != nil {
-		return nil, 0, err
+	lv, err = op.addXP(userID, xp)
+	if err != nil {
+		return nil, 0, 0, err
 	}
-	return items, xp, nil
+	return items, xp, lv, nil
 }
 
 // FarmHarvestTree: hái cây ở chỗ spot, hoặc mọi cây đã chín mà còn vừa kho nếu all. Mỗi cây cho
